@@ -4,23 +4,25 @@ import { genomeColor, describeGenome } from '@/engine/genetics'
 import { Creature, CreatureState } from '@/types'
 
 const STATE_LABELS: Record<CreatureState, string> = {
-  idle:            'resting',
-  wandering:       'wandering',
-  seeking_food:    'searching for food',
-  seeking_water:   'searching for water',
-  seeking_shelter: 'seeking shelter',
-  seeking_warmth:  'seeking warmth',
-  bonding:         'searching for a mate',
-  fighting:        'fighting',
-  fleeing:         'fleeing a threat',
-  reproducing:     'reproducing',
-  mourning:        'mourning a loss',
-  observing:       'watching the perimeter',
-  dreaming:        'dreaming',
-  sick:            'ill',
-  migrating:       'migrating',
-  scavenging:      'scavenging',
-  dying:           'dying',
+  idle:             'resting',
+  wandering:        'wandering',
+  seeking_food:     'searching for food',
+  seeking_water:    'searching for water',
+  seeking_shelter:  'seeking shelter',
+  seeking_warmth:   'seeking warmth',
+  bonding:          'searching for a mate',
+  fighting:         'fighting',
+  fleeing:          'fleeing a threat',
+  reproducing:      'reproducing',
+  mourning:         'mourning a loss',
+  observing:        'watching the perimeter',
+  dreaming:         'dreaming',
+  sick:             'ill',
+  migrating:        'migrating',
+  scavenging:       'scavenging',
+  dying:            'dying',
+  playing:          'playing',
+  using_enrichment: 'using enrichment',
 }
 
 const Panel = styled.div`
@@ -424,7 +426,6 @@ export function DossierPanel() {
   const gameState = useLaietStore(s => s.gameState)
   const selectedId = useLaietStore(s => s.selectedCreatureId)
   const healCreature = useLaietStore(s => s.healCreature)
-  const caretaker = gameState?.caretaker
 
   const creature = selectedId ? gameState?.creatures[selectedId] : null
 
@@ -505,6 +506,17 @@ export function DossierPanel() {
           <TraitBadge color='#80c8ff'>{creature.genome.body}</TraitBadge>
           <TraitBadge color='#c878f0'>{creature.genome.mind}</TraitBadge>
         </TraitRow>
+        {creature.recentMutation !== undefined && creature.mutatedTraits && creature.mutatedTraits.length > 0 && (
+          <div style={{
+            marginTop: 5, padding: '3px 8px',
+            background: 'rgba(255, 220, 40, 0.10)',
+            border: '1px solid rgba(255, 220, 40, 0.30)',
+            borderRadius: 2, fontSize: 9, color: '#ffe060',
+            letterSpacing: '0.10em',
+          }}>
+            ⚡ mutated {creature.mutatedTraits.join(', ')} this generation
+          </div>
+        )}
         <div style={{ color: '#5a5a85', fontSize: 9, lineHeight: 1.6, marginTop: 4 }}>
           {describeGenome(creature.genome)}
         </div>
@@ -513,9 +525,9 @@ export function DossierPanel() {
       <Section>
         <SectionTitle>vitals</SectionTitle>
 
-        {caretaker && caretaker.healCharges > 0 && creature.health < 80 && (
+        {creature.health < 95 && (
           <HealBtn onClick={() => healCreature(creature.id)}>
-            ♥ HEAL  ({caretaker.healCharges} left)
+            ♥ HEAL
           </HealBtn>
         )}
 

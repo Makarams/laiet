@@ -1,5 +1,5 @@
 import { Creature, DayPhase } from '@/types'
-import { ISO_TILE_WIDTH, ISO_TILE_HEIGHT } from '@/engine/constants'
+import { ISO_TILE_WIDTH, ISO_TILE_HEIGHT, CAVE_CREATURE_ALPHA, MUTATION_DISPLAY_DAYS } from '@/engine/constants'
 import { genomeColor, mindGlow } from '@/engine/genetics'
 import { lighten, darken, adjustBrightness } from './utils'
 
@@ -21,7 +21,9 @@ export function drawCreature(
   screenX: number,
   screenY: number,
   selected: boolean,
-  phase: DayPhase
+  phase: DayPhase,
+  isInCave = false,
+  currentDay = 0
 ): void {
   if (creature.diedOnDay !== null) return
 
@@ -35,8 +37,13 @@ export function drawCreature(
   const bodyColor = adjustBrightness(baseColor, healthFade)
   const glow = mindGlow(creature.genome.mind)
 
+  // Playing state — slight vertical bounce
+  const playBounce = creature.state === 'playing'
+    ? Math.sin(Date.now() / 120 + creature.id.charCodeAt(0)) * 3.5
+    : 0
+
   const cx = screenX
-  const cy = screenY + ISO_TILE_HEIGHT * 0.5
+  const cy = screenY + ISO_TILE_HEIGHT * 0.5 + playBounce
 
   // Age factor — grows from 60% at birth to 100% at maturity
   const ageRatio = Math.min(1.0, creature.age / 40)
@@ -61,7 +68,10 @@ export function drawCreature(
   // Night dimming — nocturnal traits stay bright
   const isNight = phase === 'night'
   const nocturnal = creature.genome.personality === 'Curious' || creature.genome.mind === 'Dreaming'
-  ctx.globalAlpha = isNight ? (nocturnal ? 0.92 : 0.55) : 1.0
+  let baseAlpha = isNight ? (nocturnal ? 0.92 : 0.55) : 1.0
+  // Cave depth — creatures inside caves appear dimmer and tinted
+  if (isInCave) baseAlpha *= CAVE_CREATURE_ALPHA
+  ctx.globalAlpha = baseAlpha
 
   // Glow for sentient creatures — intensity grows with generation
   if (glow !== 'transparent' && creature.sentience > 15) {
@@ -450,6 +460,41 @@ export function drawCreature(
     drawThoughtSymbol(ctx, creature.currentThought, cx, cy - r - 4)
   }
 
+  // ── Mutation spark — newly born mutated creatures emit a colored pulse ────
+  const mutationAge = creature.recentMutation !== undefined ? currentDay - creature.recentMutation : -1
+  if (mutationAge >= 0 && mutationAge < MUTATION_DISPLAY_DAYS) {
+    const fade = 1 - mutationAge / MUTATION_DISPLAY_DAYS
+    const pulse = 0.6 + Math.sin(Date.now() / 90) * 0.4
+    ctx.save()
+    ctx.shadowBlur = 0
+    ctx.globalAlpha = fade * pulse * 0.85
+    ctx.strokeStyle = '#ffee44'
+    ctx.lineWidth = 1.5
+    ctx.setLineDash([3, 2])
+    const sparkR = r + 5 + Math.sin(Date.now() / 130) * 2
+    ctx.beginPath()
+    ctx.arc(cx, cy, sparkR, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.setLineDash([])
+    ctx.globalAlpha = fade * 0.7
+    ctx.strokeStyle = '#ff9900'
+    ctx.lineWidth = 0.8
+    ctx.beginPath()
+    ctx.arc(cx, cy, sparkR + 3, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  // ── Cave depth overlay — tint creature blue-black when inside cave ────────
+  if (isInCave) {
+    ctx.globalAlpha = 0.30
+    ctx.fillStyle = 'rgba(10, 8, 28, 0.65)'
+    ctx.beginPath()
+    ctx.ellipse(cx, cy, r * 1.15, r * 1.15, 0, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.globalAlpha = baseAlpha
+  }
+
   ctx.restore()
 }
 
@@ -459,12 +504,14 @@ const THOUGHT_SYMBOLS: Record<string, string> = {
   hungry: '!', thirsty: '~', cold: '*', stressed: '?',
   content: '·', fighting: '×', bonding: '♥', curious: '→',
   mourning: '…', watching: '◉', dreaming: '∿', sick: '+',
+  playing: '♪', mutated: '⚡',
 }
 
 const THOUGHT_COLORS: Record<string, string> = {
   hungry: '#ffb050', thirsty: '#80c8ff', cold: '#b0d8ff', stressed: '#ff7080',
   content: '#cdc4a8', fighting: '#ff5060', bonding: '#ff9aff', curious: '#80f0a0',
   mourning: '#7878a0', watching: '#ff8048', dreaming: '#c878f0', sick: '#ff5060',
+  playing: '#80f0e0', mutated: '#ffee44',
 }
 
 function drawThoughtSymbol(

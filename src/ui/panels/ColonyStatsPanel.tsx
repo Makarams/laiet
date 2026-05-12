@@ -1,7 +1,6 @@
 import styled from 'styled-components'
 import { useLaietStore } from '@/store/gameStore'
 import { ColonyStage, WeatherState } from '@/types'
-import { HEAL_CHARGES_PER_DAY } from '@/engine/constants'
 
 // ─── Layout ──────────────────────────────────────────────────────────────────
 
@@ -185,33 +184,6 @@ const AwarenessLabel = styled.div`
   line-height: 1.5;
 `
 
-// ─── Heal charges ────────────────────────────────────────────────────────────
-
-const HealRow = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 5px;
-`
-
-const HealHeart = styled.div<{ active: boolean }>`
-  width: 10px;
-  height: 10px;
-  font-size: 11px;
-  line-height: 1;
-  color: ${p => p.active ? '#ff5060' : '#1e1828'};
-  text-shadow: ${p => p.active ? '0 0 5px rgba(255, 80, 96, 0.55)' : 'none'};
-
-  &::before { content: '♥'; }
-`
-
-const HealNote = styled.span`
-  font-size: 10px;
-  color: #8888b0;
-  letter-spacing: 0.12em;
-  margin-left: 4px;
-`
-
 // ─── Body type bar ───────────────────────────────────────────────────────────
 
 const BodyGrid = styled.div`
@@ -337,8 +309,7 @@ export function ColonyStatsPanel() {
 
   if (!gameState) return null
 
-  const { creatures, colonyStage, awarenessStage, totalDeaths, totalCreaturesEver, caretaker, weather, weatherTimer, modifiers } = gameState
-  const maxHealCharges = modifiers?.healCharges ?? HEAL_CHARGES_PER_DAY
+  const { creatures, colonyStage, awarenessStage, totalDeaths, totalCreaturesEver, weather, weatherTimer } = gameState
   const alive = Object.values(creatures).filter(c => c.diedOnDay === null)
   const maxGen = alive.length > 0 ? Math.max(...alive.map(c => c.generation)) : 0
 
@@ -463,23 +434,20 @@ export function ColonyStatsPanel() {
       <Section>
         <SectionTitle>caretaker</SectionTitle>
         <Row>
-          <Label>heal charges</Label>
-          <Value accent={caretaker.healCharges > 0 ? '#ff5060' : '#3a3a55'}>
-            {caretaker.healCharges} / {maxHealCharges}
-          </Value>
+          <Label>mode</Label>
+          <Value accent='#d088ff'>◈ omnipresent</Value>
         </Row>
-        <HealRow>
-          {Array.from({ length: maxHealCharges }, (_, i) => i + 1).map(n => (
-            <HealHeart key={n} active={caretaker.healCharges >= n} />
-          ))}
-          <HealNote>resets daily</HealNote>
-        </HealRow>
-
-        <Row style={{ marginTop: 6 }}>
-          <Label>river redirect</Label>
-          <Value accent={caretaker.riverRedirectUsed ? '#3a3a55' : '#5ec8e0'}>
-            {caretaker.riverRedirectUsed ? '◌ used' : '◉ ready'}
-          </Value>
+        <Row style={{ marginTop: 4 }}>
+          <Label>heal</Label>
+          <Value accent='#80f0a0'>◉ unlimited</Value>
+        </Row>
+        <Row>
+          <Label>tools</Label>
+          <Value accent='#80f0a0'>◉ no caps</Value>
+        </Row>
+        <Row>
+          <Label>enrichment</Label>
+          <Value accent='#58b858'>◉ degrades naturally</Value>
         </Row>
       </Section>
     </Panel>

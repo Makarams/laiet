@@ -81,6 +81,14 @@ export interface Creature {
   // thought bubble
   currentThought: ThoughtSymbol | null
   thoughtTimer: number
+
+  // mutation tracking — set on birth if discrete genome slots mutated from both parents
+  recentMutation?: number    // game day of birth, cleared after MUTATION_DISPLAY_DAYS
+  mutatedTraits?: string[]   // which slots mutated (personality / body / mind)
+
+  // enrichment state
+  enrichmentTarget?: string   // id of enrichment item being used
+  lastEnrichmentTick?: number // sim tick when creature last used enrichment (cooldown)
 }
 
 export type CreatureState =
@@ -95,12 +103,14 @@ export type CreatureState =
   | 'fleeing'
   | 'reproducing'
   | 'mourning'
-  | 'observing'   // Sentinel behaviour
-  | 'dreaming'    // Dreaming at death sites / river
+  | 'observing'        // Sentinel behaviour
+  | 'dreaming'         // Dreaming at death sites / river
   | 'sick'
-  | 'migrating'   // long-range search when local food exhausted
-  | 'scavenging'  // consuming a corpse (cannibalism)
+  | 'migrating'        // long-range search when local food exhausted
+  | 'scavenging'       // consuming a corpse (cannibalism)
   | 'dying'
+  | 'playing'          // social play — reduces stress, emerges from high satisfaction
+  | 'using_enrichment' // interacting with a placed enrichment item
 
 export type ThoughtSymbol =
   | 'hungry'
@@ -115,6 +125,8 @@ export type ThoughtSymbol =
   | 'watching'
   | 'dreaming'
   | 'sick'
+  | 'playing'
+  | 'mutated'
 
 // ─── World / Tiles ────────────────────────────────────────────────────────────
 
@@ -152,6 +164,28 @@ export interface Tile {
   burning: number          // ticks remaining on fire (0 = not burning)
   lightningFlash?: number  // timestamp of last strike — renderer fades bolt/flash after LIGHTNING_VISUAL_DURATION_MS
   elevation?: number       // 0..1 — used for mountain height variation
+}
+
+// ─── Enrichment ───────────────────────────────────────────────────────────────
+// Five condensed categories — each introduces a meaningful trade-off.
+
+export type EnrichmentType =
+  | 'rest_nest'       // Rest & Recovery      — stress↓ at cost of hunger (idle burns energy)
+  | 'shelter_den'     // Safety & Shelter     — stress↓↓, warmth↑, but isolates from bonding
+  | 'play_toy'        // Play & Social        — stress↓, energy cost; social bonus if partner nearby
+  | 'energy_cache'    // Energy Regulation    — hunger↓, but thirst↑ and stress+ if contested
+  | 'terrain_feature' // Environmental Interact — sentience↑ (Aware/Dreaming/Sentinel), exposed (+stress for Timid)
+
+export interface EnrichmentItem {
+  id: string
+  type: EnrichmentType
+  x: number
+  y: number
+  placedOnDay: number
+  usedBy: string | null        // current creature id
+  totalUses: number            // lifetime interaction count
+  maxUses: number              // item degrades and disappears after this many uses
+  usesRemaining: number        // decremented each use session
 }
 
 // ─── Season & Time ────────────────────────────────────────────────────────────
@@ -339,6 +373,9 @@ export interface GameState {
   colonyStage: ColonyStage
   awarenessStage: MessageStage
   endgame: EndgameType
+
+  // enrichment items placed by the caretaker
+  enrichmentItems: Record<string, EnrichmentItem>
 
   // weather
   weather: WeatherState

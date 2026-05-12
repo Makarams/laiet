@@ -19,7 +19,7 @@ export const DAY_PHASE_THRESHOLDS = {
 }
 
 // ─── World ────────────────────────────────────────────────────────────────────
-export const WORLD_SIZE = 120                     // doubled for migration, ecosystem separation
+export const WORLD_SIZE = 240                     // 240×240 for biome diversity, exploration, natural dispersion
 export const MUTATION_CHANCE = 0.15               // 15% per gene slot
 export const DEATH_SITE_DECAY_DAYS = 22           // death sites fade back to barren after this many game days
 
@@ -100,19 +100,19 @@ export const FOOD_REGROW_MULTIPLIER: Record<string, number> = {
 export const TREE_GROW_DAYS = 2 * 60
 export const WATER_REPLENISH_RATE = 0.5           // river refills faster
 
-// ─── Caretaker ────────────────────────────────────────────────────────────────
-export const HEAL_CHARGES_PER_DAY = 3
+// ─── Caretaker — God-mode: no hard caps, only cooldowns ──────────────────────
+export const HEAL_CHARGES_PER_DAY = 999          // effectively unlimited
 export const HEAL_AMOUNT = 40
-export const FOOD_DROP_COOLDOWN_MS = 5_000
+export const FOOD_DROP_COOLDOWN_MS = 500          // 0.5s — near instant
 
-// ─── Environmental tools (caretaker can affect the world) ─────────────────────
-export const THUNDER_COOLDOWN_MS    = 12_000     // 12 real seconds between strikes
-export const THUNDER_CHARGES_PER_DAY = 2          // hard limit per day
+// ─── Environmental tools — unlimited by default; cooldowns prevent spam ───────
+export const THUNDER_COOLDOWN_MS    = 1_500       // 1.5s between strikes
+export const THUNDER_CHARGES_PER_DAY = 999        // no daily cap
 export const THUNDER_DAMAGE_RADIUS   = 1          // tiles around the strike
 export const THUNDER_LETHAL_HEALTH   = 100        // kills outright in radius
 
-export const FIRE_COOLDOWN_MS      = 8_000        // 8s between ignitions
-export const FIRE_CHARGES_PER_DAY  = 3
+export const FIRE_COOLDOWN_MS      = 1_500        // 1.5s between ignitions
+export const FIRE_CHARGES_PER_DAY  = 999          // no daily cap
 export const FIRE_DURATION_TICKS   = 14           // a burning tile burns this long
 export const FIRE_SPREAD_CHANCE    = 0.10         // per adjacent tree per tick
 export const FIRE_TICK_DAMAGE      = 12           // health damage per tick standing on fire
@@ -249,6 +249,56 @@ export const QUESTION_RESPONSE_WINDOW_MS = 30_000  // 30 real seconds to respond
 // ─── Message cooldowns ────────────────────────────────────────────────────────
 export const MIN_GAME_DAYS_BETWEEN_MESSAGES = 3
 export const MESSAGE_POOL_SIZE = 60
+
+// ─── Mutation display ─────────────────────────────────────────────────────────
+// How long (game days) a mutation indicator appears on a newly born creature
+export const MUTATION_DISPLAY_DAYS = 15
+
+// ─── Tree food generation ─────────────────────────────────────────────────────
+// Mature trees drop fruit onto adjacent passable tiles
+export const TREE_FOOD_RADIUS = 2              // tile radius for fruit drops
+export const TREE_FOOD_DROP_CHANCE = 0.006     // per mature tree per tick
+export const TREE_FOOD_MATURE_AGE = 120        // min treeAge for fruit drops
+export const TREE_APPLE_MAX_PER_TILE = 80      // max foodAmount from tree drops
+
+// ─── Play behavior ────────────────────────────────────────────────────────────
+export const PLAY_TRIGGER_SATISFACTION = 78    // min needSatisfaction to play
+export const PLAY_PARTNER_RADIUS = 4           // tiles to find play partner
+export const PLAY_DURATION_TICKS = 25          // ticks in playing state
+export const PLAY_STRESS_REDUCTION = 0.8       // stress drop per tick while playing
+
+// ─── Enrichment system ───────────────────────────────────────────────────────
+export const ENRICHMENT_USE_RADIUS = 1         // tiles to trigger use
+export const ENRICHMENT_MAX_PER_TILE = 1       // one item per tile
+export const ENRICHMENT_COOLDOWN_TICKS = 80    // sim ticks before creature can use enrichment again
+export const ENRICHMENT_MAX_USES = 40          // item degrades and disappears after this many uses
+
+// Effects per enrichment type — stat delta per tick while in use.
+// Each type has a meaningful trade-off so no item is purely beneficial.
+//   rest_nest:       stress↓, warmth↑, hunger↑ (idle burns energy)
+//   shelter_den:     stress↓↓, warmth↑↑, hunger↑↑ (isolation cost; can't bond while hidden)
+//   play_toy:        stress↓, hunger↑ (physical play costs energy)
+//   energy_cache:    hunger↓ (feeds), thirst↑ (digestion) — stress+ applied externally if contested
+//   terrain_feature: sentience↑ (Aware/Dreaming/Sentinel only), stress- for calm traits, +stress Timid
+export const ENRICHMENT_EFFECTS: Record<string, {
+  stress: number; hunger: number; thirst: number; warmth: number; health: number; sentience: number
+}> = {
+  rest_nest:       { stress: -2.5, hunger:  0.8, thirst:  0.0, warmth:  1.2, health:  0.1, sentience:  0.00 },
+  shelter_den:     { stress: -4.0, hunger:  1.2, thirst:  0.0, warmth:  2.5, health:  0.1, sentience:  0.00 },
+  play_toy:        { stress: -3.5, hunger:  1.8, thirst:  0.5, warmth:  0.0, health:  0.0, sentience:  0.00 },
+  energy_cache:    { stress:  0.0, hunger: -8.0, thirst:  2.0, warmth:  0.0, health:  0.0, sentience:  0.00 },
+  terrain_feature: { stress: -1.5, hunger:  0.0, thirst:  0.0, warmth:  0.0, health:  0.0, sentience:  0.03 },
+}
+
+// ─── Natural enrichment — passive bonuses from world terrain ─────────────────
+// Applied in tickCreatures for creatures standing on or adjacent to these tiles.
+export const NATURAL_CAVE_STRESS_REDUCTION   = 1.5   // per tick on cave tile
+export const NATURAL_RIVER_STRESS_REDUCTION  = 0.5   // per tick on river/mud tile
+export const NATURAL_TREE_STRESS_REDUCTION   = 0.25  // per tick on tree/shelter tile
+export const NATURAL_ROCKY_SENTINEL_BONUS    = 0.012 // sentience per tick (Sentinel on rocky biome)
+
+// ─── Cave visual depth ────────────────────────────────────────────────────────
+export const CAVE_CREATURE_ALPHA = 0.50        // creatures inside caves render dimmer
 
 // ─── Rendering ───────────────────────────────────────────────────────────────
 // 120×120 world — responsive canvas fills viewport; camera pan+zoom to navigate

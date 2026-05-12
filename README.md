@@ -10,7 +10,7 @@ Inspired by Black Mirror S7E4 "Plaything" (the Thronglets) and Dwarf Fortress.
 
 ## What it is
 
-- **Isometric 120×120 world** — procedurally generated from a numeric seed; biomes, river, mountains, caves, cliffs, food patches, trees
+- **Isometric 240×240 world** — procedurally generated from a numeric seed; biomes, rivers, mountains, caves, cliffs, food patches, trees — twice the scale of earlier versions for genuine biome diversity and natural creature dispersion
 - **Insect creatures** with inherited genetics across 3 gene slots (personality, body, mind) plus accumulated morphological traits that diverge per lineage over generations
 - **Caretaker profile** — five questions answered before the world begins shape the entire simulation: food abundance, mutation rate, bond speed, awareness pacing, and ending tendencies
 - **Four body types** with distinct ecological roles: Spore (r-strategist, divides asexually), Shell (K-strategist, long-lived), Spike (territorial fighter), Wisp (scout, empathic)
@@ -18,6 +18,7 @@ Inspired by Black Mirror S7E4 "Plaything" (the Thronglets) and Dwarf Fortress.
 - **Three endings** — extinction, fracture, or ascension, depending on how you play
 - **Colony awareness arc** — creatures evolve through three stages of sentience, eventually noticing the player, then addressing them directly by name
 - **Cloud save** — your colony persists across devices via Supabase; IndexedDB provides a local fallback
+- **God-mode caretaker** — no caps on healing, tools, or interventions. The simulation balances itself naturally.
 
 ---
 
@@ -115,45 +116,45 @@ When prompted, add:
 ```
 src/
 ├── types/
-│   └── index.ts              ← all TypeScript types; read this first
+│   └── index.ts              <- all TypeScript types; read this first
 ├── engine/
-│   ├── constants.ts          ← every tuning value — single source of truth
-│   ├── genetics.ts           ← trait pools, inheritance, mutation, morphology, naming, color
-│   ├── messages.ts           ← colony message pools for all 3 awareness stages
-│   ├── profile.ts            ← CaretakerProfile → SimModifiers; DEFAULT_MODIFIERS
-│   └── tick.ts               ← main simulation loop (tickSimulation)
+│   ├── constants.ts          <- every tuning value — single source of truth
+│   ├── genetics.ts           <- trait pools, inheritance, mutation, morphology, naming, color
+│   ├── messages.ts           <- colony message pools for all 3 awareness stages
+│   ├── profile.ts            <- CaretakerProfile -> SimModifiers; DEFAULT_MODIFIERS
+│   └── tick.ts               <- main simulation loop (tickSimulation)
 ├── world/
-│   └── worldGen.ts           ← procedural 120×120 world, seeded RNG, biome/terrain placement
+│   └── worldGen.ts           <- procedural 240x240 world, seeded RNG, biome/terrain placement
 ├── creatures/
-│   ├── factory.ts            ← spawn, createOffspring, createAsexualOffspring, colony/awareness stage
-│   └── behavior.ts           ← needs decay, AI state machine, movement, reproduction gating
+│   ├── factory.ts            <- spawn, createOffspring, createAsexualOffspring, colony/awareness stage
+│   └── behavior.ts           <- needs decay, AI state machine, movement, reproduction gating
 ├── ui/
-│   ├── renderer/             ← isometric canvas drawing, split into focused modules
+│   ├── renderer/             <- isometric canvas drawing, split into focused modules
 │   │   ├── index.ts
 │   │   ├── tiles.ts
 │   │   ├── creatures.ts
 │   │   ├── overlays.ts
 │   │   └── utils.ts
 │   ├── components/
-│   │   ├── App.tsx           ← auth gating, session check, world routing
-│   │   ├── AuthScreen.tsx    ← login / signup
-│   │   ├── ProfileScreen.tsx ← 5-question MCQ before world creation; produces CaretakerProfile
-│   │   ├── NewWorldScreen.tsx← name your first 4 creatures
-│   │   ├── GameLayout.tsx    ← 3-column layout, toast notifications, restart confirm
-│   │   ├── GameCanvas.tsx    ← responsive canvas, camera pan/zoom/rotate
-│   │   ├── EventPopup.tsx    ← floating event cards
-│   │   └── Toolbar.tsx       ← tool buttons, clock, charge badges, save/reset
+│   │   ├── App.tsx           <- auth gating, session check, world routing
+│   │   ├── AuthScreen.tsx    <- login / signup
+│   │   ├── ProfileScreen.tsx <- 5-question MCQ before world creation; produces CaretakerProfile
+│   │   ├── NewWorldScreen.tsx<- name your first 4 creatures
+│   │   ├── GameLayout.tsx    <- 3-column layout, toast notifications, restart confirm
+│   │   ├── GameCanvas.tsx    <- responsive canvas, camera pan/zoom/rotate
+│   │   ├── EventPopup.tsx    <- floating event cards
+│   │   └── Toolbar.tsx       <- tool buttons, enrichment dropdown, save/reset
 │   └── panels/
-│       ├── ColonyStatsPanel.tsx  ← population, body-type breakdown, weather, stage, caretaker
-│       ├── DossierPanel.tsx      ← creature inspector, morphology bars, monologue, heal button
-│       └── MessageLogPanel.tsx   ← scrollable transmission log, unread badge
+│       ├── ColonyStatsPanel.tsx  <- population, body-type breakdown, weather, stage, caretaker
+│       ├── DossierPanel.tsx      <- creature inspector, morphology bars, monologue, heal button
+│       └── MessageLogPanel.tsx   <- scrollable transmission log, unread badge
 ├── audio/
-│   └── chiptune.ts           ← Web Audio engine; 5 seasonal sequences + SFX
+│   └── chiptune.ts           <- Web Audio engine; 5 seasonal sequences + SFX
 ├── db/
-│   ├── supabase.ts           ← Supabase client init
-│   └── persistence.ts        ← IndexedDB + cloud save/load, exponential-backoff retry, full reset
+│   ├── supabase.ts           <- Supabase client init
+│   └── persistence.ts        <- IndexedDB + cloud save/load, exponential-backoff retry, full reset
 └── store/
-    └── gameStore.ts          ← Zustand store; all caretaker actions, tick management
+    └── gameStore.ts          <- Zustand store; all caretaker actions, tick management
 ```
 
 ---
@@ -166,13 +167,11 @@ A five-question profile screen shapes how your simulation behaves for the entire
 
 | Question | Effect |
 |---|---|
-| Presence | interventionist → +1 heal charge, faster food drops; silent → no change (narrative) |
-| World | fertile → 1.45× food regrowth, shorter droughts; scarce → 0.60× regrowth, longer droughts |
-| Evolution | fast → 22% mutation rate, 1.35× sentience growth; slow → 10% mutation rate |
-| Focus | bonds → 1.40× bond speed; survival → harsher food/drought; awareness → faster stage transitions |
-| Expectation | ascension → ascension threshold −10 population; extinction → harsher drought + thinner food |
-
-These are applied once and stored in `GameState.modifiers`. Old saves without a profile use safe defaults.
+| Presence | interventionist -> faster food drops; silent -> no change (narrative) |
+| World | fertile -> 1.45x food regrowth, shorter droughts; scarce -> 0.60x regrowth, longer droughts |
+| Evolution | fast -> 22% mutation rate, 1.35x sentience growth; slow -> 10% mutation rate |
+| Focus | bonds -> 1.40x bond speed; survival -> harsher food/drought; awareness -> faster stage transitions |
+| Expectation | ascension -> ascension threshold -10 population; extinction -> harsher drought + thinner food |
 
 ### Controls
 
@@ -180,98 +179,71 @@ These are applied once and stored in `GameState.modifiers`. Old saves without a 
 |---|---|
 | `Space` | Pause / resume simulation |
 | `1` | Select / inspect |
-| `2` | Drop food (cooldown: 5s default, 3s for interventionist) |
+| `2` | Drop food |
 | `3` | Plant tree |
-| `4` | River redirect (once per season) |
-| `5` | Thunder strike (2 charges/day, 12s cooldown) |
-| `6` | Ignite fire (3 charges/day, 8s cooldown) |
+| `4` | River redirect (unlimited) |
+| `5` | Thunder strike (1.5s cooldown, no cap) |
+| `6` | Ignite fire (1.5s cooldown, no cap) |
+| `7` | Place enrichment item (select type from dropdown) |
 | `Q` / `E` | Rotate world CCW / CW |
 | `+` / `-` | Zoom in / out |
 | `0` | Recenter camera |
-| `Ctrl+S` | Manual save (with toast confirmation) |
+| `Ctrl+S` | Manual save |
 
-Speed controls (1×, 2×, 4×) and a pause button are also available in the Toolbar. The simulation automatically pauses when you switch away from the tab and resumes when you return — unless you had manually paused it.
+### God-mode caretaker
 
-### Caretaker limits
+The caretaker has no hard limits:
 
-| Tool | Default | Interventionist |
-|---|---|---|
-| Heal charges | 3/day | 4/day |
-| Food drop cooldown | 5 seconds | 3 seconds |
-| River redirect | 1/season | 1/season |
-| Thunder charges | 2/day | 2/day |
-| Fire charges | 3/day | 3/day |
+- **Healing** — unlimited; any creature below 95% health can be healed from the Dossier
+- **Food drops** — 0.5s anti-spam cooldown only
+- **Thunder and fire** — 1.5s cooldown, no daily cap
+- **River redirect** — unlimited; shape the hydrology freely
+- **Enrichment** — place items anywhere; they degrade naturally after 40 uses
 
-You cannot command creatures — you can only place things.
+### Enrichment system
+
+Five condensed categories, each with a meaningful trade-off:
+
+| Type | Category | Effect | Trade-off |
+|---|---|---|---|
+| Rest Nest | Rest & Recovery | stress down, warmth up | hunger up (idle burns energy) |
+| Shelter Den | Safety & Shelter | stress down strongly, warmth up | hunger up, isolates from bonding |
+| Play Toy | Play & Social | stress down; social bonus with bonded partner nearby | hunger up (energy cost) |
+| Energy Cache | Energy Regulation | hunger down | thirst up (digestion); stress+ when contested |
+| Terrain Feature | Environmental | sentience up for Aware/Dreaming/Sentinel | exposed; Timid gets stress penalty |
+
+**Trait-driven use**: Lazy seeks Rest Nests. Curious seeks Terrain Features. Nurturing seeks Play Toys near partners. Aggressive can displace current users. Recluse avoids enrichment when others are nearby.
+
+**Degradation**: each item disappears after 40 uses; the renderer fades items as durability drops.
+
+**Natural enrichment**: caves reduce stress passively; river/mud tiles calm creatures; tree canopy provides mild comfort; rocky biome boosts Sentinel sentience.
 
 ### Genetics and morphology
 
-Each creature carries 3 discrete gene slots plus accumulated morphological traits:
-
-| Slot | Options |
-|---|---|
-| Personality | Curious · Timid · Aggressive · Lazy · Greedy · Nurturing |
-| Body | Spore · Shell · Spike · Wisp |
-| Mind | Feral · Aware · Dreaming · Sentinel |
-
-Mutation chance per slot defaults to 15% per birth event (configurable via profile). Every lineage also accumulates `MorphologyTraits` — size scale, limb length, spinal length, eye size, and color drift — that drift slightly with each generation. After 5–10 generations, two lineages sharing a personality and body type will look visually distinct because their morphology took different evolutionary paths.
+Each creature carries 3 discrete gene slots plus accumulated morphological traits. Mutation chance defaults to 15% per slot per birth event. Newly born mutants display a pulsing spark ring and show a mutation notice in the Dossier for 15 game days.
 
 ### Body types
 
 | Body | Max age | Speed | Role |
 |---|---|---|---|
-| Spore | ~7.5 min | 1.2× | R-strategist; only body that divides asexually |
-| Shell | ~25 min | 0.5× | K-strategist; long-lived colony backbone |
-| Spike | ~12 min | 0.9× | Territorial defender; highest fight power |
-| Wisp | ~10 min | 2.2× | Scout; empathic; drives awareness stage |
-
-All four body types are always present from world creation.
+| Spore | ~7.5 min | 1.2x | R-strategist; only body that divides asexually |
+| Shell | ~25 min | 0.5x | K-strategist; long-lived colony backbone |
+| Spike | ~12 min | 0.9x | Territorial defender; highest fight power |
+| Wisp | ~10 min | 2.2x | Scout; empathic; drives awareness stage |
 
 ### The awareness arc
 
 | Stage | Trigger | Message tone |
 |---|---|---|
 | 1 | Default | Third-person observational |
-| 2 | Generation ≥ 3 + a live Sentinel exists | Personal, eerie — *"the hand came again"* |
-| 3 | Pop ≥ 50 (alive) + any Sentinel alive + any creature gen ≥ 4 | Direct address — *"la-iet. that is what you called us."* |
-
-At stage 3, the colony occasionally asks questions. Using a tool within 30 seconds is interpreted as an answer.
+| 2 | Generation 3+ and a live Sentinel exists | Personal, eerie |
+| 3 | Pop 50+ alive, any Sentinel alive, any creature gen 4+ | Direct address |
 
 ### The three endings
 
-- **Extinction** — all creatures die. The grid goes dark. A fossil record is written to Supabase.
-- **Fracture** — two tribes war over the last river tile. Colony splits permanently. *(stub — not yet implemented)*
-- **Ascension** — population ≥ 80 (or 70 with expectation=ascension), a Sentinel at generation ≥ 4 is alive. The grid inverts. The colony addresses you one final time.
-
----
-
-## Save system
-
-1. **Auto-save** every 30 seconds to Supabase (`colonies` table, JSONB blob)
-2. **IndexedDB** local fallback written on every cloud save
-3. **Manual save** via `Ctrl+S` or the SAVE button (shows a toast notification)
-4. **Tab visibility** — the simulation automatically stops ticking when the tab is hidden and resumes when you return. This prevents creatures from dying during extended absence.
-5. **Passive ticks** — on return, up to 2 real minutes of catch-up are applied before the live loop resumes (capped at 120 ticks to prevent mass extinction on re-open)
-6. **Full reset** — the RESET button calls a server-side `reset_user_data()` Postgres function (SECURITY DEFINER) that hard-deletes all colonies and fossil records for the current user, then wipes IndexedDB. Auth session is preserved.
-
----
-
-## Tuning
-
-All simulation values live in `src/engine/constants.ts`:
-
-| Constant | Default | Description |
-|---|---|---|
-| `REAL_MS_PER_GAME_DAY` | 60,000 ms | How fast time passes |
-| `DAYS_PER_SEASON` | 30 | Game days per season |
-| `MUTATION_CHANCE` | 0.15 | Default genetic drift rate per slot |
-| `HEAL_CHARGES_PER_DAY` | 3 | Base daily heal uses |
-| `TICK_INTERVAL_MS` | 1,000 ms | Simulation tick rate |
-| `FOOD_DROP_COOLDOWN_MS` | 5,000 ms | Default food drop cooldown |
-| `BOND_STRENGTH_PER_TICK` | 0.5 | How fast adjacent bonds grow |
-| `REPRODUCE_BOND_MIN_STRENGTH` | 42 | Bond strength required for sexual reproduction |
-
-Profile-driven multipliers override these at runtime via `SimModifiers`.
+- **Extinction** — all creatures die. Fossil record written to Supabase.
+- **Fracture** — two tribes war over the last river tile. *(stub)*
+- **Ascension** — population 80+ (or 70 with expectation=ascension), Sentinel at gen 4+ alive.
 
 ---
 
@@ -279,6 +251,6 @@ Profile-driven multipliers override these at runtime via `SimModifiers`.
 
 Built by Sammakara Mak. Free forever.
 
-> *"you cannot command them. you can only tend.*  
-> *the colony will outlive your attention, remember your absence,*  
+> *"you cannot command them. you can only tend.*
+> *the colony will outlive your attention, remember your absence,*
 > *and eventually — decide what you are to them."*

@@ -8,6 +8,7 @@ import { ColonyStatsPanel } from '../panels/ColonyStatsPanel'
 import { EventPopupLayer } from './EventPopup'
 import { Toolbar, Tool } from './Toolbar'
 import { updateMusicContext, computeMusicKey, setMuted, isMuted, unlockAudio } from '@/audio/chiptune'
+import { EnrichmentType } from '@/types'
 
 const LOG_HEIGHT = 220
 
@@ -289,6 +290,7 @@ export function GameLayout() {
   const setSimSpeed    = useLaietStore(s => s.setSimSpeed)
 
   const [activeTool, setActiveTool] = useState<Tool>('select')
+  const [selectedEnrichment, setSelectedEnrichment] = useState<EnrichmentType>('rest_nest')
   const [muted, setMutedState] = useState(isMuted())
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
   const [showRestartConfirm, setShowRestartConfirm] = useState(false)
@@ -355,6 +357,7 @@ export function GameLayout() {
       if (e.key === '4') setActiveTool('river')
       if (e.key === '5') setActiveTool('thunder')
       if (e.key === '6') setActiveTool('fire')
+      if (e.key === '7') setActiveTool('enrich')
       if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleManualSave() }
     }
     window.addEventListener('keydown', handler)
@@ -393,6 +396,8 @@ export function GameLayout() {
         alive={Object.values(gameState.creatures).filter(c => c.diedOnDay === null).length}
         colonyStage={gameState.colonyStage}
         awarenessStage={gameState.awarenessStage}
+        selectedEnrichment={selectedEnrichment}
+        onEnrichmentChange={setSelectedEnrichment}
       />
 
       <Main>
@@ -401,7 +406,7 @@ export function GameLayout() {
         </Left>
 
         <Center>
-          <GameCanvas activeTool={activeTool} />
+          <GameCanvas activeTool={activeTool} selectedEnrichment={selectedEnrichment} />
           <EventPopupLayer />
           <LogArea>
             <MessageLogPanel />

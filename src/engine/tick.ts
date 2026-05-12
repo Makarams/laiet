@@ -1,7 +1,7 @@
 import { v4 as uuid } from 'uuid'
 import {
   GameState, Creature, GameEvent, EventType, Season, WeatherState,
-  ExtinctionRecord, ColonyMessage, SimModifiers
+  ExtinctionRecord, ColonyMessage, SimModifiers,
 } from '@/types'
 import {
   DAY_FRACTION_PER_TICK, DAYS_PER_SEASON, FOOD_REGROW_RATE_BASE,
@@ -21,11 +21,15 @@ import {
   CARETAKER_PRESENCE_RADIUS, CARETAKER_PRESENCE_WINDOW_MS, CARETAKER_SENTIENCE_BOOST,
   BONE_MEMORY_CHANCE, BONE_MEMORY_RADIUS,
   QUESTION_RESPONSE_WINDOW_MS,
+  TREE_FOOD_DROP_CHANCE, TREE_FOOD_RADIUS, TREE_FOOD_MATURE_AGE, TREE_APPLE_MAX_PER_TILE,
+  PLAY_DURATION_TICKS, PLAY_STRESS_REDUCTION,
+  NATURAL_CAVE_STRESS_REDUCTION, NATURAL_RIVER_STRESS_REDUCTION,
+  NATURAL_TREE_STRESS_REDUCTION, NATURAL_ROCKY_SENTINEL_BONUS,
 } from './constants'
 import {
   tickNeeds, tickBehavior, tickMovement,
   eatFromTile, drinkFromTile,
-  canReproduce, canAsexuallyReproduce, resolveFight,
+  canReproduce, canAsexuallyReproduce, resolveFight, applyEnrichmentEffect,
 } from '@/creatures/behavior'
 import { DEFAULT_MODIFIERS } from '@/engine/profile'
 import { createOffspring, createAsexualOffspring, getColonyStage, computeAwarenessStage } from '@/creatures/factory'
@@ -45,6 +49,8 @@ export function tickSimulation(state: GameState): GameState {
     // Backward-compat: old saves won't have weather
     weather: state.weather ?? 'clear',
     weatherTimer: state.weatherTimer ?? 20,
+    // Backward-compat: old saves won't have enrichmentItems
+    enrichmentItems: state.enrichmentItems ?? {},
     // Tiles NOT pre-cloned here — tickTiles does copy-on-write and produces
     // a fresh tile array. Pre-cloning all 14,400 tiles here was wasted work.
     creatures: { ...state.creatures },
@@ -66,6 +72,7 @@ export function tickSimulation(state: GameState): GameState {
 
   next = tickReproduction(next, _rng, popFactor)
   next = tickTribes(next)
+  next = tickEnrichment(next)
 
   const liveCount = Object.values(next.creatures).filter(c => !c.diedOnDay).length
   next.colonyStage = getColonyStage(liveCount) as GameState['colonyStage']
@@ -193,6 +200,32 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
         const wt = writeTile(y, x)
         wt.treeAge += 1
         if (wt.treeAge >= TREE_GROW_DAYS) wt.shelter = true
+      }
+
+      // Tree food generation — mature trees drop fruit onto nearby passable tiles.
+      // This makes trees the primary food source; food_patches near trees naturally
+      // accumulate while isolated ones slowly run dry.
+      if ((t.type === 'tree' || t.type === 'shelter')
+          && t.treeAge >= TREE_FOOD_MATURE_AGE
+          && Math.random() < TREE_FOOD_DROP_CHANCE) {
+        for (let dy = -TREE_FOOD_RADIUS; dy <= TREE_FOOD_RADIUS; dy++) {
+          for (let dx = -TREE_FOOD_RADIUS; dx <= TREE_FOOD_RADIUS; dx++) {
+            if (dx === 0 && dy === 0) continue
+            const tx = x + dx, ty = y + dy
+            if (tx < 0 || tx >= WORLD_SIZE || ty < 0 || ty >= WORLD_SIZE) continue
+            const target = tiles[ty][tx]
+            if (target.type === 'food_patch' && target.foodAmount < TREE_APPLE_MAX_PER_TILE) {
+              writeTile(ty, tx).foodAmount = Math.min(TREE_APPLE_MAX_PER_TILE, target.foodAmount + 4)
+              break
+            }
+            if (target.type === 'grass' && Math.random() < 0.25) {
+              const wt = writeTile(ty, tx)
+              wt.type = 'food_patch'
+              wt.foodAmount = 20
+              break
+            }
+          }
+        }
       }
 
       // Water replenishment — reads from working tile so it stacks with rain bonus above
@@ -366,8 +399,49 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
       c.health = Math.max(0, c.health - DISEASE_HEALTH_DRAIN)
     }
 
-    const behaviorChanges = tickBehavior(c, tiles, creatures, state.time.season, aliveCreatures, tileIdx)
+    const behaviorChanges = tickBehavior(c, tiles, creatures, state.time.season, aliveCreatures, tileIdx, state.enrichmentItems)
     c = { ...c, ...behaviorChanges }
+
+    // Playing state — applies stress reduction and times out after PLAY_DURATION_TICKS
+    if (c.state === 'playing') {
+      c.stress = Math.max(0, c.stress - PLAY_STRESS_REDUCTION)
+      if ((c.stateTimer ?? 0) >= PLAY_DURATION_TICKS) {
+        c.state = 'idle'
+        c.stateTimer = 0
+      }
+    }
+
+    // Enrichment use — apply per-tick item effects with social/competitive context
+    if (c.state === 'using_enrichment' && c.enrichmentTarget) {
+      const item = state.enrichmentItems[c.enrichmentTarget]
+      if (item) {
+        // Social context: is a bonded partner adjacent? (doubles play_toy benefit)
+        const partnerNearby = aliveCreatures.some(
+          o => o.id !== c.id && Math.abs(o.x - c.x) <= 1 && Math.abs(o.y - c.y) <= 1
+            && c.bonds.some(b => b.targetId === o.id && b.strength > 20)
+        )
+        const fx = applyEnrichmentEffect(c, item.type, partnerNearby)
+        c = { ...c, ...fx }
+
+        // energy_cache: Aggressive competitor nearby raises stress (contest)
+        if (item.type === 'energy_cache') {
+          const competitor = aliveCreatures.find(
+            o => o.id !== c.id && o.genome.personality === 'Aggressive'
+              && Math.abs(o.x - c.x) <= 2 && Math.abs(o.y - c.y) <= 2
+          )
+          if (competitor) c.stress = Math.min(100, c.stress + 3)
+        }
+
+        if ((c.stateTimer ?? 0) >= 10) {
+          c.state = 'idle'
+          c.enrichmentTarget = undefined
+          c.stateTimer = 0
+        }
+      } else {
+        c.state = 'idle'
+        c.enrichmentTarget = undefined
+      }
+    }
 
     const movChanges = tickMovement(c, tiles)
     c = { ...c, ...movChanges }
@@ -389,6 +463,19 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
       // Cave warmth — being inside a cave insulates against cold
       if (currentTile.type === 'cave') {
         c.warmth = Math.min(100, c.warmth + CAVE_WARMTH_BONUS)
+        // Natural enrichment: cave safety calms stress
+        c.stress = Math.max(0, c.stress - NATURAL_CAVE_STRESS_REDUCTION)
+      }
+
+      // Natural enrichment — world terrain as passive enrichment
+      if (currentTile.type === 'river' || currentTile.type === 'mud') {
+        c.stress = Math.max(0, c.stress - NATURAL_RIVER_STRESS_REDUCTION)
+      }
+      if (currentTile.type === 'tree' || currentTile.type === 'shelter') {
+        c.stress = Math.max(0, c.stress - NATURAL_TREE_STRESS_REDUCTION)
+      }
+      if (currentTile.biome === 'rocky' && c.genome.mind === 'Sentinel') {
+        c.sentience = Math.min(100, c.sentience + NATURAL_ROCKY_SENTINEL_BONUS)
       }
 
       // Auto-lightning strike damage — lightningFlash is set this same tick by
@@ -721,6 +808,24 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
         totalGenerations = Math.max(totalGenerations, offspring.generation)
 
         checkBoneMemory(offspring, state, messages, lastMsgDay)
+
+        // Emit mutation event when discrete traits changed from both parents
+        if (offspring.recentMutation !== undefined && offspring.mutatedTraits && offspring.mutatedTraits.length > 0) {
+          const traitNames = offspring.mutatedTraits.join(', ')
+          if (state.time.day - lastMsgDay >= 1) {
+            messages.push({
+              id: uuid(),
+              text: `⚡ ${offspring.name} ${offspring.familyName} was born with altered ${traitNames}. the lineage shifts.`,
+              stage: 1,
+              creatureId: offspring.id,
+              day: state.time.day,
+              timestamp: Date.now(),
+              read: false,
+            })
+            lastMsgDay = state.time.day
+          }
+        }
+
         if (DEBUG) console.log(`[BIRTH·sexual] ${offspring.name} (gen ${offspring.generation}) ← ${c.name} + ${partner.name}`)
         continue
       }
@@ -773,6 +878,61 @@ function checkBoneMemory(
       }
     }
   }
+}
+
+// ─── Enrichment ──────────────────────────────────────────────────────────────
+
+function tickEnrichment(state: GameState): GameState {
+  const items = state.enrichmentItems
+  if (!items || Object.keys(items).length === 0) return state
+
+  const updatedItems = { ...items }
+  let changed = false
+
+  for (const id in updatedItems) {
+    let item = updatedItems[id]
+
+    // Release item if using creature has died or moved away
+    if (item.usedBy) {
+      const c = state.creatures[item.usedBy]
+      if (!c || c.diedOnDay !== null || c.state !== 'using_enrichment') {
+        updatedItems[id] = { ...item, usedBy: null }
+        item = updatedItems[id]
+        changed = true
+      } else {
+        // Active use — decrement usesRemaining (degradation)
+        const usesLeft = (item.usesRemaining ?? item.maxUses ?? 40) - 1
+        if (usesLeft <= 0) {
+          // Item fully degraded — remove it; release creature from using_enrichment
+          delete updatedItems[id]
+          changed = true
+          continue
+        }
+        updatedItems[id] = { ...item, totalUses: item.totalUses + 1, usesRemaining: usesLeft }
+        item = updatedItems[id]
+        changed = true
+      }
+    }
+
+    // Claim item for creature that is using_enrichment at target id
+    if (updatedItems[id] && !updatedItems[id].usedBy) {
+      for (const cid in state.creatures) {
+        const c = state.creatures[cid]
+        if (c.diedOnDay !== null) continue
+        if (c.state === 'using_enrichment' && c.enrichmentTarget === id) {
+          // Aggressive displacement: if another creature is already tagged on this item
+          // and this creature is Aggressive, it takes priority (displacement handled here
+          // by simply claiming — the prior claimant will be released next tick)
+          updatedItems[id] = { ...updatedItems[id], usedBy: cid }
+          changed = true
+          break
+        }
+      }
+    }
+  }
+
+  if (!changed) return state
+  return { ...state, enrichmentItems: updatedItems }
 }
 
 // ─── Tribes ───────────────────────────────────────────────────────────────────

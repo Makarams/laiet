@@ -1,6 +1,6 @@
+import { useState } from 'react'
 import styled from 'styled-components'
-import { Season, DayPhase, ColonyStage, MessageStage } from '@/types'
-import { useLaietStore } from '@/store/gameStore'
+import { Season, DayPhase, ColonyStage, MessageStage, EnrichmentType } from '@/types'
 
 const Bar = styled.div`
   display: flex;
@@ -157,24 +157,6 @@ const Pip = styled.span<{ active: boolean; level: number }>`
   border: 1px solid ${p => p.active ? 'transparent' : '#2e2e54'};
 `
 
-// ─── Charge badge ────────────────────────────────────────────────────────────
-
-const ChargeBadge = styled.span<{ full: boolean }>`
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: ${p => p.full ? 'rgba(0,0,0,0.35)' : 'rgba(255,80,96,0.18)'};
-  border: 1px solid ${p => p.full ? 'rgba(255,255,255,0.12)' : '#ff5060'};
-  color: ${p => p.full ? 'rgba(255,255,255,0.45)' : '#ff8090'};
-  border-radius: 2px;
-  font-size: 10px;
-  padding: 1px 4px;
-  letter-spacing: 0.04em;
-  margin-left: 2px;
-  line-height: 1;
-  min-width: 18px;
-`
-
 // ─── Right-side controls ─────────────────────────────────────────────────────
 
 const CtrlBtn = styled.button<{ active?: boolean; accent?: string }>`
@@ -259,7 +241,48 @@ const STAGE_COLOR: Record<ColonyStage, string> = {
   ascendant:   '#d088ff',
 }
 
-export type Tool = 'select' | 'food' | 'tree' | 'river' | 'thunder' | 'fire'
+export type Tool = 'select' | 'food' | 'tree' | 'river' | 'thunder' | 'fire' | 'enrich'
+
+const EnrichDropdown = styled.div`
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  background: rgba(8, 8, 28, 0.98);
+  border: 1px solid #3a3a70;
+  border-radius: 3px;
+  z-index: 200;
+  min-width: 160px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+  overflow: hidden;
+`
+
+const EnrichOption = styled.button<{ selected: boolean }>`
+  display: block;
+  width: 100%;
+  background: ${p => p.selected ? 'rgba(100, 200, 120, 0.18)' : 'transparent'};
+  border: none;
+  border-bottom: 1px solid #1c1c40;
+  color: ${p => p.selected ? '#80f0a0' : '#b0b0d8'};
+  font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
+  font-size: 10.5px;
+  padding: 7px 12px;
+  cursor: pointer;
+  text-align: left;
+  letter-spacing: 0.06em;
+  transition: background 0.10s;
+
+  &:hover { background: rgba(100, 200, 120, 0.12); color: #c0f0c0; }
+  &:last-child { border-bottom: none; }
+`
+
+// Five condensed enrichment categories — each has a meaningful trade-off.
+const ENRICHMENT_OPTIONS: { type: EnrichmentType; label: string; glyph: string; hint: string }[] = [
+  { type: 'rest_nest',       label: 'Rest Nest',       glyph: '≈', hint: 'stress↓ · hunger↑' },
+  { type: 'shelter_den',     label: 'Shelter Den',     glyph: '◡', hint: 'stress↓↓ · warmth↑ · isolates' },
+  { type: 'play_toy',        label: 'Play Toy',        glyph: '●', hint: 'stress↓ · hunger↑ · social bonus' },
+  { type: 'energy_cache',    label: 'Energy Cache',    glyph: '◈', hint: 'hunger↓ · thirst↑ · contested' },
+  { type: 'terrain_feature', label: 'Terrain Feature', glyph: '△', hint: 'sentience↑ · exposed' },
+]
 
 interface ToolbarProps {
   activeTool: Tool
@@ -279,26 +302,28 @@ interface ToolbarProps {
   alive: number
   colonyStage: ColonyStage
   awarenessStage: MessageStage
+  selectedEnrichment: EnrichmentType
+  onEnrichmentChange: (type: EnrichmentType) => void
 }
 
 export function Toolbar({
   activeTool, onToolChange, onMuteToggle, onRestartRequest, onSave, isMuted,
   isPaused, simSpeed, onPauseToggle, onSpeedChange,
   day, year, season, phase, alive, colonyStage, awarenessStage,
+  selectedEnrichment, onEnrichmentChange,
 }: ToolbarProps) {
-  const caretaker = useLaietStore(s => s.gameState?.caretaker)
+  const [showEnrichDropdown, setShowEnrichDropdown] = useState(false)
 
-  const thunderLeft = caretaker ? caretaker.thunderChargesToday : 2
-  const fireLeft    = caretaker ? caretaker.fireChargesToday    : 3
-
-  const tools: { key: Tool; label: string; glyph: string; hotkey: string; accent: string; charge?: { left: number; max: number } }[] = [
-    { key: 'select',  label: 'OBSERVE', glyph: '◎', hotkey: '1', accent: '#5ec8e0' },
-    { key: 'food',    label: 'FEED',    glyph: '✦', hotkey: '2', accent: '#80f0a0' },
-    { key: 'tree',    label: 'PLANT',   glyph: '⬡', hotkey: '3', accent: '#a8c060' },
-    { key: 'river',   label: 'REDIRECT',glyph: '≋', hotkey: '4', accent: '#80c8ff' },
-    { key: 'thunder', label: 'STRIKE',  glyph: '⚡', hotkey: '5', accent: '#ffe060', charge: { left: thunderLeft, max: 2 } },
-    { key: 'fire',    label: 'IGNITE',  glyph: '◈', hotkey: '6', accent: '#ff7848', charge: { left: fireLeft,    max: 3 } },
+  const tools: { key: Tool; label: string; glyph: string; hotkey: string; accent: string }[] = [
+    { key: 'select',  label: 'OBSERVE',  glyph: '◎', hotkey: '1', accent: '#5ec8e0' },
+    { key: 'food',    label: 'FEED',     glyph: '✦', hotkey: '2', accent: '#80f0a0' },
+    { key: 'tree',    label: 'PLANT',    glyph: '⬡', hotkey: '3', accent: '#a8c060' },
+    { key: 'river',   label: 'REDIRECT', glyph: '≋', hotkey: '4', accent: '#80c8ff' },
+    { key: 'thunder', label: 'STRIKE',   glyph: '⚡', hotkey: '5', accent: '#ffe060' },
+    { key: 'fire',    label: 'IGNITE',   glyph: '◈', hotkey: '6', accent: '#ff7848' },
   ]
+
+  const activeEnrichOption = ENRICHMENT_OPTIONS.find(o => o.type === selectedEnrichment) ?? ENRICHMENT_OPTIONS[0]
 
   return (
     <Bar>
@@ -314,18 +339,45 @@ export function Toolbar({
             active={activeTool === t.key}
             accent={t.accent}
             onClick={() => onToolChange(t.key)}
-            title={`Hotkey: ${t.hotkey}${t.charge ? ` · ${t.charge.left}/${t.charge.max} charges` : ''}`}
+            title={`Hotkey: ${t.hotkey}`}
           >
             <ToolGlyph>{t.glyph}</ToolGlyph>
             {t.label}
-            {t.charge && (
-              <ChargeBadge full={t.charge.left > 0}>
-                {t.charge.left}/{t.charge.max}
-              </ChargeBadge>
-            )}
             <KeyHint>[{t.hotkey}]</KeyHint>
           </ToolBtn>
         ))}
+
+        {/* Enrichment tool — dropdown to select item type */}
+        <div style={{ position: 'relative' }}>
+          <ToolBtn
+            active={activeTool === 'enrich'}
+            accent='#58b858'
+            onClick={() => {
+              onToolChange('enrich')
+              setShowEnrichDropdown(v => !v)
+            }}
+            title='Place enrichment item [7]'
+          >
+            <ToolGlyph>{activeEnrichOption.glyph}</ToolGlyph>
+            ENRICH
+            <KeyHint>[7]</KeyHint>
+          </ToolBtn>
+          {showEnrichDropdown && activeTool === 'enrich' && (
+            <EnrichDropdown>
+              {ENRICHMENT_OPTIONS.map(opt => (
+                <EnrichOption
+                  key={opt.type}
+                  selected={selectedEnrichment === opt.type}
+                  onClick={() => { onEnrichmentChange(opt.type); setShowEnrichDropdown(false) }}
+                  title={opt.hint}
+                >
+                  {opt.glyph}  {opt.label}
+                  <span style={{ marginLeft: 6, opacity: 0.5, fontSize: 9 }}>{opt.hint}</span>
+                </EnrichOption>
+              ))}
+            </EnrichDropdown>
+          )}
+        </div>
       </ToolGroup>
 
       <Spacer />

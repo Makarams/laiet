@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { v4 as uuid } from 'uuid'
 import {
-  GameState, Creature, EventAction, CaretakerState, CaretakerProfile
+  GameState, Creature, EventAction, CaretakerState, CaretakerProfile, EnrichmentType, EnrichmentItem
 } from '@/types'
 import { tickSimulation, computePassiveTicks, computeAbsenceHours } from '@/engine/tick'
 import { generateAbsenceMessage } from '@/engine/messages'
@@ -14,6 +14,7 @@ import {
   HEAL_CHARGES_PER_DAY, HEAL_AMOUNT,
   THUNDER_COOLDOWN_MS, THUNDER_CHARGES_PER_DAY, THUNDER_DAMAGE_RADIUS,
   FIRE_COOLDOWN_MS, FIRE_CHARGES_PER_DAY, FIRE_DURATION_TICKS,
+  ENRICHMENT_MAX_USES,
 } from '@/engine/constants'
 
 // ─── Default caretaker state ──────────────────────────────────────────────────
@@ -96,6 +97,9 @@ interface LaietStore {
   // Environmental tools
   thunderStrike: (x: number, y: number) => void
   igniteFire:    (x: number, y: number) => void
+  // Enrichment
+  placeEnrichment: (x: number, y: number, type: EnrichmentType) => void
+  removeEnrichment: (id: string) => void
 
   // UI state
   selectedCreatureId: string | null
@@ -155,6 +159,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
       colonyStage: 'genesis',
       awarenessStage: 1,
       endgame: null,
+      enrichmentItems: {},
       weather: 'clear' as const,
       weatherTimer: 20 + Math.random() * 15,
       totalCreaturesEver: 4,
@@ -302,7 +307,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     if (!state) return
     const now = Date.now()
     const cooldown = state.modifiers?.foodDropCooldownMs ?? FOOD_DROP_COOLDOWN_MS
-    if (now - state.caretaker.lastFoodDrop < cooldown) return
+    if (now - state.caretaker.lastFoodDrop < cooldown) return  // short 0.5s anti-spam only
 
     const tiles = state.tiles.map(row => row.map(t => ({ ...t })))
     const tile = tiles[y]?.[x]
@@ -481,10 +486,49 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     })
   },
 
+  placeEnrichment: (x, y, type) => {
+    const state = get().gameState
+    if (!state) return
+    const tile = state.tiles[y]?.[x]
+    if (!tile) return
+    // Only place on passable non-water tiles
+    if (tile.type === 'rock' || tile.type === 'river' || tile.type === 'mountain' || tile.type === 'cliff' || tile.type === 'flooded') return
+    // One enrichment item per tile
+    const alreadyThere = Object.values(state.enrichmentItems ?? {}).find(e => e.x === x && e.y === y)
+    if (alreadyThere) return
+
+    const id = crypto.randomUUID?.() ?? `enrich-${Date.now()}`
+    const newItem: EnrichmentItem = {
+      id,
+      type,
+      x,
+      y,
+      placedOnDay: state.time.day,
+      usedBy: null,
+      totalUses: 0,
+      maxUses: ENRICHMENT_MAX_USES,
+      usesRemaining: ENRICHMENT_MAX_USES,
+    }
+    set({
+      gameState: {
+        ...state,
+        enrichmentItems: { ...(state.enrichmentItems ?? {}), [id]: newItem },
+        caretaker: { ...state.caretaker, ...applyCaretakerPresence(state.caretaker, x, y) },
+      },
+    })
+  },
+
+  removeEnrichment: (id) => {
+    const state = get().gameState
+    if (!state) return
+    const items = { ...(state.enrichmentItems ?? {}) }
+    delete items[id]
+    set({ gameState: { ...state, enrichmentItems: items } })
+  },
+
   healCreature: (creatureId) => {
     const state = get().gameState
     if (!state) return
-    if (state.caretaker.healCharges <= 0) return
 
     const creature = state.creatures[creatureId]
     if (!creature || creature.diedOnDay !== null) return
@@ -493,6 +537,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     creatures[creatureId] = {
       ...creature,
       health: Math.min(100, creature.health + HEAL_AMOUNT),
+      stress: Math.max(0, creature.stress - 20),
       state: 'idle',
     }
 
@@ -502,7 +547,6 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
         creatures,
         caretaker: {
           ...state.caretaker,
-          healCharges: state.caretaker.healCharges - 1,
           ...applyCaretakerPresence(state.caretaker, creature.x, creature.y),
         },
       }
@@ -538,7 +582,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
 
   redirectRiver: (fromX, fromY, toX, toY) => {
     const state = get().gameState
-    if (!state || state.caretaker.riverRedirectUsed) return
+    if (!state) return
 
     const tiles = state.tiles.map(row => row.map(t => ({ ...t })))
     if (tiles[fromY]?.[fromX]) tiles[fromY][fromX].type = 'mud'
@@ -553,8 +597,6 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
         tiles,
         caretaker: {
           ...state.caretaker,
-          riverRedirectUsed: true,
-          lastSeasonRedirect: state.time.season,
           ...applyCaretakerPresence(state.caretaker, toX, toY),
         },
       }

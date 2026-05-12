@@ -3,16 +3,16 @@ import styled from 'styled-components'
 import { useLaietStore } from '@/store/gameStore'
 import {
   drawTile, drawCreature, drawAtmosphere, drawScanlines, drawVignette,
-  gridToIso, canvasOrigin, isoToGrid, resetCanvasState,
+  gridToIso, canvasOrigin, isoToGrid, resetCanvasState, drawEnrichmentItem,
 } from '@/ui/renderer'
 import { WORLD_SIZE, ISO_TILE_HEIGHT } from '@/engine/constants'
-import type { GameState, Season } from '@/types'
+import type { GameState, Season, EnrichmentType } from '@/types'
 
 const TICK_MS = 1000
 
-const ZOOM_MIN  = 0.18
+const ZOOM_MIN  = 0.08
 const ZOOM_MAX  = 5.0
-const ZOOM_INIT = 2.0   // start zoomed into the colony center; zoom out with scroll or '-'
+const ZOOM_INIT = 1.0   // 240×240 world — start at 1× so colony area is visible; zoom with scroll
 
 const CanvasWrapper = styled.div`
   position: relative;
@@ -108,10 +108,11 @@ const CameraHelp = styled.div`
   line-height: 1.6;
 `
 
-type Tool = 'select' | 'food' | 'tree' | 'river' | 'thunder' | 'fire'
+type Tool = 'select' | 'food' | 'tree' | 'river' | 'thunder' | 'fire' | 'enrich'
 
 interface GameCanvasProps {
   activeTool: Tool
+  selectedEnrichment?: EnrichmentType
 }
 
 interface Camera {
@@ -169,7 +170,7 @@ const SEASON_LABELS: Record<Season, string> = {
   winter: 'winter arrives.',
 }
 
-export function GameCanvas({ activeTool }: GameCanvasProps) {
+export function GameCanvas({ activeTool, selectedEnrichment = 'rest_nest' }: GameCanvasProps) {
   const canvasRef    = useRef<HTMLCanvasElement>(null)
   const wrapperRef   = useRef<HTMLDivElement>(null)
   const gameState    = useLaietStore(s => s.gameState)
@@ -182,6 +183,7 @@ export function GameCanvas({ activeTool }: GameCanvasProps) {
   const thunderStrike = useLaietStore(s => s.thunderStrike)
   const igniteFire    = useLaietStore(s => s.igniteFire)
   const redirectRiver = useLaietStore(s => s.redirectRiver)
+  const placeEnrichment = useLaietStore(s => s.placeEnrichment)
 
   // Canvas pixel dimensions — updated by ResizeObserver
   const [cw, setCw] = useState(1120)
@@ -382,10 +384,21 @@ export function GameCanvas({ activeTool }: GameCanvasProps) {
         .sort((a, b) => (a.r.x + a.r.y) - (b.r.x + b.r.y))
 
       for (const { c, r } of alive) {
+        const orig = unrotateGrid(Math.round(r.x), Math.round(r.y), rot, WORLD_SIZE)
+        const isInCave = gs.tiles[orig.y]?.[orig.x]?.type === 'cave'
         const iso = gridToIso(r.x, r.y)
         const sx = origin.x + iso.x
         const sy = origin.y + iso.y
-        drawCreature(ctx, c, sx, sy, c.id === selectedIdRef.current, phase)
+        drawCreature(ctx, c, sx, sy, c.id === selectedIdRef.current, phase, isInCave, gs.time.day)
+      }
+
+      // Enrichment items
+      for (const item of Object.values(gs.enrichmentItems ?? {})) {
+        const ir = rotateGrid(item.x, item.y, rot, WORLD_SIZE)
+        const iso = gridToIso(ir.x, ir.y)
+        const esx = origin.x + iso.x
+        const esy = origin.y + iso.y
+        drawEnrichmentItem(ctx, item, esx, esy)
       }
 
       // River redirect preview — dotted line from source to hovered tile
@@ -532,6 +545,7 @@ export function GameCanvas({ activeTool }: GameCanvasProps) {
         }
         break
       }
+      case 'enrich': placeEnrichment(grid.x, grid.y, selectedEnrichment); break
       case 'select': {
         const creature = Object.values(gs.creatures).find(
           c => c.x === grid.x && c.y === grid.y && c.diedOnDay === null
@@ -540,7 +554,7 @@ export function GameCanvas({ activeTool }: GameCanvasProps) {
         break
       }
     }
-  }, [activeTool, dropFood, plantTree, thunderStrike, igniteFire, redirectRiver, selectCreature, eventToGrid])
+  }, [activeTool, selectedEnrichment, dropFood, plantTree, thunderStrike, igniteFire, redirectRiver, selectCreature, placeEnrichment, eventToGrid])
 
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault()
@@ -571,6 +585,7 @@ export function GameCanvas({ activeTool }: GameCanvasProps) {
       : '∙ click source tile to begin redirect ∙',
     thunder: '∙ click to strike — kills creatures + trees in radius ∙',
     fire:    '∙ click flammable tile to ignite — fire spreads ∙',
+    enrich:  '∙ click a tile to place enrichment item ∙',
   }
 
   const cam = cameraRef.current

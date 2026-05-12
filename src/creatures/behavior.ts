@@ -1,5 +1,5 @@
 import {
-  Creature, Tile, ThoughtSymbol, Season
+  Creature, Tile, ThoughtSymbol, Season, EnrichmentItem
 } from '@/types'
 import {
   HUNGER_DECAY, THIRST_DECAY, WARMTH_DECAY_BASE, WARMTH_DECAY_WINTER,
@@ -10,6 +10,8 @@ import {
   SEASON_MODIFIERS, WORLD_SIZE, CREATURE_MATURITY_TICKS,
   TILE_MOVE_MODIFIER, BIOME_THIRST_EXTRA, REPRODUCE_BOND_MIN_STRENGTH,
   RECLUSE_CROWD_RADIUS, RECLUSE_CROWD_THRESHOLD,
+  PLAY_TRIGGER_SATISFACTION, PLAY_PARTNER_RADIUS,
+  ENRICHMENT_USE_RADIUS, ENRICHMENT_EFFECTS, ENRICHMENT_COOLDOWN_TICKS,
 } from '@/engine/constants'
 import { findNearestTileOfType, findNearestInIndex, getTile, isTilePassable, TileTypeIndex } from '@/world/worldGen'
 import { tickSentience } from './factory'
@@ -95,6 +97,7 @@ function pickThought(c: Creature): ThoughtSymbol {
   if (c.state === 'mourning') return 'mourning'
   if (c.state === 'bonding') return 'bonding'
   if (c.state === 'dreaming') return 'dreaming'
+  if (c.state === 'playing' || c.state === 'using_enrichment') return 'playing'
   if (c.genome.mind === 'Sentinel') return 'watching'
   if (c.hunger > HUNGER_CRITICAL) return 'hungry'
   if (c.thirst > THIRST_CRITICAL) return 'thirsty'
@@ -112,7 +115,8 @@ export function tickBehavior(
   _allCreatures: Record<string, Creature>,
   season: Season,
   aliveCreatures: Creature[],       // pre-filtered alive array — avoids repeated Object.values
-  tileIdx?: TileTypeIndex           // pre-built index — avoids O(d²) tile scans
+  tileIdx?: TileTypeIndex,          // pre-built index — avoids O(d²) tile scans
+  enrichmentItems?: Record<string, EnrichmentItem>
 ): Partial<Creature> {
   const c = creature
   const changes: Partial<Creature> = {}
@@ -513,6 +517,92 @@ export function tickBehavior(
     }
   }
 
+  // ── 7.5. Enrichment seeking — trait-driven, state-gated, with trade-off awareness ──
+  // Creatures decide to use enrichment based on internal states, not forced logic.
+  // Aggressive creatures can displace current users. Timid avoids exposed items.
+  // Recluse avoids items if others are nearby. Cooldown prevents spam.
+  if (!targetSet && enrichmentItems && c.health > 35) {
+    const cooldownOk = !c.lastEnrichmentTick
+      || (c.stateTimer - (c.lastEnrichmentTick ?? 0)) > ENRICHMENT_COOLDOWN_TICKS
+    // Recluse avoids enrichment if others are within range — solitude first
+    const recluseBlocked = c.genome.personality === 'Recluse'
+      && aliveCreatures.some(o => o.id !== c.id && Math.abs(o.x - c.x) <= 4 && Math.abs(o.y - c.y) <= 4)
+
+    if (cooldownOk && !recluseBlocked) {
+      // Score items by trait preference. Highest score item wins.
+      const items = Object.values(enrichmentItems)
+      let bestItem: (typeof items)[0] | null = null
+      let bestScore = -1
+
+      for (const item of items) {
+        const dx = Math.abs(item.x - c.x)
+        const dy = Math.abs(item.y - c.y)
+        const dist = dx + dy
+        if (dist > 10) continue
+        // Skip items occupied by someone else unless Aggressive (can displace)
+        if (item.usedBy && item.usedBy !== c.id && c.genome.personality !== 'Aggressive') continue
+
+        // Trade-off gates: don't use energy_cache when not hungry, don't rest when stressed
+        if (item.type === 'energy_cache' && c.hunger < 25) continue
+        if (item.type === 'rest_nest' && c.stress > 75) continue
+        // Timid avoids terrain_feature (exposed position)
+        if (item.type === 'terrain_feature' && c.genome.personality === 'Timid' && c.stress < 70) continue
+
+        // Trait-preference scoring
+        let score = 1.0
+        if (c.genome.personality === 'Lazy'       && item.type === 'rest_nest')       score = 3.0
+        if (c.genome.personality === 'Curious'    && item.type === 'terrain_feature') score = 3.0
+        if (c.genome.personality === 'Nurturing'  && item.type === 'play_toy')        score = 2.5
+        if (c.genome.personality === 'Aggressive' && item.type === 'shelter_den')     score = 0.3 // hate hiding
+        if (c.genome.mind === 'Sentinel'          && item.type === 'terrain_feature') score *= 2.0
+        if (c.genome.mind === 'Dreaming'          && item.type === 'terrain_feature') score *= 1.5
+        // Prefer closer items
+        score *= (11 - dist) / 10
+
+        if (score > bestScore) { bestScore = score; bestItem = item }
+      }
+
+      if (bestItem && Math.random() < 0.06 * bestScore) {
+        const atItem = Math.abs(bestItem.x - c.x) <= ENRICHMENT_USE_RADIUS
+          && Math.abs(bestItem.y - c.y) <= ENRICHMENT_USE_RADIUS
+        if (atItem) {
+          changes.state = 'using_enrichment'
+          changes.enrichmentTarget = bestItem.id
+          changes.lastEnrichmentTick = c.stateTimer
+          targetSet = true
+        } else {
+          changes.state = 'wandering'
+          changes.targetX = bestItem.x
+          changes.targetY = bestItem.y
+          targetSet = true
+        }
+      }
+    }
+  }
+
+  // ── 7.7. Play behavior — high-satisfaction creatures near others may play ──
+  if (!targetSet
+      && c.needSatisfaction >= PLAY_TRIGGER_SATISFACTION
+      && c.hunger < 40
+      && c.health > 60
+      && c.state !== 'playing'
+      && Math.random() < 0.04) {
+    const playPartner = aliveCreatures.find(
+      other => other.id !== c.id
+        && other.needSatisfaction >= PLAY_TRIGGER_SATISFACTION - 10
+        && Math.abs(other.x - c.x) <= PLAY_PARTNER_RADIUS
+        && Math.abs(other.y - c.y) <= PLAY_PARTNER_RADIUS
+    )
+    if (playPartner) {
+      changes.state = 'playing'
+      changes.targetX = playPartner.x
+      changes.targetY = playPartner.y
+      changes.currentThought = 'playing'
+      changes.thoughtTimer = 20
+      targetSet = true
+    }
+  }
+
   // ── 8. Bond-seeking — mature non-Aggressive creatures without bonds seek partners ──
   // Recluses never actively seek bonds (solitude is their nature).
   // Wanderers seek bonds only rarely (too mobile to commit).
@@ -641,6 +731,41 @@ export function canAsexuallyReproduce(c: Creature, season: Season, populationFac
   if (c.thirst > 50) return false
   if (season === 'winter') return false
   return populationFactor > 0.6
+}
+
+// ─── Enrichment interaction ───────────────────────────────────────────────────
+
+// Apply per-tick effects of an enrichment item to a creature.
+// Trait modifiers adjust effect magnitude — trade-offs are inherent per type.
+export function applyEnrichmentEffect(creature: Creature, itemType: string, partnerNearby = false): Partial<Creature> {
+  const fx = ENRICHMENT_EFFECTS[itemType]
+  if (!fx) return {}
+
+  let stressDelta = fx.stress
+  let sentDelta   = fx.sentience
+
+  // terrain_feature: Timid gets stress penalty (exposed); calm minds get bigger sentience bonus
+  if (itemType === 'terrain_feature') {
+    if (creature.genome.personality === 'Timid') stressDelta += 4.0
+    if (creature.genome.mind === 'Feral') sentDelta = 0
+  }
+
+  // play_toy: social bonus when partner is adjacent — stress reduction doubles
+  if (itemType === 'play_toy' && partnerNearby) stressDelta *= 2.0
+
+  // energy_cache: Greedy gets bigger hunger reduction (efficient forager)
+  const hungerDelta = itemType === 'energy_cache' && creature.genome.personality === 'Greedy'
+    ? fx.hunger * 1.4
+    : fx.hunger
+
+  return {
+    stress:   Math.max(0, Math.min(100, creature.stress   + stressDelta)),
+    hunger:   Math.max(0, Math.min(100, creature.hunger   + hungerDelta)),
+    thirst:   Math.max(0, Math.min(100, creature.thirst   + fx.thirst)),
+    warmth:   Math.max(0, Math.min(100, creature.warmth   + fx.warmth)),
+    health:   Math.max(0, Math.min(100, creature.health   + fx.health)),
+    sentience: Math.max(0, Math.min(100, creature.sentience + sentDelta)),
+  }
 }
 
 // ─── Fight resolution ─────────────────────────────────────────────────────────

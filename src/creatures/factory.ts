@@ -72,6 +72,19 @@ export function spawnCreature(
   }
 }
 
+// Detect which genome slots in offspring differ from BOTH parents — true mutation.
+// Returns list of slot names that changed vs. both parents.
+function detectMutations(offspring: Genome, parentA: Creature, parentB: Creature): string[] {
+  const mutated: string[] = []
+  if (offspring.personality !== parentA.genome.personality && offspring.personality !== parentB.genome.personality)
+    mutated.push('personality')
+  if (offspring.body !== parentA.genome.body && offspring.body !== parentB.genome.body)
+    mutated.push('body')
+  if (offspring.mind !== parentA.genome.mind && offspring.mind !== parentB.genome.mind)
+    mutated.push('mind')
+  return mutated
+}
+
 export function createOffspring(
   parentA: Creature,
   parentB: Creature,
@@ -88,7 +101,9 @@ export function createOffspring(
   const baseFamilyName = inheritFromA ? parentA.familyName : parentB.familyName
   const familyName = mutateFamily(baseFamilyName, rng)
 
-  return spawnCreature({
+  const mutatedTraits = detectMutations(genome, parentA, parentB)
+
+  const c = spawnCreature({
     x, y,
     name: generateName(rng),
     familyName,
@@ -98,6 +113,15 @@ export function createOffspring(
     lineageId: inheritFromA ? parentA.lineageId : parentB.lineageId,
     bornOnDay: currentDay,
   }, rng)
+
+  if (mutatedTraits.length > 0) {
+    c.recentMutation = currentDay
+    c.mutatedTraits = mutatedTraits
+    c.currentThought = 'mutated'
+    c.thoughtTimer = 30
+  }
+
+  return c
 }
 
 // Single-cell-style division — one parent, higher mutation rate.

@@ -1,4 +1,4 @@
-import { Tile, TileType, Season } from '@/types'
+import { Tile, TileType, Season, EnrichmentItem } from '@/types'
 import {
   ISO_TILE_WIDTH, ISO_TILE_HEIGHT, CANVAS_PADDING_Y,
   DEATH_SITE_DECAY_DAYS, LIGHTNING_VISUAL_DURATION_MS,
@@ -184,7 +184,36 @@ function drawTileDecoration(
       ctx.arc(cx - s, cy - trunkH + 2 * s, canopyR * 0.48, 0, Math.PI * 2)
       ctx.fill()
 
-      if (mature && (season === 'spring' || season === 'summer') && tile.shelter) {
+      // Fruit/apple drops — visible on mature trees in spring/summer/autumn
+      // These are the primary food source; creatures seek food_patches nearby.
+      if (mature && season !== 'winter') {
+        const appleOffsets: [number, number][] = [
+          [-canopyR * 0.45, canopyR * 0.20],
+          [ canopyR * 0.50, canopyR * 0.10],
+          [ canopyR * 0.15, canopyR * 0.40],
+          [-canopyR * 0.20, canopyR * 0.38],
+        ]
+        const appleColor = season === 'autumn' ? '#cc4420' : '#cc2828'
+        const appleHighlight = season === 'autumn' ? '#ff8040' : '#ff5050'
+        const canopyTopY = cy - trunkH + 4 * s
+        for (const [aox, aoy] of appleOffsets) {
+          ctx.fillStyle = appleColor
+          ctx.beginPath()
+          ctx.arc(cx + aox, canopyTopY + aoy, 1.4 * s, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.fillStyle = appleHighlight
+          ctx.beginPath()
+          ctx.arc(cx + aox - 0.4 * s, canopyTopY + aoy - 0.4 * s, 0.5 * s, 0, Math.PI * 2)
+          ctx.fill()
+          // Tiny stem
+          ctx.strokeStyle = '#5a3a10'
+          ctx.lineWidth = 0.5
+          ctx.beginPath()
+          ctx.moveTo(cx + aox, canopyTopY + aoy - 1.4 * s)
+          ctx.lineTo(cx + aox, canopyTopY + aoy - 2.2 * s)
+          ctx.stroke()
+        }
+      } else if (mature && (season === 'spring' || season === 'summer') && tile.shelter) {
         ctx.fillStyle = 'rgba(168, 255, 192, 0.65)'
         const fp: [number, number][] = [[-canopyR * 0.5, -canopyR * 0.3], [canopyR * 0.6, canopyR * 0.1]]
         for (const [dx, dy] of fp) {
@@ -604,6 +633,80 @@ function drawLightningEffect(
       ctx.lineTo(forkPt.x + 4 * s, forkPt.y + 5 * s)
       ctx.stroke()
     }
+  }
+
+  ctx.restore()
+}
+
+// ─── Enrichment item rendering ────────────────────────────────────────────────
+// Five condensed categories — each visually distinct.
+
+const ENRICHMENT_COLORS: Record<string, string> = {
+  rest_nest:       '#8a7050',  // warm amber — rest and recovery
+  shelter_den:     '#4a3870',  // deep violet — shelter and safety
+  play_toy:        '#d05858',  // vibrant coral — play and social
+  energy_cache:    '#4a9858',  // leaf green — energy regulation
+  terrain_feature: '#5888b8',  // sky blue — environmental observation
+}
+
+const ENRICHMENT_GLYPHS: Record<string, string> = {
+  rest_nest:       '≈',   // wavy rest symbol
+  shelter_den:     '◡',   // cupped shelter
+  play_toy:        '●',   // round toy
+  energy_cache:    '◈',   // geometric resource store
+  terrain_feature: '△',   // elevation / perch
+}
+
+export function drawEnrichmentItem(
+  ctx: CanvasRenderingContext2D,
+  item: EnrichmentItem,
+  screenX: number,
+  screenY: number
+): void {
+  const s = ISO_TILE_HEIGHT / 18
+  const cx = screenX
+  const cy = screenY + ISO_TILE_HEIGHT * 0.5
+  const color = ENRICHMENT_COLORS[item.type] ?? '#8888b8'
+  const pulse = item.usedBy ? 0.55 + Math.sin(Date.now() / 200) * 0.45 : 1.0
+
+  // Durability fade — as uses run out, item becomes more transparent
+  const maxUses = item.maxUses ?? 40
+  const durabilityAlpha = Math.max(0.35, (item.usesRemaining ?? maxUses) / maxUses)
+
+  ctx.save()
+  ctx.globalAlpha = 0.85 * durabilityAlpha
+
+  // Base platform
+  ctx.fillStyle = color + '55'
+  ctx.strokeStyle = color
+  ctx.lineWidth = 0.8
+  ctx.beginPath()
+  ctx.ellipse(cx, cy + 2 * s, 5 * s, 2 * s, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.stroke()
+
+  // Glyph label
+  ctx.globalAlpha = pulse * 0.90 * durabilityAlpha
+  ctx.font = `bold ${Math.round(7 * s)}px monospace`
+  ctx.fillStyle = color
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.shadowBlur = 4
+  ctx.shadowColor = color
+  ctx.fillText(ENRICHMENT_GLYPHS[item.type] ?? '?', cx, cy - 1 * s)
+  ctx.shadowBlur = 0
+
+  // "In use" shimmer ring — pulses when actively used
+  if (item.usedBy) {
+    const shimR = 6 * s + Math.sin(Date.now() / 150) * 1.2 * s
+    ctx.globalAlpha = 0.35 * durabilityAlpha
+    ctx.strokeStyle = color
+    ctx.lineWidth = 0.7
+    ctx.setLineDash([2, 2])
+    ctx.beginPath()
+    ctx.arc(cx, cy, shimR, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.setLineDash([])
   }
 
   ctx.restore()
