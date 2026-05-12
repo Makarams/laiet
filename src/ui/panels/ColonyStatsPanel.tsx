@@ -1,6 +1,7 @@
 import styled from 'styled-components'
 import { useLaietStore } from '@/store/gameStore'
 import { ColonyStage, WeatherState } from '@/types'
+import { HEAL_CHARGES_PER_DAY } from '@/engine/constants'
 
 // ─── Layout ──────────────────────────────────────────────────────────────────
 
@@ -309,7 +310,8 @@ export function ColonyStatsPanel() {
 
   if (!gameState) return null
 
-  const { creatures, colonyStage, awarenessStage, totalDeaths, totalCreaturesEver, weather, weatherTimer } = gameState
+  const { creatures, colonyStage, awarenessStage, totalDeaths, totalCreaturesEver, weather, weatherTimer, caretaker } = gameState
+  const maxHealCharges = HEAL_CHARGES_PER_DAY
   const alive = Object.values(creatures).filter(c => c.diedOnDay === null)
   const maxGen = alive.length > 0 ? Math.max(...alive.map(c => c.generation)) : 0
 
@@ -438,12 +440,16 @@ export function ColonyStatsPanel() {
           <Value accent='#d088ff'>◈ omnipresent</Value>
         </Row>
         <Row style={{ marginTop: 4 }}>
-          <Label>heal</Label>
-          <Value accent='#80f0a0'>◉ unlimited</Value>
+          <Label>heal charges</Label>
+          <Value accent={caretaker.healCharges > 0 ? '#80f0a0' : '#ff5060'}>
+            {caretaker.healCharges}/{maxHealCharges}
+          </Value>
         </Row>
         <Row>
-          <Label>tools</Label>
-          <Value accent='#80f0a0'>◉ no caps</Value>
+          <Label>river redirect</Label>
+          <Value accent={caretaker.riverRedirectUsed ? '#ff8050' : '#80f0a0'}>
+            {caretaker.riverRedirectUsed ? '◌ used' : '◉ ready'}
+          </Value>
         </Row>
         <Row>
           <Label>enrichment</Label>

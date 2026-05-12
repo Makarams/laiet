@@ -529,9 +529,11 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
   healCreature: (creatureId) => {
     const state = get().gameState
     if (!state) return
+    if (state.caretaker.healCharges <= 0) return
 
     const creature = state.creatures[creatureId]
     if (!creature || creature.diedOnDay !== null) return
+    if (creature.health >= 80) return
 
     const creatures = { ...state.creatures }
     creatures[creatureId] = {
@@ -547,6 +549,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
         creatures,
         caretaker: {
           ...state.caretaker,
+          healCharges: state.caretaker.healCharges - 1,
           ...applyCaretakerPresence(state.caretaker, creature.x, creature.y),
         },
       }
@@ -583,6 +586,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
   redirectRiver: (fromX, fromY, toX, toY) => {
     const state = get().gameState
     if (!state) return
+    if (state.caretaker.riverRedirectUsed) return
 
     const tiles = state.tiles.map(row => row.map(t => ({ ...t })))
     if (tiles[fromY]?.[fromX]) tiles[fromY][fromX].type = 'mud'
@@ -597,6 +601,8 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
         tiles,
         caretaker: {
           ...state.caretaker,
+          riverRedirectUsed: true,
+          lastSeasonRedirect: state.time.season,
           ...applyCaretakerPresence(state.caretaker, toX, toY),
         },
       }

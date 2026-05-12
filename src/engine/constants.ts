@@ -100,19 +100,19 @@ export const FOOD_REGROW_MULTIPLIER: Record<string, number> = {
 export const TREE_GROW_DAYS = 2 * 60
 export const WATER_REPLENISH_RATE = 0.5           // river refills faster
 
-// ─── Caretaker — God-mode: no hard caps, only cooldowns ──────────────────────
-export const HEAL_CHARGES_PER_DAY = 999          // effectively unlimited
+// ─── Caretaker ───────────────────────────────────────────────────────────────
+export const HEAL_CHARGES_PER_DAY = 3            // resets each real day
 export const HEAL_AMOUNT = 40
-export const FOOD_DROP_COOLDOWN_MS = 500          // 0.5s — near instant
+export const FOOD_DROP_COOLDOWN_MS = 5_000        // 5s between food drops
 
-// ─── Environmental tools — unlimited by default; cooldowns prevent spam ───────
-export const THUNDER_COOLDOWN_MS    = 1_500       // 1.5s between strikes
-export const THUNDER_CHARGES_PER_DAY = 999        // no daily cap
+// ─── Environmental tools ──────────────────────────────────────────────────────
+export const THUNDER_COOLDOWN_MS    = 12_000      // 12s between strikes
+export const THUNDER_CHARGES_PER_DAY = 2          // 2 strikes per real day
 export const THUNDER_DAMAGE_RADIUS   = 1          // tiles around the strike
 export const THUNDER_LETHAL_HEALTH   = 100        // kills outright in radius
 
-export const FIRE_COOLDOWN_MS      = 1_500        // 1.5s between ignitions
-export const FIRE_CHARGES_PER_DAY  = 999          // no daily cap
+export const FIRE_COOLDOWN_MS      = 8_000        // 8s between ignitions
+export const FIRE_CHARGES_PER_DAY  = 3            // 3 ignitions per real day
 export const FIRE_DURATION_TICKS   = 14           // a burning tile burns this long
 export const FIRE_SPREAD_CHANCE    = 0.10         // per adjacent tree per tick
 export const FIRE_TICK_DAMAGE      = 12           // health damage per tick standing on fire
@@ -274,20 +274,17 @@ export const ENRICHMENT_COOLDOWN_TICKS = 80    // sim ticks before creature can 
 export const ENRICHMENT_MAX_USES = 40          // item degrades and disappears after this many uses
 
 // Effects per enrichment type — stat delta per tick while in use.
-// Each type has a meaningful trade-off so no item is purely beneficial.
-//   rest_nest:       stress↓, warmth↑, hunger↑ (idle burns energy)
-//   shelter_den:     stress↓↓, warmth↑↑, hunger↑↑ (isolation cost; can't bond while hidden)
-//   play_toy:        stress↓, hunger↑ (physical play costs energy)
-//   energy_cache:    hunger↓ (feeds), thirst↑ (digestion) — stress+ applied externally if contested
-//   terrain_feature: sentience↑ (Aware/Dreaming/Sentinel only), stress- for calm traits, +stress Timid
 export const ENRICHMENT_EFFECTS: Record<string, {
-  stress: number; hunger: number; thirst: number; warmth: number; health: number; sentience: number
+  stress: number; hunger: number; thirst: number; warmth: number; health: number
 }> = {
-  rest_nest:       { stress: -2.5, hunger:  0.8, thirst:  0.0, warmth:  1.2, health:  0.1, sentience:  0.00 },
-  shelter_den:     { stress: -4.0, hunger:  1.2, thirst:  0.0, warmth:  2.5, health:  0.1, sentience:  0.00 },
-  play_toy:        { stress: -3.5, hunger:  1.8, thirst:  0.5, warmth:  0.0, health:  0.0, sentience:  0.00 },
-  energy_cache:    { stress:  0.0, hunger: -8.0, thirst:  2.0, warmth:  0.0, health:  0.0, sentience:  0.00 },
-  terrain_feature: { stress: -1.5, hunger:  0.0, thirst:  0.0, warmth:  0.0, health:  0.0, sentience:  0.03 },
+  resting_spot:    { stress: -2.0, hunger:  0.0, thirst:  0.0, warmth:  0.5, health:  0.1 },
+  scratching_post: { stress: -2.5, hunger:  0.0, thirst:  0.0, warmth:  0.0, health:  0.0 },
+  burrow:          { stress: -1.5, hunger:  0.0, thirst:  0.0, warmth:  1.5, health:  0.05 },
+  warm_stone:      { stress: -1.0, hunger:  0.0, thirst:  0.0, warmth:  3.0, health:  0.1 },
+  bathtub:         { stress: -2.0, hunger:  0.0, thirst: -8.0, warmth:  0.5, health:  0.0 },
+  hamster_wheel:   { stress: -1.8, hunger:  1.5, thirst:  0.5, warmth:  0.5, health:  0.15 },
+  toy_ball:        { stress: -3.0, hunger:  0.5, thirst:  0.0, warmth:  0.0, health:  0.0 },
+  trampoline:      { stress: -3.5, hunger:  1.0, thirst:  0.5, warmth:  0.0, health:  0.0 },
 }
 
 // ─── Natural enrichment — passive bonuses from world terrain ─────────────────

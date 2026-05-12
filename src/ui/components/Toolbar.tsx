@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import styled from 'styled-components'
 import { Season, DayPhase, ColonyStage, MessageStage, EnrichmentType } from '@/types'
+import { useLaietStore } from '@/store/gameStore'
+import { THUNDER_CHARGES_PER_DAY, FIRE_CHARGES_PER_DAY } from '@/engine/constants'
 
 const Bar = styled.div`
   display: flex;
@@ -208,6 +210,23 @@ const SpeedBtn = styled.button<{ active: boolean }>`
   &:hover { background: rgba(180, 160, 240, 0.10); color: #c0a8ff; }
 `
 
+// ─── Charge badge ────────────────────────────────────────────────────────────
+
+const ChargeBadge = styled.span<{ empty: boolean }>`
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  background: ${p => p.empty ? '#3a1a1a' : '#0e2018'};
+  border: 1px solid ${p => p.empty ? '#7a2828' : '#3a6a3a'};
+  color: ${p => p.empty ? '#ff5060' : '#80f0a0'};
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 2px;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+  font-weight: bold;
+`
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const SEASON_GLYPH: Record<Season, string> = {
@@ -275,13 +294,15 @@ const EnrichOption = styled.button<{ selected: boolean }>`
   &:last-child { border-bottom: none; }
 `
 
-// Five condensed enrichment categories — each has a meaningful trade-off.
 const ENRICHMENT_OPTIONS: { type: EnrichmentType; label: string; glyph: string; hint: string }[] = [
-  { type: 'rest_nest',       label: 'Rest Nest',       glyph: '≈', hint: 'stress↓ · hunger↑' },
-  { type: 'shelter_den',     label: 'Shelter Den',     glyph: '◡', hint: 'stress↓↓ · warmth↑ · isolates' },
-  { type: 'play_toy',        label: 'Play Toy',        glyph: '●', hint: 'stress↓ · hunger↑ · social bonus' },
-  { type: 'energy_cache',    label: 'Energy Cache',    glyph: '◈', hint: 'hunger↓ · thirst↑ · contested' },
-  { type: 'terrain_feature', label: 'Terrain Feature', glyph: '△', hint: 'sentience↑ · exposed' },
+  { type: 'resting_spot',    label: 'Resting Spot',    glyph: '≈', hint: 'stress↓ · warmth↑' },
+  { type: 'scratching_post', label: 'Scratching Post', glyph: '|', hint: 'stress↓↓' },
+  { type: 'burrow',          label: 'Burrow',          glyph: 'U', hint: 'stress↓ · warmth↑↑' },
+  { type: 'warm_stone',      label: 'Warm Stone',      glyph: '◆', hint: 'warmth↑↑↑ · stress↓' },
+  { type: 'bathtub',         label: 'Bathtub',         glyph: '~', hint: 'thirst↓↓ · stress↓' },
+  { type: 'hamster_wheel',   label: 'Hamster Wheel',   glyph: '○', hint: 'stress↓ · hunger↑' },
+  { type: 'toy_ball',        label: 'Toy Ball',        glyph: '●', hint: 'stress↓↓ · social bonus' },
+  { type: 'trampoline',      label: 'Trampoline',      glyph: '^', hint: 'stress↓↓↓ · hunger↑' },
 ]
 
 interface ToolbarProps {
@@ -313,14 +334,18 @@ export function Toolbar({
   selectedEnrichment, onEnrichmentChange,
 }: ToolbarProps) {
   const [showEnrichDropdown, setShowEnrichDropdown] = useState(false)
+  const caretaker = useLaietStore(s => s.gameState?.caretaker)
 
-  const tools: { key: Tool; label: string; glyph: string; hotkey: string; accent: string }[] = [
+  const thunderCharges = caretaker?.thunderChargesToday ?? THUNDER_CHARGES_PER_DAY
+  const fireCharges    = caretaker?.fireChargesToday    ?? FIRE_CHARGES_PER_DAY
+
+  const tools: { key: Tool; label: string; glyph: string; hotkey: string; accent: string; charge?: { used: number; max: number } }[] = [
     { key: 'select',  label: 'OBSERVE',  glyph: '◎', hotkey: '1', accent: '#5ec8e0' },
     { key: 'food',    label: 'FEED',     glyph: '✦', hotkey: '2', accent: '#80f0a0' },
     { key: 'tree',    label: 'PLANT',    glyph: '⬡', hotkey: '3', accent: '#a8c060' },
     { key: 'river',   label: 'REDIRECT', glyph: '≋', hotkey: '4', accent: '#80c8ff' },
-    { key: 'thunder', label: 'STRIKE',   glyph: '⚡', hotkey: '5', accent: '#ffe060' },
-    { key: 'fire',    label: 'IGNITE',   glyph: '◈', hotkey: '6', accent: '#ff7848' },
+    { key: 'thunder', label: 'STRIKE',   glyph: '⚡', hotkey: '5', accent: '#ffe060', charge: { used: thunderCharges, max: THUNDER_CHARGES_PER_DAY } },
+    { key: 'fire',    label: 'IGNITE',   glyph: '◈', hotkey: '6', accent: '#ff7848', charge: { used: fireCharges,   max: FIRE_CHARGES_PER_DAY } },
   ]
 
   const activeEnrichOption = ENRICHMENT_OPTIONS.find(o => o.type === selectedEnrichment) ?? ENRICHMENT_OPTIONS[0]
@@ -344,6 +369,11 @@ export function Toolbar({
             <ToolGlyph>{t.glyph}</ToolGlyph>
             {t.label}
             <KeyHint>[{t.hotkey}]</KeyHint>
+            {t.charge && (
+              <ChargeBadge empty={t.charge.used <= 0}>
+                {t.charge.used}/{t.charge.max}
+              </ChargeBadge>
+            )}
           </ToolBtn>
         ))}
 

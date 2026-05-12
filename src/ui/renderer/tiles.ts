@@ -45,7 +45,7 @@ const TILE_COLORS: Record<TileType, { top: string; left: string; right: string }
   river:      { top: '#0a2848', left: '#061a32', right: '#041024' },
   mud:        { top: '#241a14', left: '#1a130e', right: '#140e0a' },
   rock:       { top: '#2e2c40', left: '#22202e', right: '#181624' },
-  food_patch: { top: '#284018', left: '#1c2e10', right: '#142208' },
+  food_patch: { top: '#1e1208', left: '#160e06', right: '#120a04' },
   barren:     { top: '#1c1820', left: '#141018', right: '#0e0a12' },
   flooded:    { top: '#0a2244', left: '#061830', right: '#040f22' },
   death_site: { top: '#2c0e1a', left: '#1e0810', right: '#16060a' },
@@ -227,25 +227,32 @@ function drawTileDecoration(
 
     case 'food_patch': {
       const fullness = Math.max(0, Math.min(1, tile.foodAmount / 100))
-      ctx.fillStyle = fullness > 0.5 ? '#305210' : '#22380a'
+      // Earthy ground for fallen fruit
+      ctx.fillStyle = fullness > 0.5 ? '#2a1808' : '#1e1206'
       ctx.beginPath()
       ctx.ellipse(cx, cy + s, 7 * s, 3 * s, 0, 0, Math.PI * 2)
       ctx.fill()
 
-      const berryColor = fullness > 0.65 ? '#88f038'
-        : fullness > 0.35 ? '#a8c040'
-        : '#807040'
+      // Red apple dots — fallen fruit from nearby trees
+      const appleColor = '#cc2828'
+      const appleHighlight = '#ff5050'
       const offsets: [number, number][] = [[-5*s, 0], [0, -2*s], [5*s, s], [-2*s, 3*s], [4*s, -1.5*s]]
       for (const [ox, oy] of offsets) {
         if (Math.abs(ox) + Math.abs(oy) < fullness * 12 * s + 3 * s) {
-          ctx.fillStyle = berryColor
+          ctx.fillStyle = appleColor
           ctx.beginPath()
           ctx.arc(cx + ox, cy + oy, 2.2 * s, 0, Math.PI * 2)
           ctx.fill()
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.28)'
+          ctx.fillStyle = appleHighlight
           ctx.beginPath()
           ctx.arc(cx + ox - 0.5 * s, cy + oy - 0.5 * s, 0.7 * s, 0, Math.PI * 2)
           ctx.fill()
+          ctx.strokeStyle = '#5a3a10'
+          ctx.lineWidth = 0.5
+          ctx.beginPath()
+          ctx.moveTo(cx + ox, cy + oy - 2.2 * s)
+          ctx.lineTo(cx + ox, cy + oy - 3.0 * s)
+          ctx.stroke()
         }
       }
       break
@@ -639,22 +646,27 @@ function drawLightningEffect(
 }
 
 // ─── Enrichment item rendering ────────────────────────────────────────────────
-// Five condensed categories — each visually distinct.
 
 const ENRICHMENT_COLORS: Record<string, string> = {
-  rest_nest:       '#8a7050',  // warm amber — rest and recovery
-  shelter_den:     '#4a3870',  // deep violet — shelter and safety
-  play_toy:        '#d05858',  // vibrant coral — play and social
-  energy_cache:    '#4a9858',  // leaf green — energy regulation
-  terrain_feature: '#5888b8',  // sky blue — environmental observation
+  resting_spot:    '#8a7050',  // warm amber — rest
+  scratching_post: '#7a5a8a',  // muted violet — physical release
+  burrow:          '#4a6038',  // earthy green — hidden shelter
+  warm_stone:      '#c08840',  // golden amber — thermal warmth
+  bathtub:         '#4878a8',  // cool blue — water soak
+  hamster_wheel:   '#a06030',  // orange-brown — active exercise
+  toy_ball:        '#c84040',  // vibrant red — energetic play
+  trampoline:      '#6868c8',  // bright indigo — exhilarating play
 }
 
 const ENRICHMENT_GLYPHS: Record<string, string> = {
-  rest_nest:       '≈',   // wavy rest symbol
-  shelter_den:     '◡',   // cupped shelter
-  play_toy:        '●',   // round toy
-  energy_cache:    '◈',   // geometric resource store
-  terrain_feature: '△',   // elevation / perch
+  resting_spot:    '≈',
+  scratching_post: '|',
+  burrow:          'U',
+  warm_stone:      '◆',
+  bathtub:         '~',
+  hamster_wheel:   '○',
+  toy_ball:        '●',
+  trampoline:      '^',
 }
 
 export function drawEnrichmentItem(

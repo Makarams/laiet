@@ -171,9 +171,28 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
     for (let x = 0; x < WORLD_SIZE; x++) {
       const t = srcTiles[y][x]
 
-      // Food regrowth — patches never permanently deplete into barren
-      if (t.type === 'food_patch' && t.foodAmount < 100) {
-        writeTile(y, x).foodAmount = Math.min(100, t.foodAmount + FOOD_REGROW_RATE_BASE * regrowMod)
+      // Food regrowth — only patches near a mature tree regenerate.
+      // Patches without a nearby mature tree wither to grass/barren when empty.
+      if (t.type === 'food_patch') {
+        let hasMatureTree = false
+        for (let dy2 = -TREE_FOOD_RADIUS; dy2 <= TREE_FOOD_RADIUS && !hasMatureTree; dy2++) {
+          for (let dx2 = -TREE_FOOD_RADIUS; dx2 <= TREE_FOOD_RADIUS && !hasMatureTree; dx2++) {
+            if (dx2 === 0 && dy2 === 0) continue
+            const tx2 = x + dx2, ty2 = y + dy2
+            if (tx2 < 0 || tx2 >= WORLD_SIZE || ty2 < 0 || ty2 >= WORLD_SIZE) continue
+            const adj = srcTiles[ty2][tx2]
+            if ((adj.type === 'tree' || adj.type === 'shelter') && adj.treeAge >= TREE_FOOD_MATURE_AGE) {
+              hasMatureTree = true
+            }
+          }
+        }
+        if (hasMatureTree && t.foodAmount < 100) {
+          writeTile(y, x).foodAmount = Math.min(100, t.foodAmount + FOOD_REGROW_RATE_BASE * regrowMod)
+        } else if (!hasMatureTree && t.foodAmount <= 0) {
+          const wt = writeTile(y, x)
+          wt.type = t.biome === 'arid' ? 'barren' : 'grass'
+          wt.foodAmount = 0
+        }
       }
 
       // Rain refills rivers; drought slowly drains them
@@ -422,15 +441,6 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
         )
         const fx = applyEnrichmentEffect(c, item.type, partnerNearby)
         c = { ...c, ...fx }
-
-        // energy_cache: Aggressive competitor nearby raises stress (contest)
-        if (item.type === 'energy_cache') {
-          const competitor = aliveCreatures.find(
-            o => o.id !== c.id && o.genome.personality === 'Aggressive'
-              && Math.abs(o.x - c.x) <= 2 && Math.abs(o.y - c.y) <= 2
-          )
-          if (competitor) c.stress = Math.min(100, c.stress + 3)
-        }
 
         if ((c.stateTimer ?? 0) >= 10) {
           c.state = 'idle'

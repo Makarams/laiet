@@ -1,5 +1,5 @@
 import { Tile, TileType, BiomePatch, Season } from '@/types'
-import { WORLD_SIZE } from '@/engine/constants'
+import { WORLD_SIZE, TREE_FOOD_MATURE_AGE } from '@/engine/constants'
 
 // ─── Seeded RNG (mulberry32) ─────────────────────────────────────────────────
 
@@ -238,55 +238,37 @@ function carveCliffs(tiles: Tile[][], elevMap: number[][], rng: () => number): v
   }
 }
 
-// ─── Food patches ─────────────────────────────────────────────────────────────
-
-function scatterFood(tiles: Tile[][], rng: () => number): void {
-  const biomeFoodChance: Record<string, number> = {
-    lush:      0.32,
-    temperate: 0.22,
-    wetland:   0.18,
-    arid:      0.06,
-    rocky:     0.04,
-  }
-
-  for (let y = 0; y < WORLD_SIZE; y++) {
-    for (let x = 0; x < WORLD_SIZE; x++) {
-      const t = tiles[y][x]
-      if (t.type !== 'grass' && t.type !== 'mud') continue
-      const chance = biomeFoodChance[t.biome] ?? 0.15
-      if (rng() < chance) {
-        t.type = 'food_patch'
-        t.foodAmount = Math.floor(60 + rng() * 40)
-      }
-    }
-  }
-}
-
 // ─── Guarantee accessible resources near world center ─────────────────────────
 
 function seedCenterResources(tiles: Tile[][], rng: () => number): void {
   const cx = Math.floor(WORLD_SIZE / 2)
   const cy = Math.floor(WORLD_SIZE / 2)
-  const radius = 8   // larger search radius for 48×48 world
+  const radius = 8
 
-  let hasFoodNearCenter = false
-  for (let dy = -radius; dy <= radius && !hasFoodNearCenter; dy++) {
-    for (let dx = -radius; dx <= radius && !hasFoodNearCenter; dx++) {
+  // Ensure a mature tree exists near center — food patches require a nearby mature
+  // tree to persist and regrow; a guaranteed starter tree seeds the initial food supply.
+  let hasMatureTreeNearCenter = false
+  for (let dy = -radius; dy <= radius && !hasMatureTreeNearCenter; dy++) {
+    for (let dx = -radius; dx <= radius && !hasMatureTreeNearCenter; dx++) {
       const nx = cx + dx; const ny = cy + dy
       if (nx < 0 || nx >= WORLD_SIZE || ny < 0 || ny >= WORLD_SIZE) continue
-      if (tiles[ny][nx].type === 'food_patch') hasFoodNearCenter = true
+      const t = tiles[ny][nx]
+      if ((t.type === 'tree' || t.type === 'shelter') && t.treeAge >= TREE_FOOD_MATURE_AGE) {
+        hasMatureTreeNearCenter = true
+      }
     }
   }
 
-  if (!hasFoodNearCenter) {
+  if (!hasMatureTreeNearCenter) {
     for (let attempt = 0; attempt < 20; attempt++) {
       const fx = cx + Math.floor(rng() * (radius * 2 + 1)) - radius
       const fy = cy + Math.floor(rng() * (radius * 2 + 1)) - radius
       if (fx < 0 || fx >= WORLD_SIZE || fy < 0 || fy >= WORLD_SIZE) continue
       const t = tiles[fy][fx]
-      if (t.type === 'grass' || t.type === 'barren') {
-        t.type = 'food_patch'
-        t.foodAmount = 80
+      if (t.type === 'grass' || t.type === 'barren' || t.type === 'mud') {
+        t.type = 'tree'
+        t.treeAge = TREE_FOOD_MATURE_AGE + 50
+        t.shelter = true
         break
       }
     }
@@ -405,7 +387,6 @@ export function generateWorld(seed: number): Tile[][] {
   carveCliffs(tiles, elevMap, rng)
   digCaves(tiles, rng)
   plantTrees(tiles, elevSeed, rng)
-  scatterFood(tiles, rng)
   seedCenterResources(tiles, rng)
 
   return tiles

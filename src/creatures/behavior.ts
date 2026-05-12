@@ -542,20 +542,24 @@ export function tickBehavior(
         // Skip items occupied by someone else unless Aggressive (can displace)
         if (item.usedBy && item.usedBy !== c.id && c.genome.personality !== 'Aggressive') continue
 
-        // Trade-off gates: don't use energy_cache when not hungry, don't rest when stressed
-        if (item.type === 'energy_cache' && c.hunger < 25) continue
-        if (item.type === 'rest_nest' && c.stress > 75) continue
-        // Timid avoids terrain_feature (exposed position)
-        if (item.type === 'terrain_feature' && c.genome.personality === 'Timid' && c.stress < 70) continue
+        // Trade-off gates: respect internal state before using enrichment
+        if (item.type === 'resting_spot' && c.stress > 75) continue
+        if (item.type === 'hamster_wheel' && c.hunger > 60) continue
+        // Timid avoids high-energy exposed items unless very stressed
+        if ((item.type === 'trampoline' || item.type === 'hamster_wheel')
+            && c.genome.personality === 'Timid' && c.stress < 70) continue
 
         // Trait-preference scoring
         let score = 1.0
-        if (c.genome.personality === 'Lazy'       && item.type === 'rest_nest')       score = 3.0
-        if (c.genome.personality === 'Curious'    && item.type === 'terrain_feature') score = 3.0
-        if (c.genome.personality === 'Nurturing'  && item.type === 'play_toy')        score = 2.5
-        if (c.genome.personality === 'Aggressive' && item.type === 'shelter_den')     score = 0.3 // hate hiding
-        if (c.genome.mind === 'Sentinel'          && item.type === 'terrain_feature') score *= 2.0
-        if (c.genome.mind === 'Dreaming'          && item.type === 'terrain_feature') score *= 1.5
+        if (c.genome.personality === 'Lazy'       && item.type === 'resting_spot')   score = 3.0
+        if (c.genome.personality === 'Lazy'       && item.type === 'warm_stone')      score = 2.5
+        if (c.genome.personality === 'Curious'    && item.type === 'hamster_wheel')   score = 3.0
+        if (c.genome.personality === 'Curious'    && item.type === 'trampoline')      score = 2.5
+        if (c.genome.personality === 'Nurturing'  && item.type === 'toy_ball')        score = 2.5
+        if (c.genome.personality === 'Timid'      && item.type === 'burrow')          score = 3.0
+        if (c.genome.personality === 'Aggressive' && item.type === 'burrow')          score = 0.3
+        if (c.genome.mind === 'Sentinel'          && item.type === 'warm_stone')      score *= 2.0
+        if (c.genome.mind === 'Dreaming'          && item.type === 'resting_spot')    score *= 1.5
         // Prefer closer items
         score *= (11 - dist) / 10
 
@@ -742,29 +746,19 @@ export function applyEnrichmentEffect(creature: Creature, itemType: string, part
   if (!fx) return {}
 
   let stressDelta = fx.stress
-  let sentDelta   = fx.sentience
 
-  // terrain_feature: Timid gets stress penalty (exposed); calm minds get bigger sentience bonus
-  if (itemType === 'terrain_feature') {
-    if (creature.genome.personality === 'Timid') stressDelta += 4.0
-    if (creature.genome.mind === 'Feral') sentDelta = 0
-  }
+  // toy_ball: social bonus when partner is adjacent — stress reduction doubles
+  if (itemType === 'toy_ball' && partnerNearby) stressDelta *= 2.0
 
-  // play_toy: social bonus when partner is adjacent — stress reduction doubles
-  if (itemType === 'play_toy' && partnerNearby) stressDelta *= 2.0
-
-  // energy_cache: Greedy gets bigger hunger reduction (efficient forager)
-  const hungerDelta = itemType === 'energy_cache' && creature.genome.personality === 'Greedy'
-    ? fx.hunger * 1.4
-    : fx.hunger
+  // warm_stone: Timid gets extra stress relief from thermal safety
+  if (itemType === 'warm_stone' && creature.genome.personality === 'Timid') stressDelta -= 1.0
 
   return {
-    stress:   Math.max(0, Math.min(100, creature.stress   + stressDelta)),
-    hunger:   Math.max(0, Math.min(100, creature.hunger   + hungerDelta)),
-    thirst:   Math.max(0, Math.min(100, creature.thirst   + fx.thirst)),
-    warmth:   Math.max(0, Math.min(100, creature.warmth   + fx.warmth)),
-    health:   Math.max(0, Math.min(100, creature.health   + fx.health)),
-    sentience: Math.max(0, Math.min(100, creature.sentience + sentDelta)),
+    stress: Math.max(0, Math.min(100, creature.stress + stressDelta)),
+    hunger: Math.max(0, Math.min(100, creature.hunger + fx.hunger)),
+    thirst: Math.max(0, Math.min(100, creature.thirst + fx.thirst)),
+    warmth: Math.max(0, Math.min(100, creature.warmth + fx.warmth)),
+    health: Math.max(0, Math.min(100, creature.health + fx.health)),
   }
 }
 

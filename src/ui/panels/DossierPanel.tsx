@@ -428,6 +428,7 @@ export function DossierPanel() {
   const healCreature = useLaietStore(s => s.healCreature)
 
   const creature = selectedId ? gameState?.creatures[selectedId] : null
+  const caretaker = gameState?.caretaker
 
   if (!creature || creature.diedOnDay !== null) {
     const alive = gameState ? Object.values(gameState.creatures).filter(c => c.diedOnDay === null) : []
@@ -525,9 +526,9 @@ export function DossierPanel() {
       <Section>
         <SectionTitle>vitals</SectionTitle>
 
-        {creature.health < 95 && (
+        {caretaker && caretaker.healCharges > 0 && creature.health < 80 && (
           <HealBtn onClick={() => healCreature(creature.id)}>
-            ♥ HEAL
+            ♥ HEAL ({caretaker.healCharges} left)
           </HealBtn>
         )}
 

@@ -167,14 +167,16 @@ export interface Tile {
 }
 
 // ─── Enrichment ───────────────────────────────────────────────────────────────
-// Five condensed categories — each introduces a meaningful trade-off.
 
 export type EnrichmentType =
-  | 'rest_nest'       // Rest & Recovery      — stress↓ at cost of hunger (idle burns energy)
-  | 'shelter_den'     // Safety & Shelter     — stress↓↓, warmth↑, but isolates from bonding
-  | 'play_toy'        // Play & Social        — stress↓, energy cost; social bonus if partner nearby
-  | 'energy_cache'    // Energy Regulation    — hunger↓, but thirst↑ and stress+ if contested
-  | 'terrain_feature' // Environmental Interact — sentience↑ (Aware/Dreaming/Sentinel), exposed (+stress for Timid)
+  | 'resting_spot'    // stress↓, warmth↑ slight — calm rest
+  | 'scratching_post' // stress↓↓ — physical release, no hunger cost
+  | 'burrow'          // stress↓, warmth↑↑ — hidden warm shelter
+  | 'warm_stone'      // warmth↑↑↑ — thermal comfort; stress↓ slight
+  | 'bathtub'         // thirst↓↓, stress↓ — cooling soak
+  | 'hamster_wheel'   // stress↓, hunger↑ — active exercise
+  | 'toy_ball'        // stress↓↓, hunger↑ slight — energetic play; social bonus with partner
+  | 'trampoline'      // stress↓↓↓, hunger↑, health↑ slight — exhilarating play
 
 export interface EnrichmentItem {
   id: string

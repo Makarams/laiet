@@ -170,7 +170,7 @@ const SEASON_LABELS: Record<Season, string> = {
   winter: 'winter arrives.',
 }
 
-export function GameCanvas({ activeTool, selectedEnrichment = 'rest_nest' }: GameCanvasProps) {
+export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: GameCanvasProps) {
   const canvasRef    = useRef<HTMLCanvasElement>(null)
   const wrapperRef   = useRef<HTMLDivElement>(null)
   const gameState    = useLaietStore(s => s.gameState)

@@ -290,7 +290,7 @@ export function GameLayout() {
   const setSimSpeed    = useLaietStore(s => s.setSimSpeed)
 
   const [activeTool, setActiveTool] = useState<Tool>('select')
-  const [selectedEnrichment, setSelectedEnrichment] = useState<EnrichmentType>('rest_nest')
+  const [selectedEnrichment, setSelectedEnrichment] = useState<EnrichmentType>('resting_spot')
   const [muted, setMutedState] = useState(isMuted())
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
   const [showRestartConfirm, setShowRestartConfirm] = useState(false)
