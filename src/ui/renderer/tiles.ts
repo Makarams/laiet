@@ -55,17 +55,17 @@ const TILE_COLORS: Record<TileType, { top: string; left: string; right: string }
   mountain:   { top: '#5e5c72', left: '#44425a', right: '#323046' },
   cave:       { top: '#201e2c', left: '#16141e', right: '#0e0c16' },
   cliff:      { top: '#3e3c52', left: '#2c2a3e', right: '#201e2c' },
-  bush:       { top: '#1e4c18', left: '#14320e', right: '#0e2408' },
+  bush:       { top: '#1a4016', left: '#112a0e', right: '#0c1e0a' },
 }
 
 // Biome tint — painted over the top face only, giving each biome a chromatic
 // identity that layers on top of tile type without overwriting it.
 const BIOME_TOP_TINTS: Partial<Record<string, string>> = {
-  temperate: 'rgba(80, 160, 40, 0.07)',
-  lush:      'rgba(40, 200, 70, 0.11)',
-  arid:      'rgba(220, 148, 40, 0.10)',
-  wetland:   'rgba(28, 100, 140, 0.09)',
-  rocky:     'rgba(110, 105, 130, 0.08)',
+  temperate: 'rgba(80, 160, 40, 0.12)',
+  lush:      'rgba(40, 200, 70, 0.17)',
+  arid:      'rgba(220, 148, 40, 0.16)',
+  wetland:   'rgba(28, 100, 140, 0.14)',
+  rocky:     'rgba(110, 105, 130, 0.13)',
 }
 
 const SEASON_TINT: Record<Season, string> = {
@@ -580,63 +580,65 @@ function drawTileDecoration(
     }
 
     case 'bush': {
+      // bs ensures foliage is visible at all zoom levels; at default zoom (s=0.5), bs=1.0
+      const bs = Math.max(1.0, s * 2)
       const foodLevel = Math.max(0, Math.min(1, tile.foodAmount / 35))
       const isWinter = season === 'winter'
       const isAutumn = season === 'autumn'
 
       // Ground shadow
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.16)'
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.22)'
       ctx.beginPath()
-      ctx.ellipse(cx, cy + 0.5 * s, 5.5 * s, 1.8 * s, 0, 0, Math.PI * 2)
+      ctx.ellipse(cx, cy + 0.5 * bs, 6 * bs, 2.2 * bs, 0, 0, Math.PI * 2)
       ctx.fill()
 
       if (isWinter) {
         // Bare winter skeleton — sparse crossing branches
-        ctx.strokeStyle = 'rgba(45, 55, 38, 0.70)'
-        ctx.lineWidth = 0.9
+        ctx.strokeStyle = 'rgba(45, 55, 38, 0.75)'
+        ctx.lineWidth = Math.max(0.9, bs * 0.7)
         ctx.beginPath()
-        ctx.moveTo(cx - 3.5 * s, cy + 0.5 * s)
-        ctx.lineTo(cx + 0.5 * s, cy - 2.5 * s)
-        ctx.moveTo(cx, cy + 0.5 * s)
-        ctx.lineTo(cx, cy - 3 * s)
-        ctx.moveTo(cx + 3 * s, cy + 0.5 * s)
-        ctx.lineTo(cx - 1.5 * s, cy - 2.5 * s)
+        ctx.moveTo(cx - 4 * bs, cy + 0.5 * bs)
+        ctx.lineTo(cx + 0.5 * bs, cy - 3 * bs)
+        ctx.moveTo(cx, cy + 0.5 * bs)
+        ctx.lineTo(cx, cy - 3.5 * bs)
+        ctx.moveTo(cx + 3.5 * bs, cy + 0.5 * bs)
+        ctx.lineTo(cx - 2 * bs, cy - 3 * bs)
         ctx.stroke()
         // Thin branch tips
-        ctx.strokeStyle = 'rgba(35, 45, 28, 0.50)'
-        ctx.lineWidth = 0.5
+        ctx.strokeStyle = 'rgba(35, 45, 28, 0.55)'
+        ctx.lineWidth = Math.max(0.5, bs * 0.4)
         ctx.beginPath()
-        ctx.moveTo(cx + 0.5 * s, cy - 2.5 * s)
-        ctx.lineTo(cx + 2 * s,   cy - 3.5 * s)
-        ctx.moveTo(cx + 0.5 * s, cy - 2.5 * s)
-        ctx.lineTo(cx - 0.5 * s, cy - 3.5 * s)
-        ctx.moveTo(cx, cy - 3 * s)
-        ctx.lineTo(cx + 1.5 * s, cy - 4 * s)
+        ctx.moveTo(cx + 0.5 * bs, cy - 3 * bs)
+        ctx.lineTo(cx + 2.5 * bs, cy - 4.5 * bs)
+        ctx.moveTo(cx + 0.5 * bs, cy - 3 * bs)
+        ctx.lineTo(cx - 0.5 * bs, cy - 4.5 * bs)
+        ctx.moveTo(cx, cy - 3.5 * bs)
+        ctx.lineTo(cx + 2 * bs, cy - 5 * bs)
         ctx.stroke()
       } else {
-        // Main foliage mass
-        const bushColor = isAutumn ? '#3a4018' : '#1e5a1a'
+        // Main foliage mass — center is above tile surface so it reads as vegetation
+        const bushColor = isAutumn ? '#4a5020' : '#1e5a1a'
         ctx.fillStyle = bushColor
         ctx.beginPath()
-        ctx.ellipse(cx, cy - 1.5 * s, 4.5 * s, 3.2 * s, 0, 0, Math.PI * 2)
+        ctx.ellipse(cx, cy - 2 * bs, 5 * bs, 3.5 * bs, 0, 0, Math.PI * 2)
         ctx.fill()
 
         // Secondary leaf cluster (creates depth and asymmetry)
-        ctx.fillStyle = isAutumn ? '#2a3010' : '#175212'
+        ctx.fillStyle = isAutumn ? '#333a12' : '#175212'
         ctx.beginPath()
-        ctx.ellipse(cx + 2.2 * s, cy - 0.8 * s, 3.2 * s, 2.4 * s, 0.35, 0, Math.PI * 2)
+        ctx.ellipse(cx + 2.5 * bs, cy - 1 * bs, 3.5 * bs, 2.6 * bs, 0.35, 0, Math.PI * 2)
         ctx.fill()
 
         // Third micro cluster
-        ctx.fillStyle = isAutumn ? '#484e20' : '#226618'
+        ctx.fillStyle = isAutumn ? '#585e28' : '#226618'
         ctx.beginPath()
-        ctx.ellipse(cx - 2 * s, cy - 2 * s, 2 * s, 1.6 * s, -0.2, 0, Math.PI * 2)
+        ctx.ellipse(cx - 2.2 * bs, cy - 2.5 * bs, 2.4 * bs, 1.8 * bs, -0.2, 0, Math.PI * 2)
         ctx.fill()
 
         // Canopy highlight — catches light from upper-left
-        ctx.fillStyle = 'rgba(100, 190, 80, 0.10)'
+        ctx.fillStyle = 'rgba(100, 190, 80, 0.13)'
         ctx.beginPath()
-        ctx.ellipse(cx - 0.8 * s, cy - 2.8 * s, 2.2 * s, 1.4 * s, -0.3, 0, Math.PI * 2)
+        ctx.ellipse(cx - 1 * bs, cy - 3.5 * bs, 2.5 * bs, 1.5 * bs, -0.3, 0, Math.PI * 2)
         ctx.fill()
 
         // Berries — spring/summer/autumn when food level > 0.1
@@ -644,18 +646,18 @@ function drawTileDecoration(
           const berryColor = isAutumn ? '#cc6030' : '#cc2828'
           const berryGlow  = isAutumn ? '#ff9060' : '#ff5050'
           const berryPos: [number, number][] = [
-            [-3 * s, -0.5 * s], [0.5 * s, -2 * s], [2.5 * s, 0.5 * s],
-            [-1 * s,  s],       [3 * s,   -1.5 * s],
+            [-3.5 * bs, -0.5 * bs], [0.5 * bs, -2.5 * bs], [3 * bs, 0.5 * bs],
+            [-1 * bs,    bs],        [3.5 * bs, -2 * bs],
           ]
           for (const [bx, by] of berryPos) {
-            if (Math.abs(bx) + Math.abs(by) < foodLevel * 9 * s + 2 * s) {
+            if (Math.abs(bx) + Math.abs(by) < foodLevel * 10 * bs + 2.5 * bs) {
               ctx.fillStyle = berryColor
               ctx.beginPath()
-              ctx.arc(cx + bx, cy + by, 1.3 * s, 0, Math.PI * 2)
+              ctx.arc(cx + bx, cy + by, 1.6 * bs, 0, Math.PI * 2)
               ctx.fill()
               ctx.fillStyle = berryGlow
               ctx.beginPath()
-              ctx.arc(cx + bx - 0.35 * s, cy + by - 0.35 * s, 0.45 * s, 0, Math.PI * 2)
+              ctx.arc(cx + bx - 0.4 * bs, cy + by - 0.4 * bs, 0.55 * bs, 0, Math.PI * 2)
               ctx.fill()
             }
           }

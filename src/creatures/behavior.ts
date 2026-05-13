@@ -283,14 +283,21 @@ export function tickBehavior(
 
   switch (c.genome.personality) {
     case 'Curious':
-      // Constantly wants to explore; picks a brand-new tile every second or so
+      // Explores within a bounded range — curious, not migrating across the world
       if (!targetSet && (c.targetX === null || Math.random() < 0.025)) {
-        const tx = Math.floor(Math.random() * WORLD_SIZE)
-        const ty = Math.floor(Math.random() * WORLD_SIZE)
-        changes.state = 'wandering'
-        changes.targetX = tx
-        changes.targetY = ty
-        targetSet = true
+        const range = 30
+        for (let attempt = 0; attempt < 6; attempt++) {
+          const tx = Math.max(0, Math.min(WORLD_SIZE - 1, c.x + Math.floor(Math.random() * (range * 2 + 1)) - range))
+          const ty = Math.max(0, Math.min(WORLD_SIZE - 1, c.y + Math.floor(Math.random() * (range * 2 + 1)) - range))
+          const dest = tiles[ty]?.[tx]
+          if (dest && isTilePassable(dest)) {
+            changes.state = 'wandering'
+            changes.targetX = tx
+            changes.targetY = ty
+            targetSet = true
+            break
+          }
+        }
       }
       break
 
@@ -458,16 +465,16 @@ export function tickBehavior(
   // Produces emergent ecological niches and spreads the population across different terrain.
   if (!targetSet && Math.random() < 0.07) {
     if (c.genome.body === 'Wisp') {
-      const t = findNearest(['river', 'mud'], 30)
+      const t = findNearest(['river', 'mud'], 20)
       if (t) { changes.state = 'wandering'; changes.targetX = t.x; changes.targetY = t.y; targetSet = true }
     } else if (c.genome.body === 'Shell') {
-      const t = findNearest(['cave', 'shelter'], 30)
+      const t = findNearest(['cave', 'shelter'], 20)
       if (t) { changes.state = 'wandering'; changes.targetX = t.x; changes.targetY = t.y; targetSet = true }
     } else if (c.genome.body === 'Spore') {
-      const t = findNearest(['food_patch', 'bush', 'mud'], 30)
+      const t = findNearest(['food_patch', 'bush', 'mud'], 20)
       if (t) { changes.state = 'wandering'; changes.targetX = t.x; changes.targetY = t.y; targetSet = true }
     } else if (c.genome.body === 'Spike') {
-      const t = findNearest(['food_patch', 'barren'], 30)
+      const t = findNearest(['food_patch', 'barren'], 20)
       if (t) { changes.state = 'wandering'; changes.targetX = t.x; changes.targetY = t.y; targetSet = true }
     }
   }
@@ -626,7 +633,7 @@ export function tickBehavior(
   if (!targetSet
     && c.genome.personality !== 'Aggressive'
     && c.genome.personality !== 'Recluse'
-    && c.bonds.filter(b => b.strength > 20).length === 0
+    && c.bonds.filter(b => b.strength >= REPRODUCE_BOND_MIN_STRENGTH).length === 0
     && c.age >= CREATURE_MATURITY_TICKS
     && c.hunger < 55
     && Math.random() < (c.genome.personality === 'Wanderer' ? 0.02 : 0.07)) {

@@ -60,10 +60,9 @@ export const REPRODUCE_RATE_BY_BODY = {
 } as const
 
 // Pre-seeded bond strength given to all starter creatures toward each other.
-// Below the BOND_STRENGTH_PER_TICK threshold of 20 that disables bond-seeking,
-// so starters still actively seek each other — they just start with a head start.
-// Allows first reproduction after ~40 seconds of adjacency instead of ~84.
-export const STARTER_BOND_STRENGTH = 18
+// Below REPRODUCE_BOND_MIN_STRENGTH so bond-seeking stays active from the start.
+// Starters need ~20 more adjacency ticks to reach the reproduction threshold.
+export const STARTER_BOND_STRENGTH = 25
 
 // ─── Needs decay per tick ─────────────────────────────────────────────────────
 // Lower rates → more survival time, creatures don't die in minutes
@@ -133,7 +132,7 @@ export const ASEXUAL_BASE_CHANCE       = 0.0008   // rare — Spore body only
 export const ASEXUAL_MUTATION_CHANCE   = 0.28     // higher than sexual (single-parent)
 
 // Minimum bond strength for sexual reproduction partnership
-export const REPRODUCE_BOND_MIN_STRENGTH = 42    // was implicitly 30 — now requires deeper bond
+export const REPRODUCE_BOND_MIN_STRENGTH = 35    // achievable in ~20 adjacency ticks from starter bond
 
 // ─── Colony stage thresholds ─────────────────────────────────────────────────
 export const COLONY_STAGE_THRESHOLDS = {
