@@ -295,14 +295,14 @@ const EnrichOption = styled.button<{ selected: boolean }>`
 `
 
 const ENRICHMENT_OPTIONS: { type: EnrichmentType; label: string; glyph: string; hint: string }[] = [
-  { type: 'resting_spot',    label: 'Resting Spot',    glyph: '≈', hint: 'stress↓ · warmth↑' },
-  { type: 'scratching_post', label: 'Scratching Post', glyph: '|', hint: 'stress↓↓' },
-  { type: 'burrow',          label: 'Burrow',          glyph: 'U', hint: 'stress↓ · warmth↑↑' },
-  { type: 'warm_stone',      label: 'Warm Stone',      glyph: '◆', hint: 'warmth↑↑↑ · stress↓' },
-  { type: 'bathtub',         label: 'Bathtub',         glyph: '~', hint: 'thirst↓↓ · stress↓' },
-  { type: 'hamster_wheel',   label: 'Hamster Wheel',   glyph: '○', hint: 'stress↓ · hunger↑' },
-  { type: 'toy_ball',        label: 'Toy Ball',        glyph: '●', hint: 'stress↓↓ · social bonus' },
-  { type: 'trampoline',      label: 'Trampoline',      glyph: '^', hint: 'stress↓↓↓ · hunger↑' },
+  { type: 'resting_spot',    label: 'Resting Spot',  glyph: '≈', hint: 'stress↓ · warmth↑' },
+  { type: 'scratching_post', label: 'Scratch Post',  glyph: '|', hint: 'stress↓↓' },
+  { type: 'burrow',          label: 'Burrow',        glyph: 'U', hint: 'stress↓ · warmth↑↑' },
+  { type: 'warm_stone',      label: 'Warm Stone',    glyph: '◆', hint: 'warmth↑↑↑ · stress↓' },
+  { type: 'mud_pool',        label: 'Mud Pool',      glyph: '~', hint: 'thirst↓↓ · wallow' },
+  { type: 'worn_path',       label: 'Worn Path',     glyph: '○', hint: 'exercise · stress↓' },
+  { type: 'play_stones',     label: 'Play Stones',   glyph: '●', hint: 'stress↓↓ · social' },
+  { type: 'springy_moss',    label: 'Springy Moss',  glyph: '^', hint: 'stress↓↓↓ · health↑' },
 ]
 
 interface ToolbarProps {

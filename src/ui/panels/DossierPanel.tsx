@@ -27,14 +27,14 @@ const STATE_LABELS: Record<CreatureState, string> = {
 
 const Panel = styled.div`
   background:
-    linear-gradient(180deg, rgba(20, 20, 50, 0.30), rgba(8, 8, 28, 0.85)),
-    #06061a;
-  border: 1px solid #2a2a50;
+    linear-gradient(180deg, rgba(28, 20, 12, 0.30), rgba(14, 10, 6, 0.90)),
+    #16120e;
+  border: 1px solid #3a2e1e;
   border-radius: 4px;
   padding: 11px 12px;
   font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
   font-size: 12.5px;
-  color: #f0e6c8;
+  color: #e8d5b0;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -42,10 +42,10 @@ const Panel = styled.div`
   flex-direction: column;
   gap: 0;
   box-sizing: border-box;
-  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.40);
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.35);
 
   &::-webkit-scrollbar { width: 4px; }
-  &::-webkit-scrollbar-thumb { background: #3a3a70; border-radius: 2px; }
+  &::-webkit-scrollbar-thumb { background: #4a3a28; border-radius: 2px; }
 `
 
 const PanelHeader = styled.div`
@@ -54,20 +54,19 @@ const PanelHeader = styled.div`
   align-items: baseline;
   padding-bottom: 8px;
   margin-bottom: 9px;
-  border-bottom: 1px solid #2a2a55;
+  border-bottom: 1px solid #2e2418;
 `
 
 const PanelTitle = styled.div`
   font-size: 13px;
-  color: #80e0f0;
+  color: #c49840;
   letter-spacing: 0.22em;
-  text-shadow: 0 0 10px rgba(94, 200, 224, 0.40);
   font-weight: bold;
 `
 
 const PanelTag = styled.div`
   font-size: 10px;
-  color: #7a7aa0;
+  color: #6a5840;
   letter-spacing: 0.18em;
 `
 
@@ -85,7 +84,7 @@ const CreatureName = styled.div<{ color: string }>`
 
 const IdLine = styled.div`
   font-size: 10.5px;
-  color: #8888b0;
+  color: #6a5840;
   letter-spacing: 0.08em;
   margin-bottom: 6px;
 `
@@ -99,7 +98,7 @@ const SectionTitle = styled.div`
   align-items: center;
   gap: 6px;
   font-size: 10.5px;
-  color: #80e0f0;
+  color: #7a9060;
   letter-spacing: 0.22em;
   text-transform: uppercase;
   margin: 3px 0 6px;
@@ -109,8 +108,7 @@ const SectionTitle = styled.div`
     content: '';
     width: 4px;
     height: 4px;
-    background: #5ec8e0;
-    box-shadow: 0 0 4px #5ec8e0;
+    background: #6a8050;
     transform: rotate(45deg);
   }
 
@@ -118,7 +116,7 @@ const SectionTitle = styled.div`
     content: '';
     flex: 1;
     height: 1px;
-    background: linear-gradient(90deg, #1c2e3e, transparent);
+    background: linear-gradient(90deg, #2a2016, transparent);
   }
 `
 
@@ -130,12 +128,12 @@ const Row = styled.div`
 `
 
 const Label = styled.span`
-  color: #a8a8d0;
+  color: #a09080;
   font-size: 11.5px;
 `
 
 const Value = styled.span<{ accent?: string }>`
-  color: ${p => p.accent ?? '#f0e6c8'};
+  color: ${p => p.accent ?? '#e8d5b0'};
   font-size: 11.5px;
   font-weight: bold;
 `
@@ -158,7 +156,6 @@ const TraitBadge = styled.span<{ color: string }>`
   padding: 3px 9px;
   border-radius: 2px;
   letter-spacing: 0.06em;
-  text-shadow: 0 0 6px ${p => p.color}55;
   font-weight: bold;
 `
 
@@ -180,7 +177,7 @@ const StatGlyph = styled.span<{ color: string }>`
 `
 
 const StatLabel = styled.span`
-  color: #a8a8d0;
+  color: #a09080;
   font-size: 11px;
   width: 58px;
   flex-shrink: 0;
@@ -189,22 +186,21 @@ const StatLabel = styled.span`
 const BarTrack = styled.div`
   flex: 1;
   height: 6px;
-  background: #0c0c22;
+  background: #100e08;
   border-radius: 2px;
   overflow: hidden;
-  border: 1px solid #14143a;
+  border: 1px solid #201c14;
 `
 
 const BarFill = styled.div<{ width: number; color: string }>`
   width: ${p => Math.max(0, Math.min(100, p.width))}%;
   height: 100%;
   background: linear-gradient(90deg, ${p => p.color}, ${p => p.color}dd);
-  box-shadow: 0 0 5px ${p => p.color}aa;
   transition: width 0.35s ease;
 `
 
 const StatValue = styled.span<{ accent?: string }>`
-  color: ${p => p.accent ?? '#a8a8d0'};
+  color: ${p => p.accent ?? '#a09080'};
   font-size: 11px;
   width: 36px;
   text-align: right;
@@ -229,7 +225,7 @@ const BondRow = styled.div`
 `
 
 const BondName = styled.span`
-  color: #f0e6c8;
+  color: #e8d5b0;
   width: 80px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -240,7 +236,7 @@ const BondName = styled.span`
 const BondBar = styled.div`
   flex: 1;
   height: 4px;
-  background: #0c0c22;
+  background: #100e08;
   border-radius: 2px;
   overflow: hidden;
 `
@@ -249,18 +245,14 @@ const BondFill = styled.div<{ percent: number; strength: number }>`
   width: ${p => Math.max(2, Math.min(100, p.percent))}%;
   height: 100%;
   background: ${p =>
-    p.strength > 70 ? 'linear-gradient(90deg, #ff80c0, #ff5090)' :
-    p.strength > 40 ? 'linear-gradient(90deg, #c878f0, #a058d0)' :
-    'linear-gradient(90deg, #5ec8e0, #3a98b8)'};
-  box-shadow: 0 0 5px ${p =>
-    p.strength > 70 ? '#ff80c0' :
-    p.strength > 40 ? '#c878f0' :
-    '#5ec8e0'};
+    p.strength > 70 ? 'linear-gradient(90deg, #d08060, #c06040)' :
+    p.strength > 40 ? 'linear-gradient(90deg, #a870c0, #8050a0)' :
+    'linear-gradient(90deg, #5888a0, #3a6880)'};
 `
 
 const BondStrength = styled.span<{ strength: number }>`
   font-size: 10.5px;
-  color: ${p => p.strength > 70 ? '#ff80c0' : p.strength > 40 ? '#c878f0' : '#5ec8e0'};
+  color: ${p => p.strength > 70 ? '#d08060' : p.strength > 40 ? '#a870c0' : '#5888a0'};
   width: 24px;
   text-align: right;
   font-weight: bold;
@@ -271,10 +263,10 @@ const BondStrength = styled.span<{ strength: number }>`
 const Monologue = styled.div`
   margin-top: 12px;
   padding: 10px 14px 10px 18px;
-  background: linear-gradient(180deg, rgba(94, 200, 224, 0.07), rgba(8, 8, 28, 0.75));
-  border-left: 2px solid #4ea8c8;
+  background: linear-gradient(180deg, rgba(90, 70, 30, 0.08), rgba(14, 10, 6, 0.60));
+  border-left: 2px solid #7a6030;
   font-style: italic;
-  color: #c0d0e0;
+  color: #c8b890;
   font-size: 11.5px;
   line-height: 1.85;
   border-radius: 0 2px 2px 0;
@@ -286,7 +278,7 @@ const Monologue = styled.div`
     top: -3px;
     left: 6px;
     font-size: 22px;
-    color: #4ea8c8;
+    color: #7a6030;
     line-height: 1;
   }
 `
@@ -294,7 +286,7 @@ const Monologue = styled.div`
 // ─── Empty state ─────────────────────────────────────────────────────────────
 
 const Empty = styled.div`
-  color: #8888b0;
+  color: #6a5840;
   font-size: 11.5px;
   text-align: center;
   margin-top: 1.5rem;
@@ -303,7 +295,7 @@ const Empty = styled.div`
 `
 
 const EmptyHint = styled.div`
-  color: #8080a0;
+  color: #4a3820;
   font-size: 11px;
   letter-spacing: 0.15em;
   margin-top: 10px;
@@ -319,7 +311,7 @@ const MorphRow = styled.div`
 `
 
 const MorphLabel = styled.span`
-  color: #8888b0;
+  color: #6a5840;
   font-size: 10.5px;
   width: 56px;
   flex-shrink: 0;
@@ -329,21 +321,20 @@ const MorphLabel = styled.span`
 const MorphTrack = styled.div`
   flex: 1;
   height: 4px;
-  background: #0c0c22;
+  background: #100e08;
   border-radius: 2px;
   overflow: hidden;
-  border: 1px solid #14143a;
+  border: 1px solid #201c14;
 `
 
 const MorphFill = styled.div<{ width: number }>`
   width: ${p => Math.max(1, Math.min(100, p.width))}%;
   height: 100%;
-  background: linear-gradient(90deg, #6040a8, #c878f0);
-  box-shadow: 0 0 4px #c878f080;
+  background: linear-gradient(90deg, #5a4020, #a870c0);
 `
 
 const MorphValue = styled.span`
-  color: #9090c0;
+  color: #7a6840;
   font-size: 10px;
   width: 28px;
   text-align: right;
@@ -353,9 +344,9 @@ const MorphValue = styled.span`
 // ─── Heal button ─────────────────────────────────────────────────────────────
 
 const HealBtn = styled.button`
-  background: rgba(255, 80, 96, 0.10);
-  border: 1px solid #5a2828;
-  color: #ff7080;
+  background: rgba(200, 80, 48, 0.10);
+  border: 1px solid #5a2818;
+  color: #d06050;
   font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
   font-size: 10px;
   padding: 6px 12px;
@@ -367,9 +358,9 @@ const HealBtn = styled.button`
   transition: all 0.15s;
 
   &:hover {
-    border-color: #ff5060;
-    color: #ff8090;
-    box-shadow: 0 0 10px rgba(255, 80, 96, 0.30);
+    border-color: #c85030;
+    color: #e07060;
+    box-shadow: 0 0 10px rgba(200, 80, 48, 0.25);
   }
 `
 
@@ -453,15 +444,15 @@ export function DossierPanel() {
             <SectionTitle>colony overview</SectionTitle>
             <Row>
               <Label>alive</Label>
-              <Value accent='#80f0a0'>{alive.length}</Value>
+              <Value accent='#88c060'>{alive.length}</Value>
             </Row>
             <Row>
               <Label>max generation</Label>
-              <Value accent='#ffb050'>{maxGen}</Value>
+              <Value accent='#d4a040'>{maxGen}</Value>
             </Row>
             <Row>
               <Label>avg sentience</Label>
-              <Value accent='#c878f0'>{avgSentience}%</Value>
+              <Value accent='#a870c0'>{avgSentience}%</Value>
             </Row>
             <Row>
               <Label>bonded pairs</Label>
@@ -494,8 +485,8 @@ export function DossierPanel() {
       </IdLine>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
-        <span style={{ fontSize: 9, color: '#7a78a5' }}>state</span>
-        <span style={{ fontSize: 10, color: '#80f0a0', letterSpacing: '0.06em' }}>
+        <span style={{ fontSize: 9, color: '#6a5840' }}>state</span>
+        <span style={{ fontSize: 10, color: '#88c060', letterSpacing: '0.06em' }}>
           ◉ {STATE_LABELS[creature.state] ?? creature.state}
         </span>
       </div>
@@ -504,21 +495,21 @@ export function DossierPanel() {
         <SectionTitle>genome</SectionTitle>
         <TraitRow>
           <TraitBadge color={color}>{creature.genome.personality}</TraitBadge>
-          <TraitBadge color='#80c8ff'>{creature.genome.body}</TraitBadge>
-          <TraitBadge color='#c878f0'>{creature.genome.mind}</TraitBadge>
+          <TraitBadge color='#5888a0'>{creature.genome.body}</TraitBadge>
+          <TraitBadge color='#a870c0'>{creature.genome.mind}</TraitBadge>
         </TraitRow>
         {creature.recentMutation !== undefined && creature.mutatedTraits && creature.mutatedTraits.length > 0 && (
           <div style={{
             marginTop: 5, padding: '3px 8px',
-            background: 'rgba(255, 220, 40, 0.10)',
-            border: '1px solid rgba(255, 220, 40, 0.30)',
-            borderRadius: 2, fontSize: 9, color: '#ffe060',
+            background: 'rgba(200, 160, 40, 0.10)',
+            border: '1px solid rgba(200, 160, 40, 0.30)',
+            borderRadius: 2, fontSize: 9, color: '#d4a040',
             letterSpacing: '0.10em',
           }}>
             ⚡ mutated {creature.mutatedTraits.join(', ')} this generation
           </div>
         )}
-        <div style={{ color: '#5a5a85', fontSize: 9, lineHeight: 1.6, marginTop: 4 }}>
+        <div style={{ color: '#5a4830', fontSize: 9, lineHeight: 1.6, marginTop: 4 }}>
           {describeGenome(creature.genome)}
         </div>
       </Section>
@@ -533,46 +524,46 @@ export function DossierPanel() {
         )}
 
         <StatBarRow
-          glyph='♥' glyphColor='#ff5060'
+          glyph='♥' glyphColor='#c85030'
           label='health' value={creature.health}
-          barColor={creature.health < 30 ? '#ff5060' : creature.health < 60 ? '#ffb050' : '#80f0a0'}
-          accent={creature.health < 30 ? '#ff7080' : undefined}
+          barColor={creature.health < 30 ? '#c85030' : creature.health < 60 ? '#d4a040' : '#88c060'}
+          accent={creature.health < 30 ? '#d07060' : undefined}
         />
         <StatBarRow
-          glyph='✦' glyphColor='#ffb050'
+          glyph='✦' glyphColor='#d4a040'
           label='hunger' value={creature.hunger}
-          barColor={creature.hunger > 70 ? '#ff5060' : '#a08030'}
-          accent={creature.hunger > 70 ? '#ff8050' : undefined}
+          barColor={creature.hunger > 70 ? '#c85030' : '#9a7030'}
+          accent={creature.hunger > 70 ? '#d07050' : undefined}
         />
         <StatBarRow
-          glyph='~' glyphColor='#5ec8e0'
+          glyph='~' glyphColor='#5888a0'
           label='thirst' value={creature.thirst}
-          barColor={creature.thirst > 70 ? '#3088b8' : '#1e5878'}
-          accent={creature.thirst > 70 ? '#5ec8e0' : undefined}
+          barColor={creature.thirst > 70 ? '#3878a0' : '#2a5870'}
+          accent={creature.thirst > 70 ? '#5888a0' : undefined}
         />
         <StatBarRow
-          glyph='*' glyphColor='#ffc070'
+          glyph='*' glyphColor='#c49840'
           label='warmth' value={creature.warmth}
-          barColor={creature.warmth < 25 ? '#3098b8' : '#8a5028'}
-          accent={creature.warmth < 25 ? '#5ec8e0' : undefined}
+          barColor={creature.warmth < 25 ? '#3878a0' : '#7a4828'}
+          accent={creature.warmth < 25 ? '#5888a0' : undefined}
         />
         <StatBarRow
-          glyph='!' glyphColor='#ff5060'
+          glyph='!' glyphColor='#c85030'
           label='stress' value={creature.stress}
-          barColor={creature.stress > 70 ? '#a02828' : '#3a3055'}
-          accent={creature.stress > 70 ? '#ff5060' : undefined}
+          barColor={creature.stress > 70 ? '#902020' : '#3a2830'}
+          accent={creature.stress > 70 ? '#c85030' : undefined}
         />
         <StatBarRow
-          glyph='◈' glyphColor='#c878f0'
+          glyph='◈' glyphColor='#a870c0'
           label='sentience' value={creature.sentience}
-          barColor='#7050b8' accent='#c878f0'
+          barColor='#6a4090' accent='#a870c0'
         />
       </Section>
 
       <Section>
         <SectionTitle>bonds · {creature.bonds.length}</SectionTitle>
         {topBonds.length === 0 ? (
-          <div style={{ fontSize: 11, color: '#6060a0', fontStyle: 'italic', padding: '4px 0', letterSpacing: '0.08em' }}>
+          <div style={{ fontSize: 11, color: '#4a3820', fontStyle: 'italic', padding: '4px 0', letterSpacing: '0.08em' }}>
             no living bonds yet
           </div>
         ) : (
@@ -597,7 +588,7 @@ export function DossierPanel() {
         <SectionTitle>lineage</SectionTitle>
         <Row>
           <Label>offspring</Label>
-          <Value accent='#80f0a0'>{creature.offspringIds.length}</Value>
+          <Value accent='#88c060'>{creature.offspringIds.length}</Value>
         </Row>
         <Row>
           <Label>messages sent</Label>
@@ -605,14 +596,14 @@ export function DossierPanel() {
         </Row>
         <Row>
           <Label>kills</Label>
-          <Value accent={creature.killCount > 0 ? '#ff5060' : undefined}>
+          <Value accent={creature.killCount > 0 ? '#c85030' : undefined}>
             {creature.killCount}
           </Value>
         </Row>
         {creature.parentIds[0] && (
           <Row>
             <Label>parents</Label>
-            <Value style={{ fontSize: 9, color: '#5a5a85', letterSpacing: '0.06em' }}>
+            <Value style={{ fontSize: 9, color: '#5a4830', letterSpacing: '0.06em' }}>
               {creature.parentIds[0]?.slice(0, 4)} × {creature.parentIds[1]?.slice(0, 4) ?? '—'}
             </Value>
           </Row>

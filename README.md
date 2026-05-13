@@ -10,7 +10,7 @@ Inspired by Black Mirror S7E4 "Plaything" (the Thronglets) and Dwarf Fortress.
 
 ## What it is
 
-- **Isometric 240×240 world** — procedurally generated from a numeric seed; biomes, rivers, mountains, caves, cliffs, food patches, trees — twice the scale of earlier versions for genuine biome diversity and natural creature dispersion
+- **Isometric 240×240 world** — procedurally generated from a numeric seed; biomes, rivers, mountains, caves, cliffs, food patches, trees, and understorey bushes — twice the scale of earlier versions for genuine biome diversity and natural creature dispersion
 - **Insect creatures** with inherited genetics across 3 gene slots (personality, body, mind) plus accumulated morphological traits that diverge per lineage over generations
 - **Caretaker profile** — five questions answered before the world begins shape the entire simulation: food abundance, mutation rate, bond speed, awareness pacing, and ending tendencies
 - **Four body types** with distinct ecological roles: Spore (r-strategist, divides asexually), Shell (K-strategist, long-lived), Spike (territorial fighter), Wisp (scout, empathic)
@@ -202,21 +202,37 @@ The caretaker has no hard limits:
 
 ### Enrichment system
 
-Five condensed categories, each with a meaningful trade-off:
+Eight natural-world items, each with a distinct ecological role and a behavioral trade-off:
 
-| Type | Category | Effect | Trade-off |
-|---|---|---|---|
-| Rest Nest | Rest & Recovery | stress down, warmth up | hunger up (idle burns energy) |
-| Shelter Den | Safety & Shelter | stress down strongly, warmth up | hunger up, isolates from bonding |
-| Play Toy | Play & Social | stress down; social bonus with bonded partner nearby | hunger up (energy cost) |
-| Energy Cache | Energy Regulation | hunger down | thirst up (digestion); stress+ when contested |
-| Terrain Feature | Environmental | sentience up for Aware/Dreaming/Sentinel | exposed; Timid gets stress penalty |
+| Item | Effect | Trade-off |
+|---|---|---|
+| Resting Spot | stress↓, warmth↑ | calm rest only |
+| Scratching Post | stress↓↓ | physical release |
+| Burrow | stress↓, warmth↑↑ | hidden shelter |
+| Warm Stone | warmth↑↑↑, stress↓ | thermal basking |
+| Mud Pool | thirst↓↓, stress↓ | cooling clay wallow |
+| Worn Path | stress↓, exercise | hunger↑ (running burns energy) |
+| Play Stones | stress↓↓, social bonus | hunger↑ slight |
+| Springy Moss | stress↓↓↓, health↑ | hunger↑ (exertion) |
 
-**Trait-driven use**: Lazy seeks Rest Nests. Curious seeks Terrain Features. Nurturing seeks Play Toys near partners. Aggressive can displace current users. Recluse avoids enrichment when others are nearby.
+**Trait-driven use**: Lazy prefers Resting Spot and Warm Stone. Curious seeks Worn Path and Springy Moss. Nurturing gravitates to Play Stones with bonded partners nearby. Timid avoids exposed high-energy items. Aggressive displaces current users. Recluse skips enrichment when others are nearby.
 
 **Degradation**: each item disappears after 40 uses; the renderer fades items as durability drops.
 
-**Natural enrichment**: caves reduce stress passively; river/mud tiles calm creatures; tree canopy provides mild comfort; rocky biome boosts Sentinel sentience.
+**Natural enrichment**: caves reduce stress passively; river/mud tiles calm creatures; bush concealment calms all creatures (especially Timid); tree canopy provides mild comfort; rocky biome boosts Sentinel sentience.
+
+### Bush tiles
+
+Low fruiting shrubs scatter across the world in humid biomes (lush 9%, wetland 7%, temperate 4.5%, rare in arid). Each bush:
+
+- **Food source** — berries ripen each season (spring: fast, summer: moderate, autumn: slow, winter: none), max 35 food. Burned bushes turn barren.
+- **Concealment** — Timid creatures actively seek bushes when stressed (1.8× stress reduction vs. baseline). Recluse also benefits.
+- **Movement** — slight hindrance (0.80× speed vs. grass's 1.00×).
+- **Ecology** — Spore body includes bushes in terrain affinity; Greedy and Lazy seek them as food targets.
+
+### World depth
+
+Tile side-skirt height scales with elevation (low tiles ~3px, high-elevation mountain peaks ~7px), giving the isometric view a natural 2.5D layering — valleys read as recessed, peaks as elevated.
 
 ### Genetics and morphology
 

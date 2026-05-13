@@ -315,6 +315,29 @@ function raiseMountains(tiles: Tile[][], elevMap: number[][]): void {
   }
 }
 
+// ─── Bush / understorey vegetation ───────────────────────────────────────────
+// Scattered low fruiting shrubs — denser in humid biomes, rare in arid, absent
+// in rocky zones. Each bush starts with a random berry amount (0–25).
+
+function scatterBushes(tiles: Tile[][], rng: () => number): void {
+  for (let y = 1; y < WORLD_SIZE - 1; y++) {
+    for (let x = 1; x < WORLD_SIZE - 1; x++) {
+      const t = tiles[y][x]
+      if (t.type !== 'grass') continue
+      const density = t.biome === 'lush'      ? 0.09
+        : t.biome === 'wetland'   ? 0.07
+        : t.biome === 'temperate' ? 0.045
+        : t.biome === 'arid'      ? 0.010
+        : 0
+      if (rng() < density) {
+        t.type = 'bush'
+        t.foodAmount = Math.floor(rng() * 25)
+        t.treeAge = -1
+      }
+    }
+  }
+}
+
 function digCaves(tiles: Tile[][], rng: () => number): void {
   for (let y = 1; y < WORLD_SIZE - 1; y++) {
     for (let x = 1; x < WORLD_SIZE - 1; x++) {
@@ -387,6 +410,7 @@ export function generateWorld(seed: number): Tile[][] {
   carveCliffs(tiles, elevMap, rng)
   digCaves(tiles, rng)
   plantTrees(tiles, elevSeed, rng)
+  scatterBushes(tiles, rng)
   seedCenterResources(tiles, rng)
 
   return tiles

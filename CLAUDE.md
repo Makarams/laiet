@@ -72,7 +72,7 @@ src/
 │   │   ├── EventPopup.tsx      Floating event cards, one-click resolution
 │   │   └── Toolbar.tsx         Tool buttons, clock, charge badges, save/reset buttons
 │   └── panels/
-│       ├── ColonyStatsPanel.tsx  Population, body-type breakdown, weather, stage progress, caretaker charges
+│       ├── ColonyStatsPanel.tsx  Population, body-type breakdown, weather, stage progress, caretaker charges, season/year display, top-3 biome distribution
 │       ├── DossierPanel.tsx      Creature inspector, morphology bars, monologue, heal button, colony overview (no selection)
 │       └── MessageLogPanel.tsx   Scrollable transmission log, unread badge
 │
@@ -137,14 +137,14 @@ Auto-lightning fires at `STORM_LIGHTNING_CHANCE` during storms (4× higher than 
 A **120×120 isometric grid** generated from a numeric seed using mulberry32 RNG.
 
 Each tile has:
-- `type` — `grass | tree | shelter | river | mud | rock | food_patch | barren | flooded | death_site | mountain | cave | cliff`
+- `type` — `grass | tree | shelter | river | mud | rock | food_patch | barren | flooded | death_site | mountain | cave | cliff | bush`
 - `biome` — `temperate | arid | lush | rocky | wetland`
 - `foodAmount`, `waterLevel`, `treeAge`, `shelter`, `floodTimer`, `burning`, `elevation?`, `lightningFlash?`
 
 World generation order:
 ```
 carveRiver → scatterRocks (28+20) → raiseMountains → carveCliffs
-→ digCaves → plantTrees (100+40) → scatterFood → seedCenterResources
+→ digCaves → plantTrees (100+40) → scatterBushes → scatterFood → seedCenterResources
 ```
 
 **Terrain generation rules:**
@@ -152,6 +152,7 @@ carveRiver → scatterRocks (28+20) → raiseMountains → carveCliffs
 - **Cave** — 4.5% chance adjacent to mountain tiles; `shelter=true`, `waterLevel=15`
 - **Cliff** — elevation drop > 0.28 to an adjacent tile → 70% become cliff
 - **River** — meandering walker from edge to edge; all adjacent grass can flood in winter
+- **Bush** — low fruiting shrubs scattered across humid biomes (lush 9%, wetland 7%, temperate 4.5%, arid 1%). Only placed on grass tiles. Each starts with 0–24 food; berries ripen each season (spring 1.6×, summer 1.1×, autumn 0.5×, winter 0×). Max food: 35. Burns to barren when on fire. Timid/Recluse creatures actively seek bush tiles when stressed.
 
 ### Tile passability and movement
 
@@ -164,6 +165,7 @@ tree/shelter  0.62×   // forest floor slows
 mud           0.68×   // sticky wetland
 cave          0.78×   // tight passage
 death_site    0.88×   // creatures hesitate
+bush          0.80×   // low shrubs slow passage slightly
 grass/river/food_patch  1.00×
 barren        1.12×   // open dry ground is fast
 ```
@@ -369,6 +371,7 @@ The canonical definition of everything. If you're adding a feature, start here. 
 - Weather: `WEATHER_DURATION`, `RAIN_*`, `STORM_*`, `DROUGHT_*`
 - Biome: `BIOME_THIRST_EXTRA`, `TILE_MOVE_MODIFIER`
 - Environmental tools: `THUNDER_*`, `FIRE_*`, `LIGHTNING_*`
+- Bush: `BUSH_FOOD_MAX = 35`, `BUSH_FOOD_REGROW_RATE = 0.12`, `NATURAL_BUSH_STRESS_REDUCTION = 0.18`
 
 ### `src/engine/tick.ts` → `tickSimulation(state)`
 The main loop. Returns the next full `GameState`. Order:
@@ -381,7 +384,7 @@ tickTime → tickWeather(mods) → tickTiles(mods) → tickCreatures(mods)
 
 All sub-functions that consume profile modifiers receive `mods: SimModifiers` as a parameter, derived once at the top: `const mods = state.modifiers ?? DEFAULT_MODIFIERS`.
 
-`tickCreatures` does the heavy work: needs, biome thirst correction, weather thirst correction, behavior, movement, eating, drinking, cave warmth, lightning damage, fire damage, cannibalism, disease, bonding (with `BOND_STRENGTH_PER_TICK × mods.bondSpeedMult`), fighting, death, message generation (with `mods.awarenessMessageMult`). `messagesSent` is incremented on the creature when a message is emitted.
+`tickCreatures` does the heavy work: needs, biome thirst correction, weather thirst correction, behavior, movement, eating, drinking, cave warmth, lightning damage, fire damage, cannibalism, disease, bonding (with `BOND_STRENGTH_PER_TICK × mods.bondSpeedMult`), fighting, death, message generation (with `mods.awarenessMessageMult`). Also applies bush stress reduction (`NATURAL_BUSH_STRESS_REDUCTION`) with a 1.8× bonus for Timid and 1.3× for Recluse. `messagesSent` is incremented on the creature when a message is emitted.
 
 `tickWeather` draws drought duration scaled by `mods.droughtDurationMult`. `tickTiles` multiplies food regrowth by `mods.foodRegrowMult`. `checkEndgame` computes ascension threshold as `80 + mods.ascensionThresholdOffset`.
 
@@ -396,14 +399,14 @@ Old saves missing `weather`, `weatherTimer`, or `modifiers` are backward-compati
 The single Zustand store. Components read via `useLaietStore`. `initNewWorld` accepts `(userId, namedCreatures, profile: CaretakerProfile)`, calls `computeSimModifiers(profile)`, stores both in `GameState`, and initializes the caretaker with `defaultCaretaker(mods.healCharges, mods.foodDropCooldownMs)`. Caretaker actions (`dropFood`, `healCreature`, `redirectRiver`, `thunderStrike`, `igniteFire`) live here. `dropFood` reads cooldown from `state.modifiers?.foodDropCooldownMs`. `resetWorld` calls `resetUserData()` from persistence (server-side RPC + IDB wipe). The tick interval (`startTicking` / `stopTicking`) is owned here.
 
 ### `src/world/worldGen.ts` → `generateWorld(seed)`
-Pure function. Deterministic — same seed always produces the same world. Stores `elevation` in tile objects via `elevMap[][]`. Functions: `carveRiver`, `scatterRocks`, `raiseMountains`, `digCaves`, `carveCliffs`, `plantTrees`, `scatterFood`, `seedCenterResources`. `isTilePassable()` blocks cliff, mountain, rock, flooded.
+Pure function. Deterministic — same seed always produces the same world. Stores `elevation` in tile objects via `elevMap[][]`. Functions: `carveRiver`, `scatterRocks`, `raiseMountains`, `digCaves`, `carveCliffs`, `plantTrees`, `scatterBushes`, `scatterFood`, `seedCenterResources`. `scatterBushes` converts eligible grass tiles to `bush` based on biome density. `isTilePassable()` blocks cliff, mountain, rock, flooded.
 
 ### `src/ui/renderer/` — renderer module
 Pure canvas drawing, no React, no state. Import from `@/ui/renderer` (resolves via index.ts).
 
 | Module | Responsibility |
 |---|---|
-| `tiles.ts` | `drawTile`, `drawTileDecoration`, fire overlay, lightning bolt, `gridToIso`, `isoToGrid`, `canvasOrigin`, `resetCanvasState` |
+| `tiles.ts` | `drawTile`, `drawTileDecoration`, fire overlay, lightning bolt, `gridToIso`, `isoToGrid`, `canvasOrigin`, `resetCanvasState`. Tile depth (side-skirt height) scales with `tile.elevation` — low tiles ~3px, mountain peaks ~7px, giving the world proper 2.5D layering. |
 | `creatures.ts` | `drawCreature` — shape by body type, biome tint, generation features, stress marks, thought symbol |
 | `overlays.ts` | `drawAtmosphere` (combined weather + phase), `drawScanlines`, `drawVignette` |
 | `utils.ts` | `lighten`, `darken`, `adjustBrightness` — all clamped to prevent invalid hex |

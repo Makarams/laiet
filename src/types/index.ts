@@ -144,6 +144,7 @@ export type TileType =
   | 'mountain'   // impassable high-elevation peak
   | 'cave'       // passable hollow in rock; provides shelter and warmth
   | 'cliff'      // impassable sharp elevation drop; acts as natural barrier
+  | 'bush'       // low fruiting shrub; berries ripen seasonally; Timid shelter
 
 export type BiomePatch = 'temperate' | 'arid' | 'lush' | 'rocky' | 'wetland'
 
@@ -173,10 +174,10 @@ export type EnrichmentType =
   | 'scratching_post' // stress↓↓ — physical release, no hunger cost
   | 'burrow'          // stress↓, warmth↑↑ — hidden warm shelter
   | 'warm_stone'      // warmth↑↑↑ — thermal comfort; stress↓ slight
-  | 'bathtub'         // thirst↓↓, stress↓ — cooling soak
-  | 'hamster_wheel'   // stress↓, hunger↑ — active exercise
-  | 'toy_ball'        // stress↓↓, hunger↑ slight — energetic play; social bonus with partner
-  | 'trampoline'      // stress↓↓↓, hunger↑, health↑ slight — exhilarating play
+  | 'mud_pool'        // thirst↓↓, stress↓ — cooling wallow in mineral clay
+  | 'worn_path'       // stress↓, hunger↑ — worn dirt circuit for running
+  | 'play_stones'     // stress↓↓, hunger↑ slight — pebble manipulation; social bonus
+  | 'springy_moss'    // stress↓↓↓, hunger↑, health↑ slight — sphagnum bounce pad
 
 export interface EnrichmentItem {
   id: string

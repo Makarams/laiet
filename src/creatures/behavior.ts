@@ -177,7 +177,7 @@ export function tickBehavior(
 
   // ── 3. Critical survival (pre-emptive — seek before truly desperate) ──
   if (c.hunger > HUNGER_SEEK_THRESHOLD) {
-    const foodTile = findNearest(['food_patch'], 20)
+    const foodTile = findNearest(['food_patch', 'bush'], 20)
     if (foodTile && foodTile.foodAmount > 0) {
       changes.state = 'seeking_food'
       changes.targetX = foodTile.x
@@ -366,8 +366,8 @@ export function tickBehavior(
     case 'Greedy':
       // Pre-emptively seek food even when not that hungry
       if (!targetSet && c.hunger > 30 && Math.random() < 0.06) {
-        const foodTile = findNearest(['food_patch'], 10)
-        if (foodTile && foodTile.foodAmount > 25) {
+        const foodTile = findNearest(['food_patch', 'bush'], 10)
+        if (foodTile && foodTile.foodAmount > 20) {
           changes.state = 'seeking_food'
           changes.targetX = foodTile.x
           changes.targetY = foodTile.y
@@ -376,10 +376,23 @@ export function tickBehavior(
       }
       break
 
+    case 'Timid':
+      // Seek bush cover when stressed — concealment calms Timid creatures
+      if (!targetSet && c.stress > 40 && Math.random() < 0.08) {
+        const bushTile = findNearest(['bush'], 12)
+        if (bushTile) {
+          changes.state = 'seeking_shelter'
+          changes.targetX = bushTile.x
+          changes.targetY = bushTile.y
+          targetSet = true
+        }
+      }
+      break
+
     case 'Lazy':
       // Drift toward nearest food patch; barely moves otherwise
       if (!targetSet && c.targetX === null && Math.random() < 0.04) {
-        const foodTile = findNearest(['food_patch'], 8)
+        const foodTile = findNearest(['food_patch', 'bush'], 8)
         if (foodTile) {
           changes.state = 'wandering'
           changes.targetX = foodTile.x
@@ -451,7 +464,7 @@ export function tickBehavior(
       const t = findNearest(['cave', 'shelter'], 30)
       if (t) { changes.state = 'wandering'; changes.targetX = t.x; changes.targetY = t.y; targetSet = true }
     } else if (c.genome.body === 'Spore') {
-      const t = findNearest(['food_patch', 'mud'], 30)
+      const t = findNearest(['food_patch', 'bush', 'mud'], 30)
       if (t) { changes.state = 'wandering'; changes.targetX = t.x; changes.targetY = t.y; targetSet = true }
     } else if (c.genome.body === 'Spike') {
       const t = findNearest(['food_patch', 'barren'], 30)
@@ -544,18 +557,18 @@ export function tickBehavior(
 
         // Trade-off gates: respect internal state before using enrichment
         if (item.type === 'resting_spot' && c.stress > 75) continue
-        if (item.type === 'hamster_wheel' && c.hunger > 60) continue
+        if (item.type === 'worn_path' && c.hunger > 60) continue
         // Timid avoids high-energy exposed items unless very stressed
-        if ((item.type === 'trampoline' || item.type === 'hamster_wheel')
+        if ((item.type === 'springy_moss' || item.type === 'worn_path')
             && c.genome.personality === 'Timid' && c.stress < 70) continue
 
         // Trait-preference scoring
         let score = 1.0
         if (c.genome.personality === 'Lazy'       && item.type === 'resting_spot')   score = 3.0
         if (c.genome.personality === 'Lazy'       && item.type === 'warm_stone')      score = 2.5
-        if (c.genome.personality === 'Curious'    && item.type === 'hamster_wheel')   score = 3.0
-        if (c.genome.personality === 'Curious'    && item.type === 'trampoline')      score = 2.5
-        if (c.genome.personality === 'Nurturing'  && item.type === 'toy_ball')        score = 2.5
+        if (c.genome.personality === 'Curious'    && item.type === 'worn_path')       score = 3.0
+        if (c.genome.personality === 'Curious'    && item.type === 'springy_moss')    score = 2.5
+        if (c.genome.personality === 'Nurturing'  && item.type === 'play_stones')     score = 2.5
         if (c.genome.personality === 'Timid'      && item.type === 'burrow')          score = 3.0
         if (c.genome.personality === 'Aggressive' && item.type === 'burrow')          score = 0.3
         if (c.genome.mind === 'Sentinel'          && item.type === 'warm_stone')      score *= 2.0
@@ -693,7 +706,7 @@ export function tickMovement(creature: Creature, tiles: Tile[][]): Partial<Creat
 // ─── Eating / drinking ────────────────────────────────────────────────────────
 
 export function eatFromTile(creature: Creature, tile: Tile): { creature: Creature; tile: Tile } {
-  if (tile.type !== 'food_patch' || tile.foodAmount <= 0) return { creature, tile }
+  if ((tile.type !== 'food_patch' && tile.type !== 'bush') || tile.foodAmount <= 0) return { creature, tile }
   const amount = Math.min(FOOD_EAT_AMOUNT, tile.foodAmount)
   return {
     creature: { ...creature, hunger: Math.max(0, creature.hunger - amount * 0.8) },
@@ -747,8 +760,8 @@ export function applyEnrichmentEffect(creature: Creature, itemType: string, part
 
   let stressDelta = fx.stress
 
-  // toy_ball: social bonus when partner is adjacent — stress reduction doubles
-  if (itemType === 'toy_ball' && partnerNearby) stressDelta *= 2.0
+  // play_stones: social bonus when partner is adjacent — stress reduction doubles
+  if (itemType === 'play_stones' && partnerNearby) stressDelta *= 2.0
 
   // warm_stone: Timid gets extra stress relief from thermal safety
   if (itemType === 'warm_stone' && creature.genome.personality === 'Timid') stressDelta -= 1.0

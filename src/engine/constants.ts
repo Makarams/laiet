@@ -219,6 +219,7 @@ export const TILE_MOVE_MODIFIER: Record<string, number> = {
   rock:       0.00,
   mountain:   0.00,
   cliff:      0.00,
+  bush:       0.80,  // low shrub slows movement slightly
 }
 
 // ─── Night warmth penalty ────────────────────────────────────────────────────
@@ -281,10 +282,10 @@ export const ENRICHMENT_EFFECTS: Record<string, {
   scratching_post: { stress: -2.5, hunger:  0.0, thirst:  0.0, warmth:  0.0, health:  0.0 },
   burrow:          { stress: -1.5, hunger:  0.0, thirst:  0.0, warmth:  1.5, health:  0.05 },
   warm_stone:      { stress: -1.0, hunger:  0.0, thirst:  0.0, warmth:  3.0, health:  0.1 },
-  bathtub:         { stress: -2.0, hunger:  0.0, thirst: -8.0, warmth:  0.5, health:  0.0 },
-  hamster_wheel:   { stress: -1.8, hunger:  1.5, thirst:  0.5, warmth:  0.5, health:  0.15 },
-  toy_ball:        { stress: -3.0, hunger:  0.5, thirst:  0.0, warmth:  0.0, health:  0.0 },
-  trampoline:      { stress: -3.5, hunger:  1.0, thirst:  0.5, warmth:  0.0, health:  0.0 },
+  mud_pool:        { stress: -2.0, hunger:  0.0, thirst: -8.0, warmth:  0.5, health:  0.0 },
+  worn_path:       { stress: -1.8, hunger:  1.5, thirst:  0.5, warmth:  0.5, health:  0.15 },
+  play_stones:     { stress: -3.0, hunger:  0.5, thirst:  0.0, warmth:  0.0, health:  0.0 },
+  springy_moss:    { stress: -3.5, hunger:  1.0, thirst:  0.5, warmth:  0.0, health:  0.0 },
 }
 
 // ─── Natural enrichment — passive bonuses from world terrain ─────────────────
@@ -293,6 +294,11 @@ export const NATURAL_CAVE_STRESS_REDUCTION   = 1.5   // per tick on cave tile
 export const NATURAL_RIVER_STRESS_REDUCTION  = 0.5   // per tick on river/mud tile
 export const NATURAL_TREE_STRESS_REDUCTION   = 0.25  // per tick on tree/shelter tile
 export const NATURAL_ROCKY_SENTINEL_BONUS    = 0.012 // sentience per tick (Sentinel on rocky biome)
+export const NATURAL_BUSH_STRESS_REDUCTION   = 0.18  // per tick on bush tile (concealment calms Timid)
+
+// ─── Bush tiles ───────────────────────────────────────────────────────────────
+export const BUSH_FOOD_MAX         = 35   // max berry amount per bush tile
+export const BUSH_FOOD_REGROW_RATE = 0.12 // berries regrow slowly without needing a tree
 
 // ─── Cave visual depth ────────────────────────────────────────────────────────
 export const CAVE_CREATURE_ALPHA = 0.50        // creatures inside caves render dimmer

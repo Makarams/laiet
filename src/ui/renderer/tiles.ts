@@ -36,22 +36,36 @@ export function resetCanvasState(ctx: CanvasRenderingContext2D): void {
   ctx.filter = 'none'
 }
 
-// ─── Tile palette — Bioluminescent Specimen Cabinet ───────────────────────────
+// ─── Tile palette ─────────────────────────────────────────────────────────────
+// Top faces are the primary readable surface. Left/right faces form the depth
+// skirt — always darker than top to reinforce the isometric light direction.
+// Colors are warm and saturated enough to be readable on a dark background.
 
 const TILE_COLORS: Record<TileType, { top: string; left: string; right: string }> = {
-  grass:      { top: '#16321e', left: '#0e2214', right: '#0a1a10' },
-  tree:       { top: '#103018', left: '#0a2010', right: '#08180c' },
-  shelter:    { top: '#1c4028', left: '#143018', right: '#0e2412' },
-  river:      { top: '#0a2848', left: '#061a32', right: '#041024' },
-  mud:        { top: '#241a14', left: '#1a130e', right: '#140e0a' },
-  rock:       { top: '#2e2c40', left: '#22202e', right: '#181624' },
-  food_patch: { top: '#1e1208', left: '#160e06', right: '#120a04' },
-  barren:     { top: '#1c1820', left: '#141018', right: '#0e0a12' },
-  flooded:    { top: '#0a2244', left: '#061830', right: '#040f22' },
-  death_site: { top: '#2c0e1a', left: '#1e0810', right: '#16060a' },
-  mountain:   { top: '#363450', left: '#262240', right: '#1a1830' },
-  cave:       { top: '#100e1c', left: '#0a0812', right: '#07060e' },
-  cliff:      { top: '#282438', left: '#1c1a2a', right: '#14121e' },
+  grass:      { top: '#2e6018', left: '#1e4010', right: '#16300c' },
+  tree:       { top: '#1e5222', left: '#143818', right: '#0d2812' },
+  shelter:    { top: '#265c2c', left: '#1a3e1e', right: '#132e16' },
+  river:      { top: '#1e4e74', left: '#103252', right: '#082238' },
+  mud:        { top: '#3e2c16', left: '#2a1e0e', right: '#1e1408' },
+  rock:       { top: '#4c4a62', left: '#363450', right: '#28263c' },
+  food_patch: { top: '#3c2c0e', left: '#281e08', right: '#1c1406' },
+  barren:     { top: '#3e3428', left: '#2c2418', right: '#201c12' },
+  flooded:    { top: '#183c60', left: '#0e2842', right: '#08182e' },
+  death_site: { top: '#4e1c24', left: '#36121a', right: '#280c12' },
+  mountain:   { top: '#5e5c72', left: '#44425a', right: '#323046' },
+  cave:       { top: '#201e2c', left: '#16141e', right: '#0e0c16' },
+  cliff:      { top: '#3e3c52', left: '#2c2a3e', right: '#201e2c' },
+  bush:       { top: '#1e4c18', left: '#14320e', right: '#0e2408' },
+}
+
+// Biome tint — painted over the top face only, giving each biome a chromatic
+// identity that layers on top of tile type without overwriting it.
+const BIOME_TOP_TINTS: Partial<Record<string, string>> = {
+  temperate: 'rgba(80, 160, 40, 0.07)',
+  lush:      'rgba(40, 200, 70, 0.11)',
+  arid:      'rgba(220, 148, 40, 0.10)',
+  wetland:   'rgba(28, 100, 140, 0.09)',
+  rocky:     'rgba(110, 105, 130, 0.08)',
 }
 
 const SEASON_TINT: Record<Season, string> = {
@@ -75,7 +89,10 @@ export function drawTile(
   const h = ISO_TILE_HEIGHT
   const hw = w / 2
   const hh = h / 2
-  const depth = Math.max(3, Math.ceil(ISO_TILE_HEIGHT * 0.45))
+  // Elevation-proportional depth: higher tiles cast a taller 2.5D skirt.
+  // Range: elev 0.0 → depth ~3px, elev 0.5 → ~5px, elev 0.9+ → ~7px.
+  const elev = tile.elevation ?? 0.5
+  const depth = Math.max(2, Math.ceil(ISO_TILE_HEIGHT * (0.20 + elev * 0.55)))
 
   const colors = TILE_COLORS[tile.type] ?? TILE_COLORS.grass
 
@@ -130,6 +147,32 @@ export function drawTile(
   ctx.closePath()
   ctx.fillStyle = SEASON_TINT[season]
   ctx.fill()
+
+  // Biome tint — each biome gets a faint chromatic overlay for visual identity
+  const biomeTint = BIOME_TOP_TINTS[tile.biome]
+  if (biomeTint) {
+    ctx.beginPath()
+    ctx.moveTo(screenX, screenY)
+    ctx.lineTo(screenX + hw, screenY + hh)
+    ctx.lineTo(screenX, screenY + h)
+    ctx.lineTo(screenX - hw, screenY + hh)
+    ctx.closePath()
+    ctx.fillStyle = biomeTint
+    ctx.fill()
+  }
+
+  // Elevation brightening — peaks catch more light from above
+  if (elev > 0.44) {
+    const elevAlpha = Math.min(0.28, (elev - 0.44) * 0.52)
+    ctx.beginPath()
+    ctx.moveTo(screenX, screenY)
+    ctx.lineTo(screenX + hw, screenY + hh)
+    ctx.lineTo(screenX, screenY + h)
+    ctx.lineTo(screenX - hw, screenY + hh)
+    ctx.closePath()
+    ctx.fillStyle = `rgba(255, 248, 230, ${elevAlpha})`
+    ctx.fill()
+  }
 
   drawTileDecoration(ctx, tile, screenX, screenY, season)
 }
@@ -370,29 +413,78 @@ function drawTileDecoration(
       const glowPhase = (Date.now() / 2200) % (Math.PI * 2)
       const innerGlow = 0.28 + Math.sin(glowPhase) * 0.08
 
-      ctx.fillStyle = '#2a2840'
+      // Outer rocky rim
+      ctx.fillStyle = '#22203a'
       ctx.beginPath()
-      ctx.ellipse(cx, cy - 2 * s, 5.5 * s, 4 * s, 0, 0, Math.PI * 2)
+      ctx.ellipse(cx, cy - 2 * s, 6 * s, 4.5 * s, 0, 0, Math.PI * 2)
       ctx.fill()
 
-      ctx.fillStyle = '#06040c'
+      // Outer rim texture — dashed ring
+      ctx.strokeStyle = 'rgba(70, 65, 95, 0.40)'
+      ctx.lineWidth = 0.5
+      ctx.setLineDash([1.5, 2.5])
       ctx.beginPath()
-      ctx.ellipse(cx, cy - 1.5 * s, 3.5 * s, 2.8 * s, 0, 0, Math.PI * 2)
+      ctx.ellipse(cx, cy - 2 * s, 5.8 * s, 4.2 * s, 0, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.setLineDash([])
+
+      // Inner void — absolute darkness
+      ctx.fillStyle = '#04030a'
+      ctx.beginPath()
+      ctx.ellipse(cx, cy - 1.5 * s, 4 * s, 3 * s, 0, 0, Math.PI * 2)
       ctx.fill()
 
-      const gGrad = ctx.createRadialGradient(cx, cy - 1 * s, 0, cx, cy - 1 * s, 3.2 * s)
+      // Depth rings — concentric faint ellipses suggest interior depth
+      for (let d = 1; d <= 2; d++) {
+        const dr = 1 - d * 0.30
+        ctx.strokeStyle = `rgba(50, 45, 80, ${0.18 + d * 0.05})`
+        ctx.lineWidth = 0.5
+        ctx.beginPath()
+        ctx.ellipse(cx, cy - 1.5 * s, 4 * s * dr, 3 * s * dr, 0, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+
+      // Warm amber glow rising from the cave floor
+      const gGrad = ctx.createRadialGradient(cx, cy - 0.5 * s, 0, cx, cy - 0.5 * s, 4 * s)
       gGrad.addColorStop(0, `rgba(255, 180, 60, ${innerGlow})`)
-      gGrad.addColorStop(0.6, `rgba(200, 100, 20, ${innerGlow * 0.4})`)
+      gGrad.addColorStop(0.5, `rgba(200, 100, 20, ${innerGlow * 0.4})`)
       gGrad.addColorStop(1, 'rgba(100, 40, 0, 0)')
       ctx.fillStyle = gGrad
       ctx.beginPath()
-      ctx.ellipse(cx, cy - 1.5 * s, 3.5 * s, 2.8 * s, 0, 0, Math.PI * 2)
+      ctx.ellipse(cx, cy - 1.5 * s, 4 * s, 3 * s, 0, 0, Math.PI * 2)
       ctx.fill()
 
-      ctx.strokeStyle = 'rgba(80, 76, 110, 0.65)'
-      ctx.lineWidth = 0.8
+      // Stalactites — dark mineral formations hanging from the cave mouth top
+      const voidTopY = (cy - 1.5 * s) - 3 * s
+      const stalConfigs: [number, number][] = [
+        [-1.8 * s, 2.4 * s],
+        [-0.6 * s, 2.9 * s],
+        [ 0.7 * s, 2.2 * s],
+        [ 1.9 * s, 1.8 * s],
+        [-1.1 * s, 1.5 * s],
+      ]
+      for (const [xOff, stalH] of stalConfigs) {
+        const stx = cx + xOff
+        const sty = voidTopY + 0.3 * s
+        ctx.fillStyle = '#2c2a48'
+        ctx.beginPath()
+        ctx.moveTo(stx - 0.65 * s, sty)
+        ctx.lineTo(stx + 0.65 * s, sty)
+        ctx.lineTo(stx, sty + stalH)
+        ctx.closePath()
+        ctx.fill()
+        // Moisture glint at stalactite tip
+        ctx.fillStyle = `rgba(180, 160, 255, ${innerGlow * 0.75})`
+        ctx.beginPath()
+        ctx.arc(stx, sty + stalH - 0.1 * s, 0.20 * s, 0, Math.PI * 2)
+        ctx.fill()
+      }
+
+      // Rim catchlight — upper arc of void catches ambient surface light
+      ctx.strokeStyle = 'rgba(100, 90, 145, 0.72)'
+      ctx.lineWidth = 0.9
       ctx.beginPath()
-      ctx.ellipse(cx, cy - 1.5 * s, 3.5 * s, 2.8 * s, 0, Math.PI, Math.PI * 2)
+      ctx.ellipse(cx, cy - 1.5 * s, 4 * s, 3 * s, 0, Math.PI, Math.PI * 2)
       ctx.stroke()
       break
     }
@@ -484,6 +576,91 @@ function drawTileDecoration(
       ctx.beginPath()
       ctx.arc(cx - 3 * s, cy + 1.5 * s, 0.7 * s, 0, Math.PI * 2)
       ctx.fill()
+      break
+    }
+
+    case 'bush': {
+      const foodLevel = Math.max(0, Math.min(1, tile.foodAmount / 35))
+      const isWinter = season === 'winter'
+      const isAutumn = season === 'autumn'
+
+      // Ground shadow
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.16)'
+      ctx.beginPath()
+      ctx.ellipse(cx, cy + 0.5 * s, 5.5 * s, 1.8 * s, 0, 0, Math.PI * 2)
+      ctx.fill()
+
+      if (isWinter) {
+        // Bare winter skeleton — sparse crossing branches
+        ctx.strokeStyle = 'rgba(45, 55, 38, 0.70)'
+        ctx.lineWidth = 0.9
+        ctx.beginPath()
+        ctx.moveTo(cx - 3.5 * s, cy + 0.5 * s)
+        ctx.lineTo(cx + 0.5 * s, cy - 2.5 * s)
+        ctx.moveTo(cx, cy + 0.5 * s)
+        ctx.lineTo(cx, cy - 3 * s)
+        ctx.moveTo(cx + 3 * s, cy + 0.5 * s)
+        ctx.lineTo(cx - 1.5 * s, cy - 2.5 * s)
+        ctx.stroke()
+        // Thin branch tips
+        ctx.strokeStyle = 'rgba(35, 45, 28, 0.50)'
+        ctx.lineWidth = 0.5
+        ctx.beginPath()
+        ctx.moveTo(cx + 0.5 * s, cy - 2.5 * s)
+        ctx.lineTo(cx + 2 * s,   cy - 3.5 * s)
+        ctx.moveTo(cx + 0.5 * s, cy - 2.5 * s)
+        ctx.lineTo(cx - 0.5 * s, cy - 3.5 * s)
+        ctx.moveTo(cx, cy - 3 * s)
+        ctx.lineTo(cx + 1.5 * s, cy - 4 * s)
+        ctx.stroke()
+      } else {
+        // Main foliage mass
+        const bushColor = isAutumn ? '#3a4018' : '#1e5a1a'
+        ctx.fillStyle = bushColor
+        ctx.beginPath()
+        ctx.ellipse(cx, cy - 1.5 * s, 4.5 * s, 3.2 * s, 0, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Secondary leaf cluster (creates depth and asymmetry)
+        ctx.fillStyle = isAutumn ? '#2a3010' : '#175212'
+        ctx.beginPath()
+        ctx.ellipse(cx + 2.2 * s, cy - 0.8 * s, 3.2 * s, 2.4 * s, 0.35, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Third micro cluster
+        ctx.fillStyle = isAutumn ? '#484e20' : '#226618'
+        ctx.beginPath()
+        ctx.ellipse(cx - 2 * s, cy - 2 * s, 2 * s, 1.6 * s, -0.2, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Canopy highlight — catches light from upper-left
+        ctx.fillStyle = 'rgba(100, 190, 80, 0.10)'
+        ctx.beginPath()
+        ctx.ellipse(cx - 0.8 * s, cy - 2.8 * s, 2.2 * s, 1.4 * s, -0.3, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Berries — spring/summer/autumn when food level > 0.1
+        if (foodLevel > 0.1) {
+          const berryColor = isAutumn ? '#cc6030' : '#cc2828'
+          const berryGlow  = isAutumn ? '#ff9060' : '#ff5050'
+          const berryPos: [number, number][] = [
+            [-3 * s, -0.5 * s], [0.5 * s, -2 * s], [2.5 * s, 0.5 * s],
+            [-1 * s,  s],       [3 * s,   -1.5 * s],
+          ]
+          for (const [bx, by] of berryPos) {
+            if (Math.abs(bx) + Math.abs(by) < foodLevel * 9 * s + 2 * s) {
+              ctx.fillStyle = berryColor
+              ctx.beginPath()
+              ctx.arc(cx + bx, cy + by, 1.3 * s, 0, Math.PI * 2)
+              ctx.fill()
+              ctx.fillStyle = berryGlow
+              ctx.beginPath()
+              ctx.arc(cx + bx - 0.35 * s, cy + by - 0.35 * s, 0.45 * s, 0, Math.PI * 2)
+              ctx.fill()
+            }
+          }
+        }
+      }
       break
     }
   }
@@ -647,28 +824,6 @@ function drawLightningEffect(
 
 // ─── Enrichment item rendering ────────────────────────────────────────────────
 
-const ENRICHMENT_COLORS: Record<string, string> = {
-  resting_spot:    '#8a7050',  // warm amber — rest
-  scratching_post: '#7a5a8a',  // muted violet — physical release
-  burrow:          '#4a6038',  // earthy green — hidden shelter
-  warm_stone:      '#c08840',  // golden amber — thermal warmth
-  bathtub:         '#4878a8',  // cool blue — water soak
-  hamster_wheel:   '#a06030',  // orange-brown — active exercise
-  toy_ball:        '#c84040',  // vibrant red — energetic play
-  trampoline:      '#6868c8',  // bright indigo — exhilarating play
-}
-
-const ENRICHMENT_GLYPHS: Record<string, string> = {
-  resting_spot:    '≈',
-  scratching_post: '|',
-  burrow:          'U',
-  warm_stone:      '◆',
-  bathtub:         '~',
-  hamster_wheel:   '○',
-  toy_ball:        '●',
-  trampoline:      '^',
-}
-
 export function drawEnrichmentItem(
   ctx: CanvasRenderingContext2D,
   item: EnrichmentItem,
@@ -678,43 +833,258 @@ export function drawEnrichmentItem(
   const s = ISO_TILE_HEIGHT / 18
   const cx = screenX
   const cy = screenY + ISO_TILE_HEIGHT * 0.5
-  const color = ENRICHMENT_COLORS[item.type] ?? '#8888b8'
-  const pulse = item.usedBy ? 0.55 + Math.sin(Date.now() / 200) * 0.45 : 1.0
-
-  // Durability fade — as uses run out, item becomes more transparent
+  const now = Date.now()
+  const inUse = !!item.usedBy
   const maxUses = item.maxUses ?? 40
   const durabilityAlpha = Math.max(0.35, (item.usesRemaining ?? maxUses) / maxUses)
 
   ctx.save()
-  ctx.globalAlpha = 0.85 * durabilityAlpha
+  ctx.globalAlpha = durabilityAlpha
 
-  // Base platform
-  ctx.fillStyle = color + '55'
-  ctx.strokeStyle = color
-  ctx.lineWidth = 0.8
-  ctx.beginPath()
-  ctx.ellipse(cx, cy + 2 * s, 5 * s, 2 * s, 0, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.stroke()
+  switch (item.type) {
+    case 'resting_spot': {
+      // Soft oval nest — slow breathing pulse
+      const pulse = 1 + Math.sin(now / 1800) * 0.06
+      ctx.fillStyle = '#5a3e20'
+      ctx.beginPath()
+      ctx.ellipse(cx, cy + s, 6.5 * s * pulse, 3 * s * pulse, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#7a5230'
+      ctx.beginPath()
+      ctx.ellipse(cx, cy + 0.5 * s, 4.5 * s * pulse, 2 * s * pulse, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#9a6840'
+      ctx.beginPath()
+      ctx.ellipse(cx, cy, 2.5 * s * pulse, 1.1 * s * pulse, 0, 0, Math.PI * 2)
+      ctx.fill()
+      if (inUse) {
+        ctx.fillStyle = `rgba(255, 220, 140, ${0.14 + Math.sin(now / 900) * 0.08})`
+        ctx.beginPath()
+        ctx.ellipse(cx, cy, 3 * s, 1.3 * s, 0, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      break
+    }
 
-  // Glyph label
-  ctx.globalAlpha = pulse * 0.90 * durabilityAlpha
-  ctx.font = `bold ${Math.round(7 * s)}px monospace`
-  ctx.fillStyle = color
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.shadowBlur = 4
-  ctx.shadowColor = color
-  ctx.fillText(ENRICHMENT_GLYPHS[item.type] ?? '?', cx, cy - 1 * s)
-  ctx.shadowBlur = 0
+    case 'scratching_post': {
+      // Vertical post with scratch marks; wobbles when in use
+      const wobble = inUse ? Math.sin(now / 120) * 0.08 : 0
+      ctx.save()
+      ctx.translate(cx, cy + 2 * s)
+      ctx.rotate(wobble)
+      ctx.fillStyle = '#5a4020'
+      ctx.beginPath()
+      ctx.ellipse(0, 0, 4 * s, 1.5 * s, 0, 0, Math.PI * 2)
+      ctx.fill()
+      const postH = 8 * s
+      ctx.fillStyle = '#7a5a30'
+      ctx.fillRect(-1.2 * s, -postH, 2.4 * s, postH)
+      ctx.strokeStyle = '#3a2810'
+      ctx.lineWidth = 0.6
+      for (let i = 1; i <= 4; i++) {
+        const markY = -postH * (i / 5.5)
+        ctx.beginPath()
+        ctx.moveTo(-1.2 * s, markY)
+        ctx.lineTo(1.2 * s, markY)
+        ctx.stroke()
+      }
+      ctx.fillStyle = '#9a7040'
+      ctx.beginPath()
+      ctx.ellipse(0, -postH, 1.4 * s, 0.7 * s, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+      break
+    }
 
-  // "In use" shimmer ring — pulses when actively used
-  if (item.usedBy) {
-    const shimR = 6 * s + Math.sin(Date.now() / 150) * 1.2 * s
-    ctx.globalAlpha = 0.35 * durabilityAlpha
-    ctx.strokeStyle = color
-    ctx.lineWidth = 0.7
-    ctx.setLineDash([2, 2])
+    case 'burrow': {
+      // Dark pit with soil mound and dig particles when active
+      ctx.fillStyle = '#3a2a14'
+      ctx.beginPath()
+      ctx.ellipse(cx, cy + 0.5 * s, 6.5 * s, 2.8 * s, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#100a04'
+      ctx.beginPath()
+      ctx.ellipse(cx, cy + 0.5 * s, 4.0 * s, 1.8 * s, 0, 0, Math.PI * 2)
+      ctx.fill()
+      if (inUse) {
+        for (let p = 0; p < 4; p++) {
+          const pcycle = ((now / 400 + p * 0.25) % 1.0)
+          const px = cx + Math.cos(now / 300 + p * 1.57) * 5 * s * pcycle
+          const py = cy - pcycle * 5 * s
+          ctx.fillStyle = `rgba(120, 85, 45, ${(1 - pcycle) * 0.7})`
+          ctx.beginPath()
+          ctx.arc(px, py, (0.4 + (1 - pcycle) * 0.5) * s, 0, Math.PI * 2)
+          ctx.fill()
+        }
+      }
+      ctx.strokeStyle = 'rgba(80, 60, 30, 0.55)'
+      ctx.lineWidth = 0.6
+      ctx.beginPath()
+      ctx.ellipse(cx, cy + 0.5 * s, 4.0 * s, 1.8 * s, 0, Math.PI, Math.PI * 2)
+      ctx.stroke()
+      break
+    }
+
+    case 'warm_stone': {
+      // Rounded boulder with animated heat shimmer rings
+      ctx.fillStyle = '#5a4820'
+      ctx.beginPath()
+      ctx.ellipse(cx, cy + s, 5.5 * s, 3.5 * s, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#7a6030'
+      ctx.beginPath()
+      ctx.ellipse(cx - 0.3 * s, cy - 0.5 * s, 4 * s, 3 * s, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = 'rgba(200, 170, 80, 0.25)'
+      ctx.beginPath()
+      ctx.ellipse(cx - s, cy - 1.5 * s, 1.5 * s, 0.8 * s, -0.4, 0, Math.PI * 2)
+      ctx.fill()
+      for (let r = 0; r < 3; r++) {
+        const rcycle = ((now / 1200 + r * 0.33) % 1.0)
+        const rAlpha = (1 - rcycle) * (0.22 + (inUse ? 0.15 : 0))
+        ctx.strokeStyle = `rgba(255, 180, 60, ${rAlpha})`
+        ctx.lineWidth = 0.7
+        ctx.beginPath()
+        ctx.ellipse(cx, cy, 5.5 * s * (0.5 + rcycle), 3.5 * s * (0.3 + rcycle * 0.4), 0, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+      break
+    }
+
+    case 'mud_pool': {
+      // Oval clay depression with animated mud ripples
+      ctx.fillStyle = '#2a1e10'
+      ctx.beginPath()
+      ctx.ellipse(cx, cy + s, 6 * s, 2.8 * s, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#3a2a16'
+      ctx.beginPath()
+      ctx.ellipse(cx, cy + s, 5 * s, 2.2 * s, 0, 0, Math.PI * 2)
+      ctx.fill()
+      // Muddy sheen
+      ctx.fillStyle = 'rgba(80, 60, 30, 0.30)'
+      ctx.beginPath()
+      ctx.ellipse(cx - s, cy + 0.5 * s, 2 * s, 0.8 * s, -0.2, 0, Math.PI * 2)
+      ctx.fill()
+      const ripPhase = (now / 1200) % (Math.PI * 2)
+      for (let r = 0; r < 2; r++) {
+        const rAlpha = 0.12 + Math.sin(ripPhase + r * Math.PI) * 0.06
+        ctx.strokeStyle = `rgba(120, 90, 50, ${rAlpha})`
+        ctx.lineWidth = 0.6
+        ctx.beginPath()
+        ctx.ellipse(cx + (r - 0.5) * s, cy + s, 2.2 * s, 0.9 * s, 0, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+      ctx.strokeStyle = 'rgba(60, 45, 22, 0.50)'
+      ctx.lineWidth = 0.7
+      ctx.beginPath()
+      ctx.ellipse(cx, cy + s, 6 * s, 2.8 * s, 0, Math.PI, Math.PI * 2)
+      ctx.stroke()
+      break
+    }
+
+    case 'worn_path': {
+      // Circular worn-earth trail; a small scuff mark rotates when in use
+      const trackR = 5 * s
+      const dustPhase = (now / (inUse ? 600 : 3000)) % (Math.PI * 2)
+      // Packed earth base
+      ctx.fillStyle = '#2e2010'
+      ctx.beginPath()
+      ctx.ellipse(cx, cy + 0.5 * s, trackR + s, (trackR + s) * 0.45, 0, 0, Math.PI * 2)
+      ctx.fill()
+      // Track groove
+      ctx.strokeStyle = '#1e1408'
+      ctx.lineWidth = 1.6
+      ctx.beginPath()
+      ctx.ellipse(cx, cy + 0.5 * s, trackR, trackR * 0.42, 0, 0, Math.PI * 2)
+      ctx.stroke()
+      // Dust puff when in use
+      if (inUse) {
+        const dustX = cx + Math.cos(dustPhase) * trackR
+        const dustY = cy + 0.5 * s + Math.sin(dustPhase) * trackR * 0.42
+        ctx.fillStyle = `rgba(160, 120, 60, ${0.20 + Math.sin(now / 80) * 0.10})`
+        ctx.beginPath()
+        ctx.ellipse(dustX, dustY, 1.8 * s, 1 * s, dustPhase, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      break
+    }
+
+    case 'play_stones': {
+      // Cluster of smooth rounded pebbles; scatter bounces when in use
+      const baseY = cy + 0.5 * s
+      const stones: [number, number, number, string][] = [
+        [-2 * s, -s,      2.2 * s, '#5a5272'],
+        [ s,     -1.5 * s, 1.8 * s, '#4a4060'],
+        [ 2.5 * s, 0.5 * s, 1.5 * s, '#625870'],
+        [-3 * s,  0.5 * s, 1.2 * s, '#383050'],
+        [-0.5 * s, s,      1.4 * s, '#524868'],
+      ]
+      for (const [ox, oy, r, col] of stones) {
+        const bounce = inUse ? Math.sin(now / 200 + ox) * 1.5 * s : 0
+        ctx.fillStyle = col
+        ctx.beginPath()
+        ctx.ellipse(cx + ox, baseY + oy + bounce, r, r * 0.75, 0, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.fillStyle = 'rgba(200, 180, 255, 0.18)'
+        ctx.beginPath()
+        ctx.ellipse(cx + ox - r * 0.25, baseY + oy + bounce - r * 0.3, r * 0.4, r * 0.3, -0.5, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      break
+    }
+
+    case 'springy_moss': {
+      // Rounded sphagnum pad; compresses when in use, releases with visible spring
+      const compressed = inUse ? Math.max(0.65, 1 - Math.abs(Math.sin(now / 160)) * 0.35) : 1.0
+      const mossH = 3.5 * s * compressed
+      const mossW = 6 * s / compressed
+      // Shadow
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.20)'
+      ctx.beginPath()
+      ctx.ellipse(cx, cy + 0.8 * s, mossW * 0.85, 1.2 * s, 0, 0, Math.PI * 2)
+      ctx.fill()
+      // Main moss body
+      ctx.fillStyle = '#1a4010'
+      ctx.beginPath()
+      ctx.ellipse(cx, cy - mossH * 0.5 + 0.5 * s, mossW * 0.5, mossH * 0.55, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#246018'
+      ctx.beginPath()
+      ctx.ellipse(cx, cy - mossH * 0.35 + 0.5 * s, mossW * 0.45, mossH * 0.45, 0, 0, Math.PI * 2)
+      ctx.fill()
+      // Highlight — captures the sponginess of sphagnum
+      ctx.fillStyle = 'rgba(80, 180, 60, 0.14)'
+      ctx.beginPath()
+      ctx.ellipse(cx - mossW * 0.12, cy - mossH * 0.55 + 0.5 * s, mossW * 0.26, mossH * 0.22, 0, 0, Math.PI * 2)
+      ctx.fill()
+      // Textured surface dots
+      ctx.fillStyle = '#1e5016'
+      for (let d = 0; d < 6; d++) {
+        const ang = (d / 6) * Math.PI * 2
+        const dr = mossW * 0.22
+        ctx.beginPath()
+        ctx.arc(cx + Math.cos(ang) * dr, cy + Math.sin(ang) * mossH * 0.28 - mossH * 0.4 + 0.5 * s, 0.6 * s, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      if (inUse && compressed < 0.85) {
+        ctx.strokeStyle = `rgba(100, 220, 80, ${(1 - compressed) * 0.55})`
+        ctx.lineWidth = 0.8
+        ctx.beginPath()
+        ctx.ellipse(cx, cy - mossH * 0.35 + 0.5 * s, mossW * 0.55, mossH * 0.55, 0, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+      break
+    }
+  }
+
+  // Shared: pulsing shimmer ring when actively in use
+  if (inUse) {
+    const shimR = 7 * s + Math.sin(now / 150) * s
+    ctx.globalAlpha = 0.20 * durabilityAlpha
+    ctx.strokeStyle = '#c8b870'
+    ctx.lineWidth = 0.6
+    ctx.setLineDash([1.5, 2])
     ctx.beginPath()
     ctx.arc(cx, cy, shimR, 0, Math.PI * 2)
     ctx.stroke()

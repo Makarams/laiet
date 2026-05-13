@@ -25,6 +25,7 @@ import {
   PLAY_DURATION_TICKS, PLAY_STRESS_REDUCTION,
   NATURAL_CAVE_STRESS_REDUCTION, NATURAL_RIVER_STRESS_REDUCTION,
   NATURAL_TREE_STRESS_REDUCTION, NATURAL_ROCKY_SENTINEL_BONUS,
+  NATURAL_BUSH_STRESS_REDUCTION, BUSH_FOOD_MAX, BUSH_FOOD_REGROW_RATE,
 } from './constants'
 import {
   tickNeeds, tickBehavior, tickMovement,
@@ -195,6 +196,22 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
         }
       }
 
+      // Bush berry regrowth — slower than food_patch; independent of trees.
+      // No growth in winter; drought halves the rate.
+      if (t.type === 'bush' && t.foodAmount < BUSH_FOOD_MAX) {
+        const bushMod = weather === 'drought' ? 0.5 : weather === 'rain' || weather === 'storm' ? 1.3 : 1.0
+        const seasonMod = season === 'winter' ? 0.0
+          : season === 'spring' ? 1.6
+          : season === 'summer' ? 1.1
+          : 0.5
+        if (seasonMod > 0) {
+          writeTile(y, x).foodAmount = Math.min(
+            BUSH_FOOD_MAX,
+            t.foodAmount + BUSH_FOOD_REGROW_RATE * bushMod * seasonMod
+          )
+        }
+      }
+
       // Rain refills rivers; drought slowly drains them
       if (t.type === 'river' || t.type === 'mud') {
         if (weather === 'rain' || weather === 'storm') {
@@ -284,6 +301,9 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
             wt.type = 'barren'
             wt.treeAge = -1
             wt.shelter = false
+          } else if (t.type === 'bush') {
+            wt.type = 'barren'
+            wt.foodAmount = 0
           } else if (t.type === 'river') {
             wt.waterLevel = Math.max(0, t.waterLevel - 25)
           }
@@ -304,7 +324,7 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
           if (nx < 0 || nx >= WORLD_SIZE || ny < 0 || ny >= WORLD_SIZE) continue
           const adj = tiles[ny][nx]
           if ((adj.burning ?? 0) > 0) continue
-          if ((adj.type === 'tree' || adj.type === 'shelter') && Math.random() < FIRE_SPREAD_CHANCE) {
+          if ((adj.type === 'tree' || adj.type === 'shelter' || adj.type === 'bush') && Math.random() < FIRE_SPREAD_CHANCE) {
             writeTile(ny, nx).burning = FIRE_DURATION_TICKS
           }
         }
@@ -459,8 +479,8 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
     // At-tile resource consumption
     const currentTile = tiles[c.y]?.[c.x]
     if (currentTile) {
-      // Eat when on food patch and hungry (state-independent)
-      if (currentTile.type === 'food_patch' && currentTile.foodAmount > 0 && c.hunger > 15) {
+      // Eat when on food patch or berry bush and hungry (state-independent)
+      if ((currentTile.type === 'food_patch' || currentTile.type === 'bush') && currentTile.foodAmount > 0 && c.hunger > 15) {
         const before = c.hunger
         const result = eatFromTile(c, currentTile)
         c = result.creature
@@ -483,6 +503,13 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
       }
       if (currentTile.type === 'tree' || currentTile.type === 'shelter') {
         c.stress = Math.max(0, c.stress - NATURAL_TREE_STRESS_REDUCTION)
+      }
+      // Bush concealment calms all creatures; Timid benefit most from the cover
+      if (currentTile.type === 'bush') {
+        const bushBonus = c.genome.personality === 'Timid' ? NATURAL_BUSH_STRESS_REDUCTION * 1.8
+          : c.genome.personality === 'Recluse' ? NATURAL_BUSH_STRESS_REDUCTION * 1.3
+          : NATURAL_BUSH_STRESS_REDUCTION
+        c.stress = Math.max(0, c.stress - bushBonus)
       }
       if (currentTile.biome === 'rocky' && c.genome.mind === 'Sentinel') {
         c.sentience = Math.min(100, c.sentience + NATURAL_ROCKY_SENTINEL_BONUS)

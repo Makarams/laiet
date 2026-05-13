@@ -3,26 +3,81 @@ import { useLaietStore } from '@/store/gameStore'
 import { ColonyStage, WeatherState } from '@/types'
 import { HEAL_CHARGES_PER_DAY } from '@/engine/constants'
 
+// ─── Biome display ─────────────────────────────────────────────────────────
+
+const BIOME_GLYPH: Record<string, string> = {
+  temperate: '·',
+  lush:      '♦',
+  arid:      '◦',
+  rocky:     '▲',
+  wetland:   '≋',
+}
+
+const BIOME_COLOR: Record<string, string> = {
+  temperate: '#7a9060',
+  lush:      '#50c060',
+  arid:      '#c87040',
+  rocky:     '#8878a8',
+  wetland:   '#4888a0',
+}
+
+const BiomeRow = styled.div`
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 3px;
+`
+
+const BiomeChip = styled.span<{ color: string }>`
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: ${p => p.color};
+  letter-spacing: 0.06em;
+`
+
+const SeasonRow = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 3px;
+  padding: 3px 0;
+`
+
+const SeasonLabel = styled.span<{ color: string }>`
+  font-size: 10.5px;
+  color: ${p => p.color};
+  letter-spacing: 0.14em;
+  font-weight: bold;
+`
+
+const YearLabel = styled.span`
+  font-size: 10px;
+  color: #6a5840;
+  letter-spacing: 0.12em;
+`
+
 // ─── Layout ──────────────────────────────────────────────────────────────────
 
 const Panel = styled.div`
   background:
-    linear-gradient(180deg, rgba(20, 20, 50, 0.30), rgba(8, 8, 28, 0.85)),
-    #06061a;
-  border: 1px solid #2a2a50;
+    linear-gradient(180deg, rgba(28, 20, 12, 0.30), rgba(14, 10, 6, 0.90)),
+    #16120e;
+  border: 1px solid #3a2e1e;
   border-radius: 4px;
   padding: 11px 12px;
   font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
   font-size: 12.5px;
-  color: #f0e6c8;
+  color: #e8d5b0;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   box-sizing: border-box;
-  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.40);
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.35);
 
   &::-webkit-scrollbar { width: 4px; }
-  &::-webkit-scrollbar-thumb { background: #3a3a70; border-radius: 2px; }
+  &::-webkit-scrollbar-thumb { background: #4a3a28; border-radius: 2px; }
 `
 
 const PanelHeader = styled.div`
@@ -31,20 +86,19 @@ const PanelHeader = styled.div`
   align-items: baseline;
   padding-bottom: 7px;
   margin-bottom: 8px;
-  border-bottom: 1px solid #1c1c40;
+  border-bottom: 1px solid #2e2418;
 `
 
 const PanelTitle = styled.div`
   font-size: 13px;
-  color: #d088ff;
+  color: #c49840;
   letter-spacing: 0.22em;
-  text-shadow: 0 0 10px rgba(200, 120, 240, 0.40);
   font-weight: bold;
 `
 
 const PanelTag = styled.div`
   font-size: 11px;
-  color: #9090b8;
+  color: #6a5840;
   letter-spacing: 0.18em;
 `
 
@@ -59,7 +113,7 @@ const SectionTitle = styled.div`
   align-items: center;
   gap: 6px;
   font-size: 10.5px;
-  color: #80e0f0;
+  color: #7a9060;
   letter-spacing: 0.22em;
   text-transform: uppercase;
   margin: 3px 0 6px;
@@ -69,8 +123,7 @@ const SectionTitle = styled.div`
     content: '';
     width: 5px;
     height: 5px;
-    background: #5ec8e0;
-    box-shadow: 0 0 5px #5ec8e0;
+    background: #6a8050;
     transform: rotate(45deg);
   }
 
@@ -78,7 +131,7 @@ const SectionTitle = styled.div`
     content: '';
     flex: 1;
     height: 1px;
-    background: linear-gradient(90deg, #2e4e6e, transparent);
+    background: linear-gradient(90deg, #2a2016, transparent);
   }
 `
 
@@ -91,13 +144,13 @@ const Row = styled.div`
 `
 
 const Label = styled.span`
-  color: #a8a8d0;
+  color: #a09080;
   font-size: 11.5px;
   letter-spacing: 0.04em;
 `
 
 const Value = styled.span<{ accent?: string }>`
-  color: ${p => p.accent ?? '#f0e6c8'};
+  color: ${p => p.accent ?? '#e8d5b0'};
   font-size: 12px;
   letter-spacing: 0.05em;
   font-weight: bold;
@@ -115,13 +168,12 @@ const StageBar = styled.div<{ stage: ColonyStage }>`
   color: ${p => stageColor(p.stage)};
   text-align: center;
   letter-spacing: 0.22em;
-  box-shadow: 0 0 10px ${p => stageColor(p.stage)}20;
 `
 
 const StageProgress = styled.div<{ percent: number; stage: ColonyStage }>`
   margin-top: 5px;
   height: 3px;
-  background: #0c0c22;
+  background: #100e08;
   border-radius: 2px;
   overflow: hidden;
   position: relative;
@@ -132,7 +184,6 @@ const StageProgress = styled.div<{ percent: number; stage: ColonyStage }>`
     top: 0; left: 0; bottom: 0;
     width: ${p => p.percent}%;
     background: linear-gradient(90deg, ${p => stageColor(p.stage)}, ${p => stageColor(p.stage)}cc);
-    box-shadow: 0 0 6px ${p => stageColor(p.stage)};
     transition: width 0.5s ease;
   }
 `
@@ -152,18 +203,15 @@ const AwDot = styled.div<{ active: boolean; level: number }>`
   border-radius: 50%;
   flex-shrink: 0;
   background: ${p => p.active
-    ? p.level === 3 ? '#c878f0'
-    : p.level === 2 ? '#5ec8e0'
-    : '#80f0a0'
-    : '#0c0c22'};
+    ? p.level === 3 ? '#a870c0'
+    : p.level === 2 ? '#d4a040'
+    : '#88c060'
+    : '#14100a'};
   border: 1px solid ${p => p.active
-    ? p.level === 3 ? '#f0a0ff'
-    : p.level === 2 ? '#8af0ff'
-    : '#a8ffc0'
-    : '#1c1c40'};
-  box-shadow: ${p => p.active
-    ? `0 0 8px ${p.level === 3 ? '#c878f0' : p.level === 2 ? '#5ec8e0' : '#80f0a0'}`
-    : 'none'};
+    ? p.level === 3 ? '#c898d8'
+    : p.level === 2 ? '#e8c060'
+    : '#a8d878'
+    : '#2e2418'};
   position: relative;
 
   &::after {
@@ -171,21 +219,21 @@ const AwDot = styled.div<{ active: boolean; level: number }>`
     position: absolute;
     inset: 3px;
     border-radius: 50%;
-    background: ${p => p.active ? 'rgba(255,255,255,0.30)' : 'transparent'};
+    background: ${p => p.active ? 'rgba(255,255,255,0.25)' : 'transparent'};
   }
 `
 
 const AwarenessLabel = styled.div`
   margin-top: 7px;
   font-size: 10.5px;
-  color: #a8a8d0;
+  color: #8a7a62;
   font-style: italic;
   letter-spacing: 0.05em;
   text-align: center;
   line-height: 1.5;
 `
 
-// ─── Body type bar ───────────────────────────────────────────────────────────
+// ─── Body type grid ──────────────────────────────────────────────────────────
 
 const BodyGrid = styled.div`
   display: grid;
@@ -205,20 +253,19 @@ const BodyDot = styled.span<{ color: string }>`
   height: 7px;
   border-radius: 50%;
   background: ${p => p.color};
-  box-shadow: 0 0 5px ${p => p.color};
   flex-shrink: 0;
 `
 
 const BodyCount = styled.span`
   font-size: 11px;
-  color: #f0e6c8;
+  color: #e8d5b0;
   font-weight: bold;
   width: 20px;
 `
 
 const BodyLabel = styled.span`
   font-size: 10.5px;
-  color: #8888b0;
+  color: #6a5840;
   letter-spacing: 0.06em;
 `
 
@@ -234,7 +281,6 @@ const WeatherRow = styled.div`
 const WeatherGlyph = styled.span<{ color: string }>`
   font-size: 16px;
   color: ${p => p.color};
-  text-shadow: 0 0 8px ${p => p.color};
   line-height: 1;
 `
 
@@ -247,12 +293,23 @@ const WeatherName = styled.span<{ color: string }>`
 
 const WeatherTimer = styled.span`
   font-size: 10.5px;
-  color: #8080a0;
+  color: #6a5840;
   letter-spacing: 0.08em;
   margin-left: auto;
 `
 
 // ─── Colors ──────────────────────────────────────────────────────────────────
+
+const SEASON_GLYPH: Record<string, string> = {
+  spring: '✦', summer: '◆', autumn: '☁', winter: '❄',
+}
+
+const SEASON_COLOR: Record<string, string> = {
+  spring: '#80c060',
+  summer: '#d4a040',
+  autumn: '#c87040',
+  winter: '#6888b0',
+}
 
 const WEATHER_GLYPH: Record<WeatherState, string> = {
   clear:   '☀',
@@ -262,27 +319,27 @@ const WEATHER_GLYPH: Record<WeatherState, string> = {
 }
 
 const WEATHER_COLOR: Record<WeatherState, string> = {
-  clear:   '#ffe0a0',
-  rain:    '#80c8ff',
-  storm:   '#ffe060',
-  drought: '#e08850',
+  clear:   '#d4a040',
+  rain:    '#5888a0',
+  storm:   '#d4c040',
+  drought: '#c87040',
 }
 
 const BODY_COLOR: Record<string, string> = {
-  Spore: '#80f0a0',
-  Shell: '#5ec8e0',
-  Spike: '#ff8048',
-  Wisp:  '#c878f0',
+  Spore: '#88c060',
+  Shell: '#5888a0',
+  Spike: '#d47038',
+  Wisp:  '#a870c0',
 }
 
 function stageColor(stage: ColonyStage): string {
   const map: Record<ColonyStage, string> = {
-    genesis:     '#7878a0',
-    nascent:     '#5ec8e0',
-    growing:     '#80f0a0',
-    established: '#ffc060',
-    thriving:    '#ffb050',
-    ascendant:   '#c878f0',
+    genesis:     '#7a7860',
+    nascent:     '#5888a0',
+    growing:     '#88c060',
+    established: '#d4a040',
+    thriving:    '#c87040',
+    ascendant:   '#a870c0',
   }
   return map[stage]
 }
@@ -310,10 +367,20 @@ export function ColonyStatsPanel() {
 
   if (!gameState) return null
 
-  const { creatures, colonyStage, awarenessStage, totalDeaths, totalCreaturesEver, weather, weatherTimer, caretaker } = gameState
+  const { creatures, colonyStage, awarenessStage, totalDeaths, totalCreaturesEver, weather, weatherTimer, caretaker, time } = gameState
   const maxHealCharges = HEAL_CHARGES_PER_DAY
   const alive = Object.values(creatures).filter(c => c.diedOnDay === null)
   const maxGen = alive.length > 0 ? Math.max(...alive.map(c => c.generation)) : 0
+
+  // Biome distribution of alive creatures
+  const biomeCounts: Record<string, number> = {}
+  for (const c of alive) {
+    const b = c.dominantBiome ?? 'temperate'
+    biomeCounts[b] = (biomeCounts[b] ?? 0) + 1
+  }
+  const topBiomes = Object.entries(biomeCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
 
   const traitCounts = alive.reduce((acc, c) => {
     acc[c.genome.personality] = (acc[c.genome.personality] ?? 0) + 1
@@ -328,7 +395,6 @@ export function ColonyStatsPanel() {
   const bodyCounts = { Spore: 0, Shell: 0, Spike: 0, Wisp: 0 } as Record<string, number>
   for (const c of alive) bodyCounts[c.genome.body] = (bodyCounts[c.genome.body] ?? 0) + 1
 
-  // Progress toward next stage
   const currentStageIdx = STAGES.indexOf(colonyStage)
   const nextStage = STAGES[currentStageIdx + 1]
   const stageProgress = nextStage
@@ -349,7 +415,7 @@ export function ColonyStatsPanel() {
         <SectionTitle>population</SectionTitle>
         <Row>
           <Label>alive</Label>
-          <Value accent='#80f0a0'>{alive.length}</Value>
+          <Value accent='#88c060'>{alive.length}</Value>
         </Row>
         <Row>
           <Label>ever born</Label>
@@ -357,11 +423,11 @@ export function ColonyStatsPanel() {
         </Row>
         <Row>
           <Label>deaths</Label>
-          <Value accent={totalDeaths > 0 ? '#ff5060' : undefined}>{totalDeaths}</Value>
+          <Value accent={totalDeaths > 0 ? '#c85030' : undefined}>{totalDeaths}</Value>
         </Row>
         <Row>
           <Label>generation</Label>
-          <Value accent='#ffb050'>{maxGen}</Value>
+          <Value accent='#d4a040'>{maxGen}</Value>
         </Row>
       </Section>
 
@@ -382,13 +448,13 @@ export function ColonyStatsPanel() {
         <SectionTitle>vitals</SectionTitle>
         <Row>
           <Label>avg health</Label>
-          <Value accent={avgHealth < 40 ? '#ff5060' : avgHealth > 75 ? '#80f0a0' : '#ffc060'}>
+          <Value accent={avgHealth < 40 ? '#c85030' : avgHealth > 75 ? '#88c060' : '#d4a040'}>
             {avgHealth}%
           </Value>
         </Row>
         <Row>
           <Label>dominant trait</Label>
-          <Value accent='#5ec8e0' style={{ fontSize: 9.5, letterSpacing: '0.1em' }}>
+          <Value accent='#5888a0' style={{ fontSize: 9.5, letterSpacing: '0.1em' }}>
             {dominant?.[0]?.toUpperCase() ?? '—'}
           </Value>
         </Row>
@@ -396,6 +462,12 @@ export function ColonyStatsPanel() {
 
       <Section>
         <SectionTitle>environment</SectionTitle>
+        <SeasonRow>
+          <SeasonLabel color={SEASON_COLOR[time.season]}>
+            {SEASON_GLYPH[time.season]} {time.season.toUpperCase()}
+          </SeasonLabel>
+          <YearLabel>yr {time.year + 1} · d {time.day}</YearLabel>
+        </SeasonRow>
         <WeatherRow>
           <WeatherGlyph color={WEATHER_COLOR[currentWeather]}>
             {WEATHER_GLYPH[currentWeather]}
@@ -405,6 +477,17 @@ export function ColonyStatsPanel() {
           </WeatherName>
           <WeatherTimer>{Math.round(weatherTimer ?? 0)}d left</WeatherTimer>
         </WeatherRow>
+        {topBiomes.length > 0 && (
+          <BiomeRow>
+            {topBiomes.map(([biome, count]) => (
+              <BiomeChip key={biome} color={BIOME_COLOR[biome] ?? '#7a9060'}>
+                <span>{BIOME_GLYPH[biome] ?? '·'}</span>
+                <span>{biome}</span>
+                <span style={{ color: '#4a3820' }}>{count}</span>
+              </BiomeChip>
+            ))}
+          </BiomeRow>
+        )}
       </Section>
 
       <Section>
@@ -413,7 +496,7 @@ export function ColonyStatsPanel() {
         {nextStage && (
           <>
             <StageProgress percent={stageProgress} stage={colonyStage} />
-            <div style={{ fontSize: 8.5, color: '#4a4a70', textAlign: 'right', marginTop: 3, letterSpacing: '0.1em' }}>
+            <div style={{ fontSize: 8.5, color: '#4a3820', textAlign: 'right', marginTop: 3, letterSpacing: '0.1em' }}>
               → {nextStage.toUpperCase()}
             </div>
           </>
@@ -426,7 +509,7 @@ export function ColonyStatsPanel() {
           {[1, 2, 3].map(n => (
             <AwDot key={n} active={awarenessStage >= n} level={n} />
           ))}
-          <span style={{ fontSize: 9, color: '#7a78a5', marginLeft: 4, letterSpacing: '0.10em' }}>
+          <span style={{ fontSize: 9, color: '#6a5840', marginLeft: 4, letterSpacing: '0.10em' }}>
             stage {awarenessStage} / 3
           </span>
         </AwarenessTrack>
@@ -437,23 +520,23 @@ export function ColonyStatsPanel() {
         <SectionTitle>caretaker</SectionTitle>
         <Row>
           <Label>mode</Label>
-          <Value accent='#d088ff'>◈ omnipresent</Value>
+          <Value accent='#a870c0'>◈ omnipresent</Value>
         </Row>
         <Row style={{ marginTop: 4 }}>
           <Label>heal charges</Label>
-          <Value accent={caretaker.healCharges > 0 ? '#80f0a0' : '#ff5060'}>
+          <Value accent={caretaker.healCharges > 0 ? '#88c060' : '#c85030'}>
             {caretaker.healCharges}/{maxHealCharges}
           </Value>
         </Row>
         <Row>
           <Label>river redirect</Label>
-          <Value accent={caretaker.riverRedirectUsed ? '#ff8050' : '#80f0a0'}>
+          <Value accent={caretaker.riverRedirectUsed ? '#c87040' : '#88c060'}>
             {caretaker.riverRedirectUsed ? '◌ used' : '◉ ready'}
           </Value>
         </Row>
         <Row>
           <Label>enrichment</Label>
-          <Value accent='#58b858'>◉ degrades naturally</Value>
+          <Value accent='#7a9060'>◉ degrades naturally</Value>
         </Row>
       </Section>
     </Panel>
