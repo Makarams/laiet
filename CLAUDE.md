@@ -219,7 +219,7 @@ Each field starts neutral at gen 0 and drifts by ±0.04 per sexual birth event (
 
 **All four body types are present from the start** — `createStarterCreatures` always spawns one of each. Missing a body type at init would require it to appear via the 15% body-slot mutation rate, which is too rare to guarantee early coverage.
 
-Starters are also seeded with weak pre-existing bonds (`STARTER_BOND_STRENGTH = 18`) toward each other. This is below the `>20` threshold that suppresses bond-seeking, so they still actively pursue each other, but they reach the reproduction threshold (`42`) roughly twice as fast as starting from 0. This prevents early-game extinction from bond starvation.
+Starters are also seeded with pre-existing bonds (`STARTER_BOND_STRENGTH = 25`) toward each other. This is below `REPRODUCE_BOND_MIN_STRENGTH = 35`, so bond-seeking stays active from the start. Starters need only ~20 more adjacency ticks after maturity to reach the reproduction threshold. This prevents early-game extinction from bond starvation.
 
 **Family names** evolve syllabically across generations — 20/30/30/20% chance to prefix/suffix/replace-last-syllable/keep on each offspring. Over 10+ generations, names become unrecognizable from the founders.
 
@@ -252,7 +252,7 @@ dying → sick → fear/flee (low health or Timid under threat)
 → bond formation (adjacent creatures)
 ```
 
-**Bond-seeking** is a dedicated step for mature creatures (`age ≥ CREATURE_MATURITY_TICKS`) with no strong bonds. They actively move toward any suitable nearby creature within 18 tiles. This is the primary pathway to sexual reproduction.
+**Bond-seeking** is a dedicated step for mature creatures (`age ≥ CREATURE_MATURITY_TICKS`) whose strongest bond is below `REPRODUCE_BOND_MIN_STRENGTH`. They actively move toward any suitable nearby creature within 18 tiles until bonds are strong enough to reproduce. This is the primary pathway to sexual reproduction.
 
 Movement uses directional stepping with passability checks and tile movement modifiers. Wisp moves ~6× more often than Shell per tick.
 
@@ -260,7 +260,7 @@ Movement uses directional stepping with passability checks and tile movement mod
 
 **Sexual (primary path — all body types):**
 - Requires maturity (`age ≥ 30 ticks`), health ≥ 55, hunger ≤ 55
-- Requires at least one bond with strength ≥ **42** (`REPRODUCE_BOND_MIN_STRENGTH`)
+- Requires at least one bond with strength ≥ **35** (`REPRODUCE_BOND_MIN_STRENGTH`)
 - Partner must be alive, non-Aggressive, not already paired this tick, and within **12 tiles**
 - Rate: `REPRODUCE_RATE_BY_BODY × season bonus × population factor`
 - Season bonuses: spring 1.3×, summer 1.0×, autumn 0.8×, winter 0.3×
@@ -367,7 +367,7 @@ The canonical definition of everything. If you're adding a feature, start here. 
 - Time: `REAL_MS_PER_GAME_DAY`, `DAY_FRACTION_PER_TICK`, `DAYS_PER_SEASON`
 - World: `WORLD_SIZE = 120`, `MUTATION_CHANCE = 0.15`
 - Needs decay: `HUNGER_DECAY`, `THIRST_DECAY`, `WARMTH_DECAY_WINTER/BASE`
-- Reproduction: `REPRODUCE_RATE_BY_BODY`, `REPRODUCE_BOND_MIN_STRENGTH = 42`, `ASEXUAL_BASE_CHANCE = 0.0008`, `STARTER_BOND_STRENGTH = 18`
+- Reproduction: `REPRODUCE_RATE_BY_BODY`, `REPRODUCE_BOND_MIN_STRENGTH = 35`, `ASEXUAL_BASE_CHANCE = 0.0008`, `STARTER_BOND_STRENGTH = 25`
 - Weather: `WEATHER_DURATION`, `RAIN_*`, `STORM_*`, `DROUGHT_*`
 - Biome: `BIOME_THIRST_EXTRA`, `TILE_MOVE_MODIFIER`
 - Environmental tools: `THUNDER_*`, `FIRE_*`, `LIGHTNING_*`
@@ -406,7 +406,7 @@ Pure canvas drawing, no React, no state. Import from `@/ui/renderer` (resolves v
 
 | Module | Responsibility |
 |---|---|
-| `tiles.ts` | `drawTile`, `drawTileDecoration`, fire overlay, lightning bolt, `gridToIso`, `isoToGrid`, `canvasOrigin`, `resetCanvasState`. Tile depth (side-skirt height) scales with `tile.elevation` — low tiles ~3px, mountain peaks ~7px, giving the world proper 2.5D layering. |
+| `tiles.ts` | `drawTile`, `drawTileDecoration`, fire overlay, lightning bolt, `gridToIso`, `isoToGrid`, `canvasOrigin`, `resetCanvasState`. Tile depth (side-skirt height) scales with `tile.elevation` — low tiles ~3px, mountain peaks ~7px, giving the world proper 2.5D layering. Bush decoration uses `bs = max(1.0, s*2)` so foliage is always visible regardless of zoom. Biome tints use 12–17% opacity for readable chromatic identity. |
 | `creatures.ts` | `drawCreature` — shape by body type, biome tint, generation features, stress marks, thought symbol |
 | `overlays.ts` | `drawAtmosphere` (combined weather + phase), `drawScanlines`, `drawVignette` |
 | `utils.ts` | `lighten`, `darken`, `adjustBrightness` — all clamped to prevent invalid hex |
@@ -415,6 +415,12 @@ Pure canvas drawing, no React, no state. Import from `@/ui/renderer` (resolves v
 
 ### `src/creatures/behavior.ts`
 Creature AI. `tickBehavior()` returns `Partial<Creature>` — never mutates. `tickMovement()` does the same. Applied in `tick.ts`. Contains `canReproduce()`, `canAsexuallyReproduce()` (Spore only), and `resolveFight()`.
+
+**Personality wander ranges:** Curious explores within ±30 tiles (bounded, not world-wide). Wanderer uses angle + 20–50 tile dist (intentional long-range migration). Lazy 5, Timid 7, Recluse 16. Default idle wander uses these same ranges.
+
+**Terrain affinity radius:** 20 tiles max (was 30) — body-type ecology draws are local, not cross-map.
+
+**Bond-seeking threshold:** creatures seek bonds until `bonds.filter(b => b.strength >= REPRODUCE_BOND_MIN_STRENGTH).length === 0` — they actively pursue partners until they can actually reproduce, not just until bonds exceed an arbitrary early threshold.
 
 ### `src/engine/genetics.ts`
 `genomeColor(genome)` → HSL-based color: personality drives base hue, body shifts saturation/lightness, mind shifts hue, morphSeed adds per-lineage drift. Colors are clamped to lightness 50–90 and saturation 18–100 so they're always visible on the dark palette.

@@ -225,12 +225,13 @@ Eight natural-world items, each with a distinct ecological role and a behavioral
 
 ### Bush tiles
 
-Low fruiting shrubs scatter across the world in humid biomes (lush 9%, wetland 7%, temperate 4.5%, rare in arid). Each bush:
+Low fruiting shrubs scatter across the world in humid biomes (lush 13%, wetland 11%, temperate 6.5%, rare in arid 1.5%). Each bush:
 
 - **Food source** — berries ripen each season (spring: fast, summer: moderate, autumn: slow, winter: none), max 35 food. Burned bushes turn barren.
 - **Concealment** — Timid creatures actively seek bushes when stressed (1.8× stress reduction vs. baseline). Recluse also benefits.
 - **Movement** — slight hindrance (0.80× speed vs. grass's 1.00×).
 - **Ecology** — Spore body includes bushes in terrain affinity; Greedy and Lazy seek them as food targets.
+- **Rendering** — foliage scales with a minimum display size so bushes are always visible regardless of zoom level; biome tints at 12–17% opacity give each zone a readable chromatic identity.
 
 ### World depth
 
