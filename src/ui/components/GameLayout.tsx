@@ -13,19 +13,22 @@ import { EnrichmentType } from '@/types'
 const LOG_HEIGHT = 220
 
 const Layout = styled.div`
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 10px 12px 14px;
-  gap: 8px;
+  padding: 8px 10px 10px;
+  gap: 7px;
   box-sizing: border-box;
   overflow: hidden;
 
   @media (max-width: 900px) {
+    height: auto;
+    min-height: 100svh;
     padding: 6px 8px 10px;
     gap: 6px;
     overflow: auto;
-    min-height: 100svh;
   }
 
   @media (max-width: 600px) {
@@ -394,7 +397,6 @@ export function GameLayout() {
         season={gameState.time.season}
         phase={gameState.time.phase}
         alive={Object.values(gameState.creatures).filter(c => c.diedOnDay === null).length}
-        colonyStage={gameState.colonyStage}
         awarenessStage={gameState.awarenessStage}
         selectedEnrichment={selectedEnrichment}
         onEnrichmentChange={setSelectedEnrichment}

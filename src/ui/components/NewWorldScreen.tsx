@@ -20,40 +20,50 @@ const Screen = styled.div`
   font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
   color: #ede2c4;
   animation: ${flicker} 9s infinite;
-  padding: 2rem 1rem;
+  padding: 2rem 1.25rem;
+  box-sizing: border-box;
+  width: 100%;
+  overflow-x: hidden;
 `
 
 const Title = styled.div`
-  font-size: 22px;
+  font-size: clamp(16px, 5vw, 22px);
   color: #c878f0;
-  letter-spacing: 0.32em;
+  letter-spacing: 0.24em;
   margin-bottom: 0.5rem;
   text-shadow: 0 0 24px rgba(200, 120, 240, 0.45);
+  text-align: center;
 `
 
 const Subtitle = styled.div`
   font-size: 11px;
   color: #8888b0;
-  letter-spacing: 0.32em;
+  letter-spacing: 0.16em;
   margin-bottom: 2.5rem;
+  text-align: center;
+  max-width: 100%;
+  overflow-wrap: break-word;
 `
 
 const Prose = styled.div`
   font-size: 11px;
   color: #9aacb8;
-  max-width: 480px;
+  width: 100%;
+  max-width: 440px;
   text-align: center;
   line-height: 2;
   margin-bottom: 2.5rem;
   font-style: italic;
   letter-spacing: 0.04em;
+  overflow-wrap: break-word;
 `
 
 const Form = styled.div`
   display: flex;
   flex-direction: column;
   gap: 14px;
-  width: 380px;
+  width: min(380px, 100%);
+  box-sizing: border-box;
   padding: 20px 22px;
   background:
     linear-gradient(180deg, rgba(20, 20, 50, 0.45), rgba(8, 8, 28, 0.85));
@@ -85,6 +95,10 @@ const FieldLabel = styled.div`
 const FieldRow = styled.div`
   display: flex;
   gap: 8px;
+
+  @media (max-width: 380px) {
+    flex-direction: column;
+  }
 `
 
 const Input = styled.input`
@@ -137,8 +151,10 @@ const Note = styled.div`
   color: #7070a0;
   text-align: center;
   line-height: 1.8;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   margin-top: 2rem;
+  max-width: 100%;
+  overflow-wrap: break-word;
 `
 
 interface NamePair { name: string; familyName: string }

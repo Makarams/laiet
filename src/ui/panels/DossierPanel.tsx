@@ -88,6 +88,9 @@ const IdLine = styled.div`
   color: #4a4a78;
   letter-spacing: 0.08em;
   margin-bottom: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 `
 
 const Section = styled.div`

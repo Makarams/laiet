@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import styled from 'styled-components'
-import { Season, DayPhase, ColonyStage, MessageStage, EnrichmentType } from '@/types'
+import { Season, DayPhase, MessageStage, EnrichmentType } from '@/types'
 import { useLaietStore } from '@/store/gameStore'
 import { THUNDER_CHARGES_PER_DAY, FIRE_CHARGES_PER_DAY } from '@/engine/constants'
 
@@ -63,14 +63,14 @@ const ToolBtn = styled.button<{ active: boolean; accent: string }>`
   color: ${p => p.active ? p.accent : '#b0b0d8'};
   font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
   font-size: 11px;
-  padding: 6px 12px;
+  padding: 5px 8px;
   cursor: pointer;
   border-radius: 2px;
   letter-spacing: 0.08em;
   transition: all 0.15s;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   position: relative;
   font-weight: ${p => p.active ? 'bold' : 'normal'};
 
@@ -105,9 +105,9 @@ const Spacer = styled.div`
 
 const StatusBlock = styled.div`
   display: flex;
-  gap: 14px;
+  gap: 10px;
   align-items: center;
-  padding: 0 14px;
+  padding: 0 12px;
   border-left: 1px solid #2a2a55;
   border-right: 1px solid #2a2a55;
   flex-wrap: wrap;
@@ -119,7 +119,7 @@ const StatusCell = styled.div`
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
-  min-width: 46px;
+  min-width: 36px;
 `
 
 const StatusLabel = styled.span`
@@ -167,7 +167,7 @@ const CtrlBtn = styled.button<{ active?: boolean; accent?: string }>`
   color: ${p => p.active ? (p.accent ?? '#8af0ff') : '#9a9ac0'};
   font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
   font-size: 11px;
-  padding: 6px 12px;
+  padding: 6px 9px;
   cursor: pointer;
   border-radius: 2px;
   letter-spacing: 0.10em;
@@ -251,14 +251,6 @@ const PHASE_COLOR: Record<DayPhase, string> = {
   night: '#b0a8e8',
 }
 
-const STAGE_COLOR: Record<ColonyStage, string> = {
-  genesis:     '#9090b8',
-  nascent:     '#5ec8e0',
-  growing:     '#80f0a0',
-  established: '#ffc060',
-  thriving:    '#ffb050',
-  ascendant:   '#d088ff',
-}
 
 export type Tool = 'select' | 'food' | 'tree' | 'river' | 'thunder' | 'fire' | 'enrich'
 
@@ -321,7 +313,6 @@ interface ToolbarProps {
   season: Season
   phase: DayPhase
   alive: number
-  colonyStage: ColonyStage
   awarenessStage: MessageStage
   selectedEnrichment: EnrichmentType
   onEnrichmentChange: (type: EnrichmentType) => void
@@ -330,7 +321,7 @@ interface ToolbarProps {
 export function Toolbar({
   activeTool, onToolChange, onMuteToggle, onRestartRequest, onSave, isMuted,
   isPaused, simSpeed, onPauseToggle, onSpeedChange,
-  day, year, season, phase, alive, colonyStage, awarenessStage,
+  day, year, season, phase, alive, awarenessStage,
   selectedEnrichment, onEnrichmentChange,
 }: ToolbarProps) {
   const [showEnrichDropdown, setShowEnrichDropdown] = useState(false)
@@ -364,14 +355,13 @@ export function Toolbar({
             active={activeTool === t.key}
             accent={t.accent}
             onClick={() => onToolChange(t.key)}
-            title={`Hotkey: ${t.hotkey}`}
+            title={`${t.label} [${t.hotkey}]`}
           >
             <ToolGlyph>{t.glyph}</ToolGlyph>
-            {t.label}
             <KeyHint>[{t.hotkey}]</KeyHint>
             {t.charge && (
               <ChargeBadge empty={t.charge.used <= 0}>
-                {t.charge.used}/{t.charge.max}
+                {t.charge.used}
               </ChargeBadge>
             )}
           </ToolBtn>
@@ -386,10 +376,9 @@ export function Toolbar({
               onToolChange('enrich')
               setShowEnrichDropdown(v => !v)
             }}
-            title='Place enrichment item [7]'
+            title={`ENRICH: ${activeEnrichOption.label} [7]`}
           >
             <ToolGlyph>{activeEnrichOption.glyph}</ToolGlyph>
-            ENRICH
             <KeyHint>[7]</KeyHint>
           </ToolBtn>
           {showEnrichDropdown && activeTool === 'enrich' && (
@@ -424,7 +413,7 @@ export function Toolbar({
         <StatusCell>
           <StatusLabel>season</StatusLabel>
           <StatusValue accent={SEASON_COLOR[season]}>
-            {SEASON_GLYPH[season]} {season.toUpperCase()}
+            {SEASON_GLYPH[season]} {season.slice(0, 3).toUpperCase()}
           </StatusValue>
         </StatusCell>
 
@@ -437,13 +426,6 @@ export function Toolbar({
           <StatusLabel>alive</StatusLabel>
           <StatusValue accent={alive > 0 ? '#80f0a0' : '#ff5060'}>
             {alive}
-          </StatusValue>
-        </StatusCell>
-
-        <StatusCell>
-          <StatusLabel>stage</StatusLabel>
-          <StatusValue accent={STAGE_COLOR[colonyStage]} style={{ fontSize: 11, letterSpacing: '0.14em' }}>
-            {colonyStage.toUpperCase()}
           </StatusValue>
         </StatusCell>
 
@@ -462,10 +444,9 @@ export function Toolbar({
         onClick={onPauseToggle}
         active={isPaused}
         accent='#ffc060'
-        title='Pause / resume simulation [Space]'
+        title={isPaused ? 'Resume [Space]' : 'Pause [Space]'}
       >
-        <span style={{ fontSize: 13 }}>{isPaused ? '▶' : '⏸'}</span>
-        {isPaused ? 'PAUSED' : 'LIVE'}
+        <span style={{ fontSize: 14 }}>{isPaused ? '▶' : '⏸'}</span>
       </CtrlBtn>
 
       {/* Speed selector */}
@@ -477,14 +458,12 @@ export function Toolbar({
         ))}
       </SpeedGroup>
 
-      <MuteBtn onClick={onMuteToggle} active={!isMuted} accent='#5ec8e0' title='Toggle audio'>
-        <span style={{ fontSize: 13 }}>{isMuted ? '♪' : '♫'}</span>
-        {isMuted ? 'MUTED' : 'AUDIO'}
+      <MuteBtn onClick={onMuteToggle} active={!isMuted} accent='#5ec8e0' title={isMuted ? 'Unmute audio' : 'Mute audio'}>
+        <span style={{ fontSize: 14 }}>{isMuted ? '♪' : '♫'}</span>
       </MuteBtn>
 
       <CtrlBtn onClick={onSave} title='Save colony (Ctrl+S)'>
-        <span style={{ fontSize: 12 }}>◈</span>
-        SAVE
+        <span style={{ fontSize: 13 }}>◈</span>
       </CtrlBtn>
 
       <CtrlBtn
@@ -492,8 +471,7 @@ export function Toolbar({
         title='Reset colony'
         style={{ borderColor: '#3a2040', color: '#9070a8' }}
       >
-        <span style={{ fontSize: 12 }}>◇</span>
-        RESET
+        <span style={{ fontSize: 13 }}>◇</span>
       </CtrlBtn>
     </Bar>
   )
