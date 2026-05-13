@@ -1,12 +1,17 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useLaietStore } from '@/store/gameStore'
 import { supabase } from '@/db/supabase'
 import { AuthScreen } from '@/ui/components/AuthScreen'
 import { ProfileScreen } from '@/ui/components/ProfileScreen'
-import { NewWorldScreen } from '@/ui/components/NewWorldScreen'
-import { GameLayout } from '@/ui/components/GameLayout'
 import { CaretakerProfile } from '@/types'
 import styled, { createGlobalStyle, keyframes } from 'styled-components'
+
+const NewWorldScreen = lazy(() =>
+  import('@/ui/components/NewWorldScreen').then(m => ({ default: m.NewWorldScreen }))
+)
+const GameLayout = lazy(() =>
+  import('@/ui/components/GameLayout').then(m => ({ default: m.GameLayout }))
+)
 
 const GlobalStyle = createGlobalStyle`
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -130,6 +135,18 @@ const Dot = styled.div<{ delay: number }>`
   }
 `
 
+function LazyFallback({ hint }: { hint: string }) {
+  return (
+    <LoadingScreen>
+      <LoadingLogo>◈ LA-IET ◈</LoadingLogo>
+      <LoadingHint>{hint}</LoadingHint>
+      <LoadingDots>
+        <Dot delay={0} /><Dot delay={0.2} /><Dot delay={0.4} />
+      </LoadingDots>
+    </LoadingScreen>
+  )
+}
+
 export function App() {
   const userId = useLaietStore(s => s.userId)
   const gameState = useLaietStore(s => s.gameState)
@@ -195,9 +212,15 @@ export function App() {
         <ProfileScreen onComplete={setPendingProfile} />
       )}
       {userId && !gameState && pendingProfile && (
-        <NewWorldScreen profile={pendingProfile} onWorldCreated={() => setPendingProfile(null)} />
+        <Suspense fallback={<LazyFallback hint="∙ preparing world ∙" />}>
+          <NewWorldScreen profile={pendingProfile} onWorldCreated={() => setPendingProfile(null)} />
+        </Suspense>
       )}
-      {userId && gameState && <GameLayout />}
+      {userId && gameState && (
+        <Suspense fallback={<LazyFallback hint="∙ awakening specimen ∙" />}>
+          <GameLayout />
+        </Suspense>
+      )}
     </>
   )
 }

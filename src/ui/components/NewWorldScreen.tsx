@@ -2,7 +2,7 @@ import { useState } from 'react'
 import styled, { keyframes } from 'styled-components'
 import { useLaietStore } from '@/store/gameStore'
 import { CaretakerProfile } from '@/types'
-import { unlockAudio } from '@/audio/chiptune'
+import { unlockAudio } from '@/audio/unlock'
 
 const flicker = keyframes`
   0%, 100% { opacity: 1; }

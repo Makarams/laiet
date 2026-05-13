@@ -1,8 +1,10 @@
 import type { GameState } from '@/types'
+import { getAudioCtx, unlockAudio } from './unlock'
+
+export { unlockAudio }
 
 // ─── Audio context (singleton) ────────────────────────────────────────────────
 
-let ctx: AudioContext | null = null
 let masterGain: GainNode | null = null
 let muted = false
 let currentKey = ''
@@ -13,22 +15,13 @@ const CROSSFADE_SECS = 2.2
 const CONTEXT_COOLDOWN_MS = 3_000
 
 function getCtx(): AudioContext {
-  if (!ctx) {
-    ctx = new AudioContext()
-    masterGain = ctx.createGain()
+  const c = getAudioCtx()
+  if (!masterGain) {
+    masterGain = c.createGain()
     masterGain.gain.value = 0.26
-    masterGain.connect(ctx.destination)
+    masterGain.connect(c.destination)
   }
-  return ctx
-}
-
-/**
- * Call this inside any user-gesture handler (click, keydown) to unlock the
- * AudioContext before the first music tick fires from a React effect.
- */
-export function unlockAudio(): void {
-  const c = getCtx()
-  if (c.state === 'suspended') c.resume().catch(() => {})
+  return c
 }
 
 // ─── Note table (Hz) ──────────────────────────────────────────────────────────
