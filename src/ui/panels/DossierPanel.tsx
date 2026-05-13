@@ -436,7 +436,7 @@ export function DossierPanel() {
       <Panel>
         <PanelHeader>
           <PanelTitle>◇ DOSSIER</PanelTitle>
-          <PanelTag>SBJ-—</PanelTag>
+          <PanelTag>SBJ ···</PanelTag>
         </PanelHeader>
         <Empty>
           {selectedId ? '◌ subject deceased' : '◌ no subject selected'}
@@ -608,7 +608,7 @@ export function DossierPanel() {
           <Row>
             <Label>parents</Label>
             <Value style={{ fontSize: 9, color: '#4a5870', letterSpacing: '0.06em' }}>
-              {creature.parentIds[0]?.slice(0, 4)} × {creature.parentIds[1]?.slice(0, 4) ?? '—'}
+              {creature.parentIds[0]?.slice(0, 4)} × {creature.parentIds[1]?.slice(0, 4) ?? '·'}
             </Value>
           </Row>
         )}

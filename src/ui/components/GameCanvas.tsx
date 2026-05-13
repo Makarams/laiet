@@ -583,8 +583,8 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
     river:   riverSource
       ? '∙ click destination to redirect river ∙'
       : '∙ click source tile to begin redirect ∙',
-    thunder: '∙ click to strike — kills creatures + trees in radius ∙',
-    fire:    '∙ click flammable tile to ignite — fire spreads ∙',
+    thunder: '∙ click to strike. kills creatures and trees in radius ∙',
+    fire:    '∙ click a flammable tile to ignite. fire spreads ∙',
     enrich:  '∙ click a tile to place enrichment item ∙',
   }
 

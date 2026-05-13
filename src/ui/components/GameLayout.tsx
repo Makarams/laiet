@@ -308,9 +308,9 @@ export function GameLayout() {
   const handleManualSave = useCallback(async () => {
     try {
       await manualSave()
-      showToast('◈  save complete')
+      showToast('◈ save complete')
     } catch {
-      showToast('save failed — check connection', false)
+      showToast('save failed. check connection.', false)
     }
   }, [manualSave, showToast])
 

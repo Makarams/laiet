@@ -218,7 +218,7 @@ const QUESTIONS: Question[] = [
     text: 'how will you regard the colony?',
     sub: 'this shapes your tools and how often you\'re able to act',
     options: [
-      { value: 'interventionist', glyph: '◈', label: 'with care', desc: 'I will act when they need me — food, healing, shelter' },
+      { value: 'interventionist', glyph: '◈', label: 'with care', desc: 'I will act when they need me: food, healing, shelter.' },
       { value: 'observer',        glyph: '◎', label: 'with distance', desc: 'I\'ll intervene when it matters. otherwise I watch.' },
       { value: 'silent',          glyph: '◌', label: 'with silence', desc: 'this is their world. I am only observing.' },
     ],
@@ -248,7 +248,7 @@ const QUESTIONS: Question[] = [
     sub: 'the colony will subtly tend toward what you pay attention to',
     options: [
       { value: 'bonds',     glyph: '♥', label: 'their bonds', desc: 'love, grief, loyalty. who stays close. who mourns.' },
-      { value: 'survival',  glyph: '◈', label: 'their survival', desc: 'what endures the world. what breaks. what endures.' },
+      { value: 'survival',  glyph: '◈', label: 'their survival', desc: 'what holds when the world presses back. what breaks. what persists.' },
       { value: 'awareness', glyph: '◉', label: 'their awakening', desc: 'the moment they notice something watching. what it means.' },
     ],
   },

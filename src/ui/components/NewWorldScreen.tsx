@@ -20,105 +20,121 @@ const Screen = styled.div`
   font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
   color: #ede2c4;
   animation: ${flicker} 9s infinite;
-  padding: 2rem 1.25rem;
+  padding: 2.5rem 1.5rem;
   box-sizing: border-box;
   width: 100%;
   overflow-x: hidden;
 `
 
 const Title = styled.div`
-  font-size: clamp(16px, 5vw, 22px);
+  font-size: clamp(15px, 4.5vw, 20px);
   color: #c878f0;
-  letter-spacing: 0.24em;
-  margin-bottom: 0.5rem;
+  letter-spacing: 0.28em;
+  margin-bottom: 0.4rem;
   text-shadow: 0 0 24px rgba(200, 120, 240, 0.45);
   text-align: center;
 `
 
 const Subtitle = styled.div`
-  font-size: 11px;
-  color: #8888b0;
-  letter-spacing: 0.16em;
-  margin-bottom: 2.5rem;
+  font-size: 10.5px;
+  color: #6a6a98;
+  letter-spacing: 0.18em;
+  margin-bottom: 2rem;
   text-align: center;
-  max-width: 100%;
-  overflow-wrap: break-word;
 `
 
 const Prose = styled.div`
   font-size: 11px;
   color: #9aacb8;
   width: 100%;
-  max-width: 440px;
+  max-width: 400px;
   text-align: center;
   line-height: 2;
-  margin-bottom: 2.5rem;
+  margin-bottom: 2rem;
   font-style: italic;
   letter-spacing: 0.04em;
   overflow-wrap: break-word;
 `
 
 const Form = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  width: min(380px, 100%);
+  width: min(420px, 100%);
   box-sizing: border-box;
-  padding: 20px 22px;
-  background:
-    linear-gradient(180deg, rgba(20, 20, 50, 0.45), rgba(8, 8, 28, 0.85));
+  padding: 22px 24px 24px;
+  background: linear-gradient(180deg, rgba(20, 20, 50, 0.45), rgba(8, 8, 28, 0.85));
   border: 1px solid #2e2e60;
   border-radius: 4px;
   box-shadow: 0 0 28px rgba(80, 60, 160, 0.18), inset 0 0 30px rgba(0, 0, 0, 0.4);
 `
 
-const NameField = styled.div`
+const SpecimenBlock = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 7px;
+  padding: 14px 0;
+  border-bottom: 1px solid #161636;
+
+  &:first-child {
+    padding-top: 0;
+  }
+
+  &:last-of-type {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+`
+
+const SpecimenHeader = styled.div`
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+`
+
+const SpecimenNum = styled.span`
+  font-size: 10px;
+  color: #5ec8e0;
+  letter-spacing: 0.22em;
+  font-weight: bold;
+`
+
+const SpecimenTag = styled.span`
+  font-size: 9px;
+  color: #363656;
+  letter-spacing: 0.16em;
+`
+
+const FieldGroup = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 `
 
 const FieldLabel = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 9.5px;
-  color: #5ec8e0;
-  letter-spacing: 0.18em;
-
-  &::before {
-    content: '◇';
-    color: #5ec8e0;
-  }
-`
-
-const FieldRow = styled.div`
-  display: flex;
-  gap: 8px;
-
-  @media (max-width: 380px) {
-    flex-direction: column;
-  }
+  font-size: 9px;
+  color: #44446a;
+  letter-spacing: 0.20em;
+  text-transform: uppercase;
 `
 
 const Input = styled.input`
   background: #06061a;
-  border: 1px solid #1c1c40;
+  border: 1px solid #1c1c3e;
   border-radius: 2px;
   color: #ede2c4;
   font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
   font-size: 12px;
   padding: 7px 11px;
   outline: none;
-  flex: 1;
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
   letter-spacing: 0.04em;
   transition: all 0.15s;
 
   &:focus {
     border-color: #5ec8e0;
-    box-shadow: 0 0 8px rgba(94, 200, 224, 0.25);
+    box-shadow: 0 0 8px rgba(94, 200, 224, 0.22);
   }
-  &::placeholder { color: #3a3a55; }
+  &::placeholder { color: #282845; }
 `
 
 const Btn = styled.button`
@@ -127,11 +143,13 @@ const Btn = styled.button`
   color: #c878f0;
   font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
   font-size: 11px;
-  padding: 11px;
+  padding: 12px;
   cursor: pointer;
   border-radius: 2px;
-  letter-spacing: 0.2em;
-  margin-top: 4px;
+  letter-spacing: 0.22em;
+  width: 100%;
+  display: block;
+  margin-top: 20px;
   transition: all 0.15s;
 
   &:hover {
@@ -147,12 +165,12 @@ const Btn = styled.button`
 `
 
 const Note = styled.div`
-  font-size: 10.5px;
-  color: #7070a0;
+  font-size: 10px;
+  color: #48486a;
   text-align: center;
-  line-height: 1.8;
-  letter-spacing: 0.08em;
-  margin-top: 2rem;
+  line-height: 2;
+  letter-spacing: 0.10em;
+  margin-top: 1.8rem;
   max-width: 100%;
   overflow-wrap: break-word;
 `
@@ -184,7 +202,7 @@ export function NewWorldScreen({ profile, onWorldCreated }: NewWorldScreenProps)
 
   const handleBegin = () => {
     if (!userId) return
-    unlockAudio()  // user-gesture context: prime the AudioContext before GameLayout mounts
+    unlockAudio()
     const named = pairs.filter(p => p.name.trim() && p.familyName.trim())
     initNewWorld(userId, named, profile)
     onWorldCreated()
@@ -196,40 +214,45 @@ export function NewWorldScreen({ profile, onWorldCreated }: NewWorldScreenProps)
       <Subtitle>∙ initialising observation cabinet ∙</Subtitle>
 
       <Prose>
-        four creatures will be placed in the world — one of each kind.<br />
-        name them. they will remember the names you give.<br />
-        their offspring will carry those names forward, changed by time.
+        four creatures will be placed in the world, one of each kind.<br />
+        they will remember the names you give.<br />
+        their offspring will carry those names forward, reshaped by time.
       </Prose>
 
       <Form>
         {pairs.map((pair, i) => (
-          <NameField key={i}>
-            <FieldLabel>
-              specimen {i + 1}{i === 0 ? ' · required' : ' · optional'}
-            </FieldLabel>
-            <FieldRow>
+          <SpecimenBlock key={i}>
+            <SpecimenHeader>
+              <SpecimenNum>◇ {String(i + 1).padStart(2, '0')}</SpecimenNum>
+              <SpecimenTag>{i === 0 ? 'required' : 'optional'}</SpecimenTag>
+            </SpecimenHeader>
+            <FieldGroup>
+              <FieldLabel>given name</FieldLabel>
               <Input
                 placeholder='given name'
                 value={pair.name}
                 onChange={e => update(i, 'name', e.target.value)}
               />
+            </FieldGroup>
+            <FieldGroup>
+              <FieldLabel>family name</FieldLabel>
               <Input
                 placeholder='family name'
                 value={pair.familyName}
                 onChange={e => update(i, 'familyName', e.target.value)}
               />
-            </FieldRow>
-          </NameField>
+            </FieldGroup>
+          </SpecimenBlock>
         ))}
 
         <Btn onClick={handleBegin} disabled={!valid}>
-          ◇  BEGIN OBSERVATION  ◇
+          ◇  begin observation  ◇
         </Btn>
       </Form>
 
       <Note>
-        the world generates from a random seed each time<br />
-        your colony will be saved to your account automatically
+        the world generates from a random seed each time.<br />
+        your colony is saved to your account automatically.
       </Note>
     </Screen>
   )

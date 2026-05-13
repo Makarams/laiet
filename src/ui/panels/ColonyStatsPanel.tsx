@@ -460,7 +460,7 @@ export function ColonyStatsPanel() {
         <Row>
           <Label>dominant trait</Label>
           <Value accent='#5888a0' style={{ fontSize: 9.5, letterSpacing: '0.1em' }}>
-            {dominant?.[0]?.toUpperCase() ?? '—'}
+            {dominant?.[0]?.toUpperCase() ?? '·'}
           </Value>
         </Row>
       </Section>
