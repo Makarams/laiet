@@ -152,7 +152,7 @@ carveRiver → scatterRocks (28+20) → raiseMountains → carveCliffs
 - **Cave** — 4.5% chance adjacent to mountain tiles; `shelter=true`, `waterLevel=15`
 - **Cliff** — elevation drop > 0.28 to an adjacent tile → 70% become cliff
 - **River** — meandering walker from edge to edge; all adjacent grass can flood in winter
-- **Bush** — low fruiting shrubs scattered across humid biomes (lush 9%, wetland 7%, temperate 4.5%, arid 1%). Only placed on grass tiles. Each starts with 0–24 food; berries ripen each season (spring 1.6×, summer 1.1×, autumn 0.5×, winter 0×). Max food: 35. Burns to barren when on fire. Timid/Recluse creatures actively seek bush tiles when stressed.
+- **Bush** — low fruiting shrubs scattered across humid biomes (lush 13%, wetland 11%, temperate 6.5%, arid 1.5%). Only placed on grass tiles. Each starts with 0–24 food; berries ripen each season (spring 1.6×, summer 1.1×, autumn 0.5×, winter 0×). Max food: 35. Burns to barren when on fire. Timid/Recluse creatures actively seek bush tiles when stressed.
 
 ### Tile passability and movement
 

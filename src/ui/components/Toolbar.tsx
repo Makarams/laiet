@@ -131,7 +131,7 @@ const StatusLabel = styled.span`
 
 const StatusValue = styled.span<{ accent?: string }>`
   font-size: 13px;
-  color: ${p => p.accent ?? '#f0e6c8'};
+  color: ${p => p.accent ?? '#d0d8f0'};
   letter-spacing: 0.06em;
   font-weight: bold;
 `

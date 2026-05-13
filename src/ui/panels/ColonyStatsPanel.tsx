@@ -54,7 +54,7 @@ const SeasonLabel = styled.span<{ color: string }>`
 
 const YearLabel = styled.span`
   font-size: 10px;
-  color: #6a5840;
+  color: #4a4a78;
   letter-spacing: 0.12em;
 `
 
@@ -62,22 +62,22 @@ const YearLabel = styled.span`
 
 const Panel = styled.div`
   background:
-    linear-gradient(180deg, rgba(28, 20, 12, 0.30), rgba(14, 10, 6, 0.90)),
-    #16120e;
-  border: 1px solid #3a2e1e;
+    linear-gradient(180deg, rgba(20, 20, 50, 0.30), rgba(8, 8, 28, 0.88)),
+    #06061a;
+  border: 1px solid #2a2a50;
   border-radius: 4px;
   padding: 11px 12px;
   font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
   font-size: 12.5px;
-  color: #e8d5b0;
+  color: #c0c8e0;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   box-sizing: border-box;
-  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.40), 0 0 0 1px rgba(80, 120, 200, 0.05);
 
   &::-webkit-scrollbar { width: 4px; }
-  &::-webkit-scrollbar-thumb { background: #4a3a28; border-radius: 2px; }
+  &::-webkit-scrollbar-thumb { background: #2e2e60; border-radius: 2px; }
 `
 
 const PanelHeader = styled.div`
@@ -86,19 +86,20 @@ const PanelHeader = styled.div`
   align-items: baseline;
   padding-bottom: 7px;
   margin-bottom: 8px;
-  border-bottom: 1px solid #2e2418;
+  border-bottom: 1px solid #2a2a50;
 `
 
 const PanelTitle = styled.div`
   font-size: 13px;
-  color: #c49840;
+  color: #5ec8e0;
   letter-spacing: 0.22em;
   font-weight: bold;
+  text-shadow: 0 0 10px rgba(94, 200, 224, 0.35);
 `
 
 const PanelTag = styled.div`
   font-size: 11px;
-  color: #6a5840;
+  color: #4a4a78;
   letter-spacing: 0.18em;
 `
 
@@ -113,7 +114,7 @@ const SectionTitle = styled.div`
   align-items: center;
   gap: 6px;
   font-size: 10.5px;
-  color: #7a9060;
+  color: #4a7090;
   letter-spacing: 0.22em;
   text-transform: uppercase;
   margin: 3px 0 6px;
@@ -123,7 +124,7 @@ const SectionTitle = styled.div`
     content: '';
     width: 5px;
     height: 5px;
-    background: #6a8050;
+    background: #3a6080;
     transform: rotate(45deg);
   }
 
@@ -131,7 +132,7 @@ const SectionTitle = styled.div`
     content: '';
     flex: 1;
     height: 1px;
-    background: linear-gradient(90deg, #2a2016, transparent);
+    background: linear-gradient(90deg, #1a2040, transparent);
   }
 `
 
@@ -144,13 +145,13 @@ const Row = styled.div`
 `
 
 const Label = styled.span`
-  color: #a09080;
+  color: #7070a0;
   font-size: 11.5px;
   letter-spacing: 0.04em;
 `
 
 const Value = styled.span<{ accent?: string }>`
-  color: ${p => p.accent ?? '#e8d5b0'};
+  color: ${p => p.accent ?? '#c0c8e0'};
   font-size: 12px;
   letter-spacing: 0.05em;
   font-weight: bold;
@@ -163,17 +164,18 @@ const StageBar = styled.div<{ stage: ColonyStage }>`
   font-size: 9.5px;
   padding: 6px 8px;
   border-radius: 2px;
-  background: ${p => stageColor(p.stage)}14;
-  border: 1px solid ${p => stageColor(p.stage)}50;
+  background: ${p => stageColor(p.stage)}18;
+  border: 1px solid ${p => stageColor(p.stage)}55;
   color: ${p => stageColor(p.stage)};
   text-align: center;
   letter-spacing: 0.22em;
+  text-shadow: 0 0 8px ${p => stageColor(p.stage)}60;
 `
 
 const StageProgress = styled.div<{ percent: number; stage: ColonyStage }>`
   margin-top: 5px;
   height: 3px;
-  background: #100e08;
+  background: #0e0e1e;
   border-radius: 2px;
   overflow: hidden;
   position: relative;
@@ -203,15 +205,18 @@ const AwDot = styled.div<{ active: boolean; level: number }>`
   border-radius: 50%;
   flex-shrink: 0;
   background: ${p => p.active
-    ? p.level === 3 ? '#a870c0'
-    : p.level === 2 ? '#d4a040'
-    : '#88c060'
-    : '#14100a'};
+    ? p.level === 3 ? '#d088ff'
+    : p.level === 2 ? '#5ec8e0'
+    : '#80f0a0'
+    : '#0e0e28'};
   border: 1px solid ${p => p.active
-    ? p.level === 3 ? '#c898d8'
-    : p.level === 2 ? '#e8c060'
-    : '#a8d878'
-    : '#2e2418'};
+    ? p.level === 3 ? '#e0a8ff'
+    : p.level === 2 ? '#7ae8ff'
+    : '#a0f8c0'
+    : '#2a2a50'};
+  box-shadow: ${p => p.active
+    ? `0 0 7px ${p.level === 3 ? '#d088ff' : p.level === 2 ? '#5ec8e0' : '#80f0a0'}88`
+    : 'none'};
   position: relative;
 
   &::after {
@@ -226,7 +231,7 @@ const AwDot = styled.div<{ active: boolean; level: number }>`
 const AwarenessLabel = styled.div`
   margin-top: 7px;
   font-size: 10.5px;
-  color: #8a7a62;
+  color: #6a6a88;
   font-style: italic;
   letter-spacing: 0.05em;
   text-align: center;
@@ -258,14 +263,14 @@ const BodyDot = styled.span<{ color: string }>`
 
 const BodyCount = styled.span`
   font-size: 11px;
-  color: #e8d5b0;
+  color: #c0c8e0;
   font-weight: bold;
   width: 20px;
 `
 
 const BodyLabel = styled.span`
   font-size: 10.5px;
-  color: #6a5840;
+  color: #4a4a78;
   letter-spacing: 0.06em;
 `
 
@@ -293,7 +298,7 @@ const WeatherName = styled.span<{ color: string }>`
 
 const WeatherTimer = styled.span`
   font-size: 10.5px;
-  color: #6a5840;
+  color: #4a4a78;
   letter-spacing: 0.08em;
   margin-left: auto;
 `
@@ -334,12 +339,12 @@ const BODY_COLOR: Record<string, string> = {
 
 function stageColor(stage: ColonyStage): string {
   const map: Record<ColonyStage, string> = {
-    genesis:     '#7a7860',
-    nascent:     '#5888a0',
-    growing:     '#88c060',
-    established: '#d4a040',
-    thriving:    '#c87040',
-    ascendant:   '#a870c0',
+    genesis:     '#6070a0',
+    nascent:     '#5ec8e0',
+    growing:     '#80f0a0',
+    established: '#80c8ff',
+    thriving:    '#ffc060',
+    ascendant:   '#d088ff',
   }
   return map[stage]
 }
@@ -480,10 +485,10 @@ export function ColonyStatsPanel() {
         {topBiomes.length > 0 && (
           <BiomeRow>
             {topBiomes.map(([biome, count]) => (
-              <BiomeChip key={biome} color={BIOME_COLOR[biome] ?? '#7a9060'}>
+              <BiomeChip key={biome} color={BIOME_COLOR[biome] ?? '#4a7090'}>
                 <span>{BIOME_GLYPH[biome] ?? '·'}</span>
                 <span>{biome}</span>
-                <span style={{ color: '#4a3820' }}>{count}</span>
+                <span style={{ color: '#3a3a60' }}>{count}</span>
               </BiomeChip>
             ))}
           </BiomeRow>
@@ -496,7 +501,7 @@ export function ColonyStatsPanel() {
         {nextStage && (
           <>
             <StageProgress percent={stageProgress} stage={colonyStage} />
-            <div style={{ fontSize: 8.5, color: '#4a3820', textAlign: 'right', marginTop: 3, letterSpacing: '0.1em' }}>
+            <div style={{ fontSize: 8.5, color: '#3a3a60', textAlign: 'right', marginTop: 3, letterSpacing: '0.1em' }}>
               → {nextStage.toUpperCase()}
             </div>
           </>
@@ -509,7 +514,7 @@ export function ColonyStatsPanel() {
           {[1, 2, 3].map(n => (
             <AwDot key={n} active={awarenessStage >= n} level={n} />
           ))}
-          <span style={{ fontSize: 9, color: '#6a5840', marginLeft: 4, letterSpacing: '0.10em' }}>
+          <span style={{ fontSize: 9, color: '#4a4a78', marginLeft: 4, letterSpacing: '0.10em' }}>
             stage {awarenessStage} / 3
           </span>
         </AwarenessTrack>

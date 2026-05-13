@@ -1,8 +1,10 @@
-# LA-IET.EXE
+# LA-IET.EXE — Generational Insect Colony Simulation
 
 > *"la-iet" — small animal or insect, in Khmer*
 
-A generational insect colony simulation. Watch your colony live, breed, fracture, and eventually become aware of you. Runs in the browser. Saves to the cloud. Time passes while you're away.
+A **generational insect colony simulation** that runs in your browser. Watch your colony live, breed, fracture, and eventually become aware that something is watching them. Cloud-saved. Time passes while you're away.
+
+Built for people who like emergent complexity, slow observation, and the feeling of being responsible for something you cannot control.
 
 Inspired by Black Mirror S7E4 "Plaything" (the Thronglets) and Dwarf Fortress.
 
@@ -10,7 +12,7 @@ Inspired by Black Mirror S7E4 "Plaything" (the Thronglets) and Dwarf Fortress.
 
 ## What it is
 
-- **Isometric 240×240 world** — procedurally generated from a numeric seed; biomes, rivers, mountains, caves, cliffs, food patches, trees, and understorey bushes — twice the scale of earlier versions for genuine biome diversity and natural creature dispersion
+- **Isometric 240×240 world** — procedurally generated from a numeric seed; five biomes, rivers, mountains, caves, cliffs, food patches, trees, and dense understorey bush vegetation
 - **Insect creatures** with inherited genetics across 3 gene slots (personality, body, mind) plus accumulated morphological traits that diverge per lineage over generations
 - **Caretaker profile** — five questions answered before the world begins shape the entire simulation: food abundance, mutation rate, bond speed, awareness pacing, and ending tendencies
 - **Four body types** with distinct ecological roles: Spore (r-strategist, divides asexually), Shell (K-strategist, long-lived), Spike (territorial fighter), Wisp (scout, empathic)
@@ -263,6 +265,18 @@ Each creature carries 3 discrete gene slots plus accumulated morphological trait
 
 ---
 
+## Design philosophy
+
+LA-IET follows the **Dwarf Fortress principle**: emergent complexity from simple rules. The player should never feel in control — only responsible.
+
+- You **cannot command** creatures. You can only place things.
+- The **awareness arc** must feel earned — stage 3 messages never appear before generation 4 and population 50.
+- The colony can **survive without you** — time passes meaningfully during absence.
+- **Neglect has consequences** — if you ignore the colony for hours in winter, creatures die.
+- **Fossil records persist across extinctions** — your history survives colony death.
+
+---
+
 ## Credits
 
 Built by Sammakara Mak. Free forever.
@@ -270,3 +284,9 @@ Built by Sammakara Mak. Free forever.
 > *"you cannot command them. you can only tend.*
 > *the colony will outlive your attention, remember your absence,*
 > *and eventually — decide what you are to them."*
+
+---
+
+## Keywords
+
+`colony simulation` · `insect simulation` · `browser game` · `emergent behavior` · `generational simulation` · `life simulation` · `evolution` · `artificial life` · `Dwarf Fortress inspired` · `idle simulation` · `React` · `TypeScript` · `Vite` · `Supabase`

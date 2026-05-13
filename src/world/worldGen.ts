@@ -324,10 +324,10 @@ function scatterBushes(tiles: Tile[][], rng: () => number): void {
     for (let x = 1; x < WORLD_SIZE - 1; x++) {
       const t = tiles[y][x]
       if (t.type !== 'grass') continue
-      const density = t.biome === 'lush'      ? 0.09
-        : t.biome === 'wetland'   ? 0.07
-        : t.biome === 'temperate' ? 0.045
-        : t.biome === 'arid'      ? 0.010
+      const density = t.biome === 'lush'      ? 0.13
+        : t.biome === 'wetland'   ? 0.11
+        : t.biome === 'temperate' ? 0.065
+        : t.biome === 'arid'      ? 0.015
         : 0
       if (rng() < density) {
         t.type = 'bush'
