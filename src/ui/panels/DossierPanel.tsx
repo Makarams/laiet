@@ -1,468 +1,214 @@
 import styled from 'styled-components'
 import { useLaietStore } from '@/store/gameStore'
-import { genomeColor, describeGenome } from '@/engine/genetics'
+import { describeGenome } from '@/engine/genetics'
 import { Creature, CreatureState } from '@/types'
+import { THEME, creatureColor } from '@/ui/theme'
 
 const STATE_LABELS: Record<CreatureState, string> = {
-  idle:             'resting',
-  wandering:        'wandering',
-  seeking_food:     'searching for food',
-  seeking_water:    'searching for water',
-  seeking_shelter:  'seeking shelter',
-  seeking_warmth:   'seeking warmth',
-  bonding:          'searching for a mate',
-  fighting:         'fighting',
-  fleeing:          'fleeing a threat',
-  reproducing:      'reproducing',
-  mourning:         'mourning a loss',
-  observing:        'watching the perimeter',
-  dreaming:         'dreaming',
-  sick:             'ill',
-  migrating:        'migrating',
-  scavenging:       'scavenging',
-  dying:            'dying',
-  playing:          'playing',
-  using_enrichment: 'using enrichment',
+  idle:'inactive', wandering:'wandering', seeking_food:'foraging',
+  seeking_water:'seeking water', seeking_shelter:'seeking shelter',
+  seeking_warmth:'seeking warmth', bonding:'pair-seeking', fighting:'in conflict',
+  fleeing:'fleeing', reproducing:'reproducing', mourning:'mourning',
+  observing:'boundary survey', dreaming:'memory-returning', sick:'compromised',
+  migrating:'migrating', scavenging:'scavenging', dying:'critical',
+  playing:'play behaviour', using_enrichment:'using enrichment',
+  seeking_healroot:'seeking remedy', grooming:'grooming',
 }
 
 const Panel = styled.div`
-  background:
-    linear-gradient(180deg, rgba(20, 20, 50, 0.30), rgba(8, 8, 28, 0.88)),
-    #06061a;
-  border: 1px solid #2a2a50;
-  border-radius: 4px;
-  padding: 11px 12px;
-  font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
-  font-size: 12.5px;
-  color: #c0c8e0;
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  box-sizing: border-box;
-  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.40), 0 0 0 1px rgba(80, 120, 200, 0.05);
-
-  &::-webkit-scrollbar { width: 4px; }
-  &::-webkit-scrollbar-thumb { background: #2e2e60; border-radius: 2px; }
+  background: ${THEME.bgPanel}; border: 2px solid ${THEME.border}; border-radius: 6px;
+  padding: 12px 14px; font-family: ${THEME.font}; font-size: 13px; color: ${THEME.textPrimary};
+  flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column;
+  box-sizing:border-box;
+  &::-webkit-scrollbar { width:4px; }
+  &::-webkit-scrollbar-thumb { background:${THEME.borderMid}; border-radius:2px; }
 `
-
 const PanelHeader = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  padding-bottom: 8px;
-  margin-bottom: 9px;
-  border-bottom: 1px solid #2a2a50;
+  display:flex; justify-content:space-between; align-items:baseline;
+  padding-bottom:8px; margin-bottom:10px; border-bottom:2px solid ${THEME.border};
 `
-
 const PanelTitle = styled.div`
-  font-size: 13px;
-  color: #5ec8e0;
-  letter-spacing: 0.22em;
-  font-weight: bold;
-  text-shadow: 0 0 10px rgba(94, 200, 224, 0.35);
+  font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.2em;
+  color:${THEME.textSecondary}; display:flex; align-items:center; gap:6px;
 `
-
-const PanelTag = styled.div`
-  font-size: 10px;
-  color: #4a4a78;
-  letter-spacing: 0.18em;
-`
-
-const CreatureName = styled.div<{ color: string }>`
-  font-size: 17px;
-  font-weight: bold;
-  color: ${p => p.color};
-  letter-spacing: 0.05em;
-  text-shadow: 0 0 16px ${p => p.color}60;
-  margin-bottom: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-`
-
-const IdLine = styled.div`
-  font-size: 10.5px;
-  color: #4a4a78;
-  letter-spacing: 0.08em;
-  margin-bottom: 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-`
-
-const Section = styled.div`
-  margin-top: 9px;
-`
-
+const ActiveDot = styled.span`width:6px;height:6px;border-radius:50%;background:${THEME.amber};display:inline-block;`
+const PanelTag = styled.div`font-size:10px;font-weight:600;color:${THEME.textTertiary};letter-spacing:0.1em;`
+const Section = styled.div`margin-top:10px;`
 const SectionTitle = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 10.5px;
-  color: #4a7090;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  margin: 3px 0 6px;
-  font-weight: bold;
-
-  &::before {
-    content: '';
-    width: 4px;
-    height: 4px;
-    background: #3a6080;
-    transform: rotate(45deg);
-  }
-
-  &::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: linear-gradient(90deg, #1a2040, transparent);
-  }
+  font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:0.22em;
+  color:${THEME.textTertiary}; margin-bottom:7px; display:flex; align-items:center; gap:6px;
+  &::after { content:''; flex:1; height:1px; background:${THEME.border}; }
 `
-
 const Row = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1.5px 0;
+  display:flex; justify-content:space-between; align-items:center; padding:3px 0; line-height:1.5;
+`
+const Label = styled.span`font-size:12px;font-weight:500;color:${THEME.textSecondary};`
+const Value = styled.span<{ $color?: string }>`
+  font-size:13px; font-weight:700; color:${p => p.$color ?? THEME.textPrimary};
 `
 
-const Label = styled.span`
-  color: #7070a0;
-  font-size: 11.5px;
+// ─── Creature name & identity ─────────────────────────────────────────────────
+
+const CreatureName = styled.div<{ $color: string }>`
+  font-size:18px; font-weight:700; color:${p => p.$color};
+  margin-bottom:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+`
+const IdLine = styled.div`
+  font-size:11px; font-weight:500; color:${THEME.textTertiary}; letter-spacing:0.05em; margin-bottom:4px;
+`
+const StateLine = styled.div`
+  display:flex; align-items:center; justify-content:space-between; margin-top:3px;
+`
+const StateLabel = styled.span`font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.2em;color:${THEME.textTertiary};`
+const StateValue = styled.span`font-size:11px;font-weight:600;color:${THEME.alive};`
+
+// ─── Trait badges ─────────────────────────────────────────────────────────────
+
+const TraitRow = styled.div`display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px;`
+const TraitBadge = styled.span<{ $color: string }>`
+  font-size:10px; font-weight:700; padding:3px 9px; border-radius:4px;
+  background:${p => p.$color}18; border:1px solid ${p => p.$color}44; color:${p => p.$color};
+  text-transform:uppercase; letter-spacing:0.06em;
 `
 
-const Value = styled.span<{ accent?: string }>`
-  color: ${p => p.accent ?? '#c0c8e0'};
-  font-size: 11.5px;
-  font-weight: bold;
-`
+// ─── Stat bars ────────────────────────────────────────────────────────────────
 
-// ─── Trait badges ────────────────────────────────────────────────────────────
-
-const TraitRow = styled.div`
-  display: flex;
-  gap: 5px;
-  flex-wrap: wrap;
-  margin-bottom: 5px;
-`
-
-const TraitBadge = styled.span<{ color: string }>`
-  display: inline-block;
-  background: ${p => p.color}22;
-  border: 1px solid ${p => p.color}66;
-  color: ${p => p.color};
-  font-size: 10.5px;
-  padding: 3px 9px;
-  border-radius: 2px;
-  letter-spacing: 0.06em;
-  font-weight: bold;
-`
-
-// ─── Stat bars ───────────────────────────────────────────────────────────────
-
-const StatRow = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: 4px 0;
-`
-
-const StatGlyph = styled.span<{ color: string }>`
-  width: 11px;
-  font-size: 12px;
-  color: ${p => p.color};
-  flex-shrink: 0;
-  text-align: center;
-`
-
+const StatRow = styled.div`display:flex;align-items:center;gap:7px;margin-bottom:5px;`
 const StatLabel = styled.span`
-  color: #7070a0;
-  font-size: 11px;
-  width: 58px;
-  flex-shrink: 0;
+  font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.15em;
+  color:${THEME.textTertiary};width:52px;flex-shrink:0;
+`
+const BarTrack = styled.div`flex:1;height:4px;background:${THEME.bgDeep};border-radius:2px;overflow:hidden;`
+const BarFill = styled.div<{ $w: number; $color: string }>`
+  width:${p => Math.min(100,Math.max(0,p.$w))}%;height:100%;background:${p => p.$color};border-radius:2px;
+`
+const StatValue = styled.span<{ $accent?: string }>`
+  font-size:11px;font-weight:700;color:${p => p.$accent ?? THEME.textSecondary};width:32px;text-align:right;
 `
 
-const BarTrack = styled.div`
-  flex: 1;
-  height: 6px;
-  background: #0e0e1e;
-  border-radius: 2px;
-  overflow: hidden;
-  border: 1px solid #1e2040;
+// ─── Bonds ────────────────────────────────────────────────────────────────────
+
+const BondList = styled.div`display:flex;flex-direction:column;gap:4px;`
+const BondRow = styled.div`display:flex;align-items:center;gap:7px;`
+const BondName = styled.span`font-size:12px;font-weight:600;color:${THEME.textPrimary};width:70px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;`
+const BondBar = styled.div`flex:1;height:4px;background:${THEME.bgDeep};border-radius:2px;overflow:hidden;`
+const BondFill = styled.div<{ $pct: number; $strength: number }>`
+  width:${p => Math.min(100,p.$pct)}%;height:100%;
+  background:${p => p.$strength > 70 ? THEME.water : p.$strength > 40 ? '#a870c0' : THEME.borderMid};
+`
+const BondStrength = styled.span<{ $strength: number }>`
+  font-size:10px;font-weight:700;
+  color:${p => p.$strength > 70 ? THEME.water : p.$strength > 40 ? '#a870c0' : THEME.textTertiary};
+  width:24px;text-align:right;
 `
 
-const BarFill = styled.div<{ width: number; color: string }>`
-  width: ${p => Math.max(0, Math.min(100, p.width))}%;
-  height: 100%;
-  background: linear-gradient(90deg, ${p => p.color}, ${p => p.color}dd);
-  transition: width 0.35s ease;
+// ─── Morphology ───────────────────────────────────────────────────────────────
+
+const MorphRow = styled.div`display:flex;align-items:center;gap:7px;margin:3px 0;`
+const MorphLabel = styled.span`font-size:10px;font-weight:600;color:${THEME.textTertiary};width:50px;flex-shrink:0;text-transform:uppercase;letter-spacing:0.1em;`
+const MorphTrack = styled.div`flex:1;height:4px;background:${THEME.bgDeep};border-radius:2px;overflow:hidden;`
+const MorphFill = styled.div<{ $w: number }>`
+  width:${p => Math.max(1,Math.min(100,p.$w))}%;height:100%;
+  background:linear-gradient(90deg,${THEME.water}88,${THEME.water});
 `
+const MorphValue = styled.span`font-size:10px;color:${THEME.textTertiary};width:28px;text-align:right;`
 
-const StatValue = styled.span<{ accent?: string }>`
-  color: ${p => p.accent ?? '#7070a0'};
-  font-size: 11px;
-  width: 36px;
-  text-align: right;
-  flex-shrink: 0;
-  font-weight: bold;
-`
-
-// ─── Bond network ────────────────────────────────────────────────────────────
-
-const BondList = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-top: 2px;
-`
-
-const BondRow = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 11px;
-`
-
-const BondName = styled.span`
-  color: #c0c8e0;
-  width: 80px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: bold;
-`
-
-const BondBar = styled.div`
-  flex: 1;
-  height: 4px;
-  background: #0e0e1e;
-  border-radius: 2px;
-  overflow: hidden;
-`
-
-const BondFill = styled.div<{ percent: number; strength: number }>`
-  width: ${p => Math.max(2, Math.min(100, p.percent))}%;
-  height: 100%;
-  background: ${p =>
-    p.strength > 70 ? 'linear-gradient(90deg, #60a8d8, #3a90c0)' :
-    p.strength > 40 ? 'linear-gradient(90deg, #a870c0, #8050a0)' :
-    'linear-gradient(90deg, #3a70a0, #2a5888)'};
-`
-
-const BondStrength = styled.span<{ strength: number }>`
-  font-size: 10.5px;
-  color: ${p => p.strength > 70 ? '#60a8d8' : p.strength > 40 ? '#a870c0' : '#5888a0'};
-  width: 24px;
-  text-align: right;
-  font-weight: bold;
-`
-
-// ─── Monologue ───────────────────────────────────────────────────────────────
+// ─── Monologue ────────────────────────────────────────────────────────────────
 
 const Monologue = styled.div`
-  margin-top: 12px;
-  padding: 10px 14px 10px 18px;
-  background: linear-gradient(180deg, rgba(30, 60, 90, 0.12), rgba(6, 10, 28, 0.60));
-  border-left: 2px solid #2a5878;
-  font-style: italic;
-  color: #9ab8cc;
-  font-size: 11.5px;
-  line-height: 1.85;
-  border-radius: 0 2px 2px 0;
-  position: relative;
-
-  &::before {
-    content: '«';
-    position: absolute;
-    top: -3px;
-    left: 6px;
-    font-size: 22px;
-    color: #2a5878;
-    line-height: 1;
-  }
+  margin-top:12px; padding:10px 14px 10px 16px;
+  background:rgba(100,181,246,0.05);
+  border-left:2px solid ${THEME.water}44;
+  font-style:italic; color:${THEME.textSecondary};
+  font-size:12px; line-height:1.7; border-radius:0 4px 4px 0;
 `
 
-// ─── Empty state ─────────────────────────────────────────────────────────────
-
-const Empty = styled.div`
-  color: #4a4a78;
-  font-size: 11.5px;
-  text-align: center;
-  margin-top: 1.5rem;
-  line-height: 2;
-  letter-spacing: 0.05em;
-`
-
-const EmptyHint = styled.div`
-  color: #2e2e5a;
-  font-size: 11px;
-  letter-spacing: 0.15em;
-  margin-top: 10px;
-`
-
-// ─── Morphology bars ─────────────────────────────────────────────────────────
-
-const MorphRow = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: 3px 0;
-`
-
-const MorphLabel = styled.span`
-  color: #4a5878;
-  font-size: 10.5px;
-  width: 56px;
-  flex-shrink: 0;
-  letter-spacing: 0.04em;
-`
-
-const MorphTrack = styled.div`
-  flex: 1;
-  height: 4px;
-  background: #0e0e1e;
-  border-radius: 2px;
-  overflow: hidden;
-  border: 1px solid #1e2040;
-`
-
-const MorphFill = styled.div<{ width: number }>`
-  width: ${p => Math.max(1, Math.min(100, p.width))}%;
-  height: 100%;
-  background: linear-gradient(90deg, #1a3a60, #5ec8e0);
-`
-
-const MorphValue = styled.span`
-  color: #4a6890;
-  font-size: 10px;
-  width: 28px;
-  text-align: right;
-  flex-shrink: 0;
-`
-
-// ─── Heal button ─────────────────────────────────────────────────────────────
+// ─── Heal button ──────────────────────────────────────────────────────────────
 
 const HealBtn = styled.button`
-  background: rgba(200, 80, 80, 0.10);
-  border: 1px solid #5a1a2a;
-  color: #e06070;
-  font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
-  font-size: 10px;
-  padding: 6px 12px;
-  cursor: pointer;
-  border-radius: 2px;
-  margin-bottom: 6px;
-  width: 100%;
-  letter-spacing: 0.10em;
-  transition: all 0.15s;
-
-  &:hover {
-    border-color: #c82840;
-    color: #ff7088;
-    box-shadow: 0 0 10px rgba(200, 40, 64, 0.30);
-  }
+  background:rgba(120,200,120,0.10); border:1px solid #3a6a3a; color:${THEME.alive};
+  font-family:${THEME.font}; font-size:11px; font-weight:700;
+  padding:7px 12px; cursor:pointer; border-radius:4px; margin-bottom:6px; width:100%;
+  letter-spacing:0.06em; transition:all 0.12s;
+  &:hover { background:rgba(120,200,120,0.18); border-color:${THEME.alive}; }
 `
 
-// ─── Monologue generator ─────────────────────────────────────────────────────
+const Empty = styled.div`
+  color:${THEME.textTertiary}; font-size:12px; text-align:center;
+  margin-top:1.5rem; line-height:2; font-style:italic;
+`
 
-function generateMonologue(creature: Creature): string {
-  const { genome, state, hunger, thirst, warmth, stress, bonds, sentience } = creature
+// ─── Monologue text generator ─────────────────────────────────────────────────
 
-  if (state === 'mourning') return `${creature.name} stands very still. something is missing.`
-  if (state === 'sick') return `${creature.name} is not well. the warmth feels wrong.`
-  if (state === 'fighting') return `${creature.name} does not back down easily.`
-  if (state === 'dreaming') return `${creature.name} has been here before. the ground remembers.`
-  if (state === 'observing') return `${creature.name} watches from the edge. still. patient.`
-
-  if (genome.mind === 'Sentinel' && sentience > 50) {
-    return `${creature.name} is aware of more than the others. it watches directions they do not.`
-  }
-  if (genome.mind === 'Dreaming') {
-    return `${creature.name} moves slowly, as though following something only it can see.`
-  }
-  if (hunger > 70) return `${creature.name} is very hungry. searching.`
-  if (thirst > 75) return `${creature.name} needs water. moving toward the river.`
-  if (warmth < 25) return `${creature.name} is cold. seeking shelter.`
-  if (stress > 70) return `${creature.name} is unsettled. something nearby is wrong.`
-  if (bonds.length > 2) return `${creature.name} stays close to those it knows. content.`
-
+function generateMonologue(c: Creature): string {
+  if (c.state === 'mourning')   return `${c.name} is stationary. social group recently reduced.`
+  if (c.state === 'sick')       return `${c.name} showing reduced mobility. temperature regulation failing.`
+  if (c.state === 'fighting')   return `${c.name} in resource conflict. outcome undetermined.`
+  if (c.state === 'dreaming')   return `${c.name} has returned to a prior location. standing still.`
+  if (c.state === 'observing')  return `${c.name} at boundary edge. repeated passes. no apparent need.`
+  if (c.genome.mind === 'Sentinel' && c.sentience > 50)
+    return `${c.name} has logged more boundary passes than any other subject this cycle.`
+  if (c.genome.mind === 'Dreaming')
+    return `${c.name} moves toward sites the colony has already used. pattern unclear.`
+  if (c.hunger > 70)  return `${c.name} at hunger threshold. no food source located within range.`
+  if (c.thirst > 75)  return `${c.name} at thirst threshold. moving toward water.`
+  if (c.warmth < 25)  return `${c.name} below warmth threshold. seeking shelter.`
+  if (c.stress > 70)  return `${c.name} elevated stress. no external threat identified.`
+  if (c.bonds.length > 2) return `${c.name} remaining proximate to known social contacts.`
   const idle = [
-    `${creature.name} is resting. quiet for now.`,
-    `${creature.name} moves without urgency today.`,
-    `${creature.name} seems at ease in this place.`,
-    `nothing troubles ${creature.name} at this moment.`,
+    `${c.name} is stationary. no active drive.`,
+    `${c.name} moving without apparent objective.`,
+    `${c.name} at rest. all thresholds within normal range.`,
+    `no notable activity from ${c.name} this cycle.`,
   ]
   return idle[Math.floor(Math.random() * idle.length)]
 }
 
-function StatBarRow({ glyph, glyphColor, label, value, barColor, accent }: {
-  glyph: string; glyphColor: string; label: string; value: number; barColor: string; accent?: string
-}) {
+// ─── Stat bar helper ──────────────────────────────────────────────────────────
+
+function StatBarRow({ label, value, barColor, accent }:
+  { label:string; value:number; barColor:string; accent?:string }) {
   return (
     <StatRow>
-      <StatGlyph color={glyphColor}>{glyph}</StatGlyph>
       <StatLabel>{label}</StatLabel>
-      <BarTrack>
-        <BarFill width={value} color={barColor} />
-      </BarTrack>
-      <StatValue accent={accent}>{Math.round(value)}%</StatValue>
+      <BarTrack><BarFill $w={value} $color={barColor} /></BarTrack>
+      <StatValue $accent={accent}>{Math.round(value)}%</StatValue>
     </StatRow>
   )
 }
 
-// ─── Main panel ──────────────────────────────────────────────────────────────
+// ─── Main component ───────────────────────────────────────────────────────────
 
 export function DossierPanel() {
-  const gameState = useLaietStore(s => s.gameState)
-  const selectedId = useLaietStore(s => s.selectedCreatureId)
+  const gameState    = useLaietStore(s => s.gameState)
+  const selectedId   = useLaietStore(s => s.selectedCreatureId)
   const healCreature = useLaietStore(s => s.healCreature)
 
-  const creature = selectedId ? gameState?.creatures[selectedId] : null
+  const creature  = selectedId ? gameState?.creatures[selectedId] : null
   const caretaker = gameState?.caretaker
 
   if (!creature || creature.diedOnDay !== null) {
     const alive = gameState ? Object.values(gameState.creatures).filter(c => c.diedOnDay === null) : []
     const maxGen = alive.length > 0 ? Math.max(...alive.map(c => c.generation)) : 0
     const avgSentience = alive.length > 0
-      ? Math.round(alive.reduce((s, c) => s + c.sentience, 0) / alive.length)
-      : 0
+      ? Math.round(alive.reduce((s,c) => s + c.sentience, 0) / alive.length) : 0
 
     return (
       <Panel>
         <PanelHeader>
-          <PanelTitle>◇ DOSSIER</PanelTitle>
+          <PanelTitle><ActiveDot />Field Record</PanelTitle>
           <PanelTag>SBJ ···</PanelTag>
         </PanelHeader>
-        <Empty>
-          {selectedId ? '◌ subject deceased' : '◌ no subject selected'}
-          <EmptyHint>∙ click a specimen to inspect ∙</EmptyHint>
-        </Empty>
-
+        <Empty>{selectedId ? 'Subject deceased ; record closed' : 'No subject selected'}<br />click a specimen to open record</Empty>
         {alive.length > 0 && (
-          <Section style={{ marginTop: '1.5rem' }}>
-            <SectionTitle>colony overview</SectionTitle>
+          <Section style={{ marginTop:'1.5rem' }}>
+            <SectionTitle>Colony</SectionTitle>
+            <Row><Label>Alive</Label><Value $color={THEME.alive}>{alive.length}</Value></Row>
+            <Row><Label>Max generation</Label><Value $color={THEME.amber}>{maxGen}</Value></Row>
+            <Row><Label>Avg sentience</Label><Value $color="#c878f0">{avgSentience}%</Value></Row>
             <Row>
-              <Label>alive</Label>
-              <Value accent='#88c060'>{alive.length}</Value>
-            </Row>
-            <Row>
-              <Label>max generation</Label>
-              <Value accent='#d4a040'>{maxGen}</Value>
-            </Row>
-            <Row>
-              <Label>avg sentience</Label>
-              <Value accent='#a870c0'>{avgSentience}%</Value>
-            </Row>
-            <Row>
-              <Label>bonded pairs</Label>
-              <Value>
-                {Math.floor(alive.filter(c => c.bonds.some(b => b.strength >= 42)).length / 2)}
-              </Value>
+              <Label>Bonded pairs</Label>
+              <Value>{Math.floor(alive.filter(c => c.bonds.some(b => b.strength >= 42)).length / 2)}</Value>
             </Row>
           </Section>
         )}
@@ -470,176 +216,110 @@ export function DossierPanel() {
     )
   }
 
-  const color = genomeColor(creature.genome)
+  const color = creatureColor(creature.genome.body)
   const topBonds = [...creature.bonds]
     .filter(b => gameState?.creatures[b.targetId]?.diedOnDay === null)
-    .sort((a, b) => b.strength - a.strength)
+    .sort((a,b) => b.strength - a.strength)
     .slice(0, 4)
 
   return (
     <Panel>
       <PanelHeader>
-        <PanelTitle>◇ DOSSIER</PanelTitle>
-        <PanelTag>SBJ-{creature.id.slice(0, 4).toUpperCase()}</PanelTag>
+        <PanelTitle><ActiveDot />Field Record</PanelTitle>
+        <PanelTag>SBJ-{creature.id.slice(0,4).toUpperCase()}</PanelTag>
       </PanelHeader>
 
-      <CreatureName color={color}>{creature.name} {creature.familyName}</CreatureName>
-      <IdLine>
-        gen {creature.generation} · age {creature.age}d / {creature.maxAge}d · ({creature.x},{creature.y})
-      </IdLine>
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
-        <span style={{ fontSize: 9, color: '#6a5840' }}>state</span>
-        <span style={{ fontSize: 10, color: '#88c060', letterSpacing: '0.06em' }}>
-          ◉ {STATE_LABELS[creature.state] ?? creature.state}
-        </span>
-      </div>
+      <CreatureName $color={color}>{creature.name} {creature.familyName}</CreatureName>
+      <IdLine>Gen {creature.generation} · Age {creature.age}d / {creature.maxAge}d · ({creature.x},{creature.y})</IdLine>
+      <StateLine>
+        <StateLabel>Activity</StateLabel>
+        <StateValue>{STATE_LABELS[creature.state] ?? creature.state}</StateValue>
+      </StateLine>
 
       <Section>
-        <SectionTitle>genome</SectionTitle>
+        <SectionTitle>Biology</SectionTitle>
         <TraitRow>
-          <TraitBadge color={color}>{creature.genome.personality}</TraitBadge>
-          <TraitBadge color='#5888a0'>{creature.genome.body}</TraitBadge>
-          <TraitBadge color='#a870c0'>{creature.genome.mind}</TraitBadge>
+          <TraitBadge $color={color}>{creature.genome.personality}</TraitBadge>
+          <TraitBadge $color={THEME.shell}>{creature.genome.body}</TraitBadge>
+          <TraitBadge $color="#c878f0">{creature.genome.mind}</TraitBadge>
         </TraitRow>
         {creature.recentMutation !== undefined && creature.mutatedTraits && creature.mutatedTraits.length > 0 && (
-          <div style={{
-            marginTop: 5, padding: '3px 8px',
-            background: 'rgba(94, 200, 224, 0.08)',
-            border: '1px solid rgba(94, 200, 224, 0.28)',
-            borderRadius: 2, fontSize: 9, color: '#5ec8e0',
-            letterSpacing: '0.10em',
-          }}>
-            ⚡ mutated {creature.mutatedTraits.join(', ')} this generation
+          <div style={{ marginTop:5, padding:'3px 8px',
+            background:'rgba(100,181,246,0.08)', border:`1px solid ${THEME.water}44`,
+            borderRadius:4, fontSize:10, color:THEME.water, letterSpacing:'0.1em', fontWeight:600 }}>
+            ⚡ mutated: {creature.mutatedTraits.join(', ')}
           </div>
         )}
-        <div style={{ color: '#4a5870', fontSize: 9, lineHeight: 1.6, marginTop: 4 }}>
+        <div style={{ color:THEME.textTertiary, fontSize:10, lineHeight:1.6, marginTop:4 }}>
           {describeGenome(creature.genome)}
         </div>
       </Section>
 
       <Section>
-        <SectionTitle>vitals</SectionTitle>
-
+        <SectionTitle>Vitals</SectionTitle>
         {caretaker && caretaker.healCharges > 0 && creature.health < 80 && (
           <HealBtn onClick={() => healCreature(creature.id)}>
-            ♥ HEAL ({caretaker.healCharges} left)
+            Heal ; {caretaker.healCharges} charge{caretaker.healCharges !== 1 ? 's' : ''} left
           </HealBtn>
         )}
-
-        <StatBarRow
-          glyph='♥' glyphColor='#c85030'
-          label='health' value={creature.health}
-          barColor={creature.health < 30 ? '#c85030' : creature.health < 60 ? '#d4a040' : '#88c060'}
-          accent={creature.health < 30 ? '#d07060' : undefined}
-        />
-        <StatBarRow
-          glyph='✦' glyphColor='#d4a040'
-          label='hunger' value={creature.hunger}
-          barColor={creature.hunger > 70 ? '#c85030' : '#9a7030'}
-          accent={creature.hunger > 70 ? '#d07050' : undefined}
-        />
-        <StatBarRow
-          glyph='~' glyphColor='#5888a0'
-          label='thirst' value={creature.thirst}
-          barColor={creature.thirst > 70 ? '#3878a0' : '#2a5870'}
-          accent={creature.thirst > 70 ? '#5888a0' : undefined}
-        />
-        <StatBarRow
-          glyph='*' glyphColor='#c49840'
-          label='warmth' value={creature.warmth}
-          barColor={creature.warmth < 25 ? '#3878a0' : '#7a4828'}
-          accent={creature.warmth < 25 ? '#5888a0' : undefined}
-        />
-        <StatBarRow
-          glyph='!' glyphColor='#c85030'
-          label='stress' value={creature.stress}
-          barColor={creature.stress > 70 ? '#902020' : '#3a2830'}
-          accent={creature.stress > 70 ? '#c85030' : undefined}
-        />
-        <StatBarRow
-          glyph='◈' glyphColor='#a870c0'
-          label='sentience' value={creature.sentience}
-          barColor='#6a4090' accent='#a870c0'
-        />
+        <StatBarRow label="Health"   value={creature.health}
+          barColor={creature.health < 30 ? THEME.threat : creature.health < 60 ? THEME.amber : THEME.alive}
+          accent={creature.health < 30 ? THEME.threat : undefined} />
+        <StatBarRow label="Hunger"   value={creature.hunger}
+          barColor={creature.hunger > 70 ? THEME.threat : THEME.amber}
+          accent={creature.hunger > 70 ? THEME.threat : undefined} />
+        <StatBarRow label="Thirst"   value={creature.thirst}
+          barColor={creature.thirst > 70 ? THEME.water : `${THEME.water}66`}
+          accent={creature.thirst > 70 ? THEME.water : undefined} />
+        <StatBarRow label="Warmth"   value={creature.warmth}
+          barColor={creature.warmth < 25 ? THEME.water : '#c49840'}
+          accent={creature.warmth < 25 ? THEME.water : undefined} />
+        <StatBarRow label="Stress"   value={creature.stress}
+          barColor={creature.stress > 70 ? THEME.death : THEME.borderMid}
+          accent={creature.stress > 70 ? THEME.death : undefined} />
+        <StatBarRow label="Sentience" value={creature.sentience}
+          barColor="#c878f044" accent="#c878f0" />
       </Section>
 
       <Section>
-        <SectionTitle>bonds · {creature.bonds.length}</SectionTitle>
-        {topBonds.length === 0 ? (
-          <div style={{ fontSize: 11, color: '#3a3a60', fontStyle: 'italic', padding: '4px 0', letterSpacing: '0.08em' }}>
-            no living bonds yet
-          </div>
-        ) : (
-          <BondList>
-            {topBonds.map(b => {
-              const other = gameState!.creatures[b.targetId]
-              return (
-                <BondRow key={b.targetId}>
-                  <BondName>{other.name}</BondName>
-                  <BondBar>
-                    <BondFill percent={b.strength} strength={b.strength} />
-                  </BondBar>
-                  <BondStrength strength={b.strength}>{Math.round(b.strength)}</BondStrength>
-                </BondRow>
-              )
-            })}
-          </BondList>
-        )}
+        <SectionTitle>Bonds · {creature.bonds.length}</SectionTitle>
+        {topBonds.length === 0
+          ? <div style={{ fontSize:11, color:THEME.textTertiary, fontStyle:'italic', padding:'3px 0' }}>no recorded bonds</div>
+          : (
+            <BondList>
+              {topBonds.map(b => {
+                const other = gameState!.creatures[b.targetId]
+                return (
+                  <BondRow key={b.targetId}>
+                    <BondName>{other.name}</BondName>
+                    <BondBar><BondFill $pct={b.strength} $strength={b.strength} /></BondBar>
+                    <BondStrength $strength={b.strength}>{Math.round(b.strength)}</BondStrength>
+                  </BondRow>
+                )
+              })}
+            </BondList>
+          )}
       </Section>
 
       <Section>
-        <SectionTitle>lineage</SectionTitle>
-        <Row>
-          <Label>offspring</Label>
-          <Value accent='#88c060'>{creature.offspringIds.length}</Value>
+        <SectionTitle>Descent</SectionTitle>
+        <Row><Label>Offspring</Label><Value $color={THEME.alive}>{creature.offspringIds.length}</Value></Row>
+        <Row><Label>Transmissions</Label><Value>{creature.messagesSent}</Value></Row>
+        <Row><Label>Kills</Label>
+          <Value $color={creature.killCount > 0 ? THEME.death : undefined}>{creature.killCount}</Value>
         </Row>
-        <Row>
-          <Label>messages sent</Label>
-          <Value>{creature.messagesSent}</Value>
-        </Row>
-        <Row>
-          <Label>kills</Label>
-          <Value accent={creature.killCount > 0 ? '#c85030' : undefined}>
-            {creature.killCount}
-          </Value>
-        </Row>
-        {creature.parentIds[0] && (
-          <Row>
-            <Label>parents</Label>
-            <Value style={{ fontSize: 9, color: '#4a5870', letterSpacing: '0.06em' }}>
-              {creature.parentIds[0]?.slice(0, 4)} × {creature.parentIds[1]?.slice(0, 4) ?? '·'}
-            </Value>
-          </Row>
-        )}
       </Section>
 
       <Section>
-        <SectionTitle>morphology</SectionTitle>
+        <SectionTitle>Form</SectionTitle>
         {(() => {
-          const m = creature.genome.morphology ?? { sizeScale: 1.0, limbLength: 0, spinalLength: 0, colorDrift: 0, eyeSize: 1.0 }
+          const m = creature.genome.morphology ?? { sizeScale:1.0, limbLength:0, spinalLength:0, colorDrift:0, eyeSize:1.0 }
           return (
             <>
-              <MorphRow>
-                <MorphLabel>size</MorphLabel>
-                <MorphTrack><MorphFill width={((m.sizeScale - 0.7) / 0.8) * 100} /></MorphTrack>
-                <MorphValue>{m.sizeScale.toFixed(2)}</MorphValue>
-              </MorphRow>
-              <MorphRow>
-                <MorphLabel>limbs</MorphLabel>
-                <MorphTrack><MorphFill width={m.limbLength * 100} /></MorphTrack>
-                <MorphValue>{m.limbLength.toFixed(2)}</MorphValue>
-              </MorphRow>
-              <MorphRow>
-                <MorphLabel>spine</MorphLabel>
-                <MorphTrack><MorphFill width={m.spinalLength * 100} /></MorphTrack>
-                <MorphValue>{m.spinalLength.toFixed(2)}</MorphValue>
-              </MorphRow>
-              <MorphRow>
-                <MorphLabel>eyes</MorphLabel>
-                <MorphTrack><MorphFill width={((m.eyeSize - 0.7) / 0.8) * 100} /></MorphTrack>
-                <MorphValue>{m.eyeSize.toFixed(2)}</MorphValue>
-              </MorphRow>
+              <MorphRow><MorphLabel>Size</MorphLabel><MorphTrack><MorphFill $w={((m.sizeScale-0.7)/0.8)*100}/></MorphTrack><MorphValue>{m.sizeScale.toFixed(2)}</MorphValue></MorphRow>
+              <MorphRow><MorphLabel>Limbs</MorphLabel><MorphTrack><MorphFill $w={m.limbLength*100}/></MorphTrack><MorphValue>{m.limbLength.toFixed(2)}</MorphValue></MorphRow>
+              <MorphRow><MorphLabel>Spine</MorphLabel><MorphTrack><MorphFill $w={m.spinalLength*100}/></MorphTrack><MorphValue>{m.spinalLength.toFixed(2)}</MorphValue></MorphRow>
+              <MorphRow><MorphLabel>Eyes</MorphLabel><MorphTrack><MorphFill $w={((m.eyeSize-0.7)/0.8)*100}/></MorphTrack><MorphValue>{m.eyeSize.toFixed(2)}</MorphValue></MorphRow>
             </>
           )
         })()}

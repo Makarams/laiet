@@ -26,7 +26,7 @@ export const DEATH_SITE_DECAY_DAYS = 22           // death sites fade back to ba
 // ─── Creature stats ───────────────────────────────────────────────────────────
 // Max age in ticks (1 tick = 1 second real time)
 // Spore: ~7.5 min | Shell: ~25 min | Spike: ~12 min | Wisp: ~10 min
-// Spore was 300 (5 min) — too short to establish a colony before dying.
+// Spore was 300 (5 min); too short to establish a colony before dying.
 // Shell raised to give K-strategist backbone more longevity.
 export const MAX_AGE_BY_BODY = {
   Spore: 450,
@@ -39,24 +39,24 @@ export const MOVE_SPEED_BY_BODY = {
   Spore: 1.2,
   Shell: 0.5,
   Spike: 0.9,
-  Wisp:  2.2,   // was 2.0 — scouts move faster
+  Wisp:  2.2,   // was 2.0; scouts move faster
 } as const
 
 export const FIGHT_POWER_BY_BODY = {
   Spore: 0.4,
   Shell: 0.6,
-  Spike: 2.0,   // was 1.8 — Spike is the clear defender
+  Spike: 2.0,   // was 1.8; Spike is the clear defender
   Wisp:  0.3,
 } as const
 
 // Reproduction: chance per tick when conditions are met.
 // Spore raised to compensate for their shorter lifespan (r-strategist role).
-// Wisp raised slightly — high-bonding creatures reproduce readily when bonded.
+// Wisp raised slightly; high-bonding creatures reproduce readily when bonded.
 export const REPRODUCE_RATE_BY_BODY = {
-  Spore: 0.010,  // was 0.008 — rapid colonizer; short life needs faster turnover
-  Shell: 0.004,  // was 0.003 — K-strategist; slow but stable
+  Spore: 0.010,  // was 0.008; rapid colonizer; short life needs faster turnover
+  Shell: 0.004,  // was 0.003; K-strategist; slow but stable
   Spike: 0.004,  // unchanged
-  Wisp:  0.006,  // was 0.004 — high social bonding drives reproduction
+  Wisp:  0.006,  // was 0.004; high social bonding drives reproduction
 } as const
 
 // Pre-seeded bond strength given to all starter creatures toward each other.
@@ -89,7 +89,7 @@ export const CREATURE_MATURITY_TICKS = 30         // must be this old to reprodu
 // ─── Food & resources ─────────────────────────────────────────────────────────
 export const FOOD_PER_PATCH = 100
 export const FOOD_EAT_AMOUNT = 20                 // slightly less per eat
-export const FOOD_REGROW_RATE_BASE = 0.8          // was 0.2 — faster regrowth
+export const FOOD_REGROW_RATE_BASE = 0.8          // was 0.2; faster regrowth
 export const FOOD_REGROW_MULTIPLIER: Record<string, number> = {
   spring: 1.6,
   summer: 1.2,
@@ -128,7 +128,7 @@ export const DISEASE_HEALTH_DRAIN      = 0.3      // extra health loss per tick 
 
 export const ASEXUAL_HEALTH_MIN        = 78       // must be very healthy to divide
 export const ASEXUAL_HUNGER_MAX        = 30       // and well-fed
-export const ASEXUAL_BASE_CHANCE       = 0.0008   // rare — Spore body only
+export const ASEXUAL_BASE_CHANCE       = 0.0008   // rare; Spore body only
 export const ASEXUAL_MUTATION_CHANCE   = 0.28     // higher than sexual (single-parent)
 
 // Minimum bond strength for sexual reproduction partnership
@@ -197,10 +197,10 @@ export const DROUGHT_FOOD_FACTOR    = 0.45   // food regrowth multiplier in drou
 // ─── Biome thirst modifiers (applied as extra fraction of THIRST_DECAY) ──────
 export const BIOME_THIRST_EXTRA: Record<string, number> = {
   temperate: 0.0,
-  arid:      0.55,   // +55% thirst decay — dry air
-  lush:     -0.20,   // −20% — humid canopy
+  arid:      0.55,   // +55% thirst decay; dry air
+  lush:     -0.20,   // −20%; humid canopy
   rocky:     0.12,
-  wetland:  -0.25,   // −25% — near water
+  wetland:  -0.25,   // −25%; near water
 }
 
 // ─── Tile movement modifiers (multiplier on base moveChance) ─────────────────
@@ -219,15 +219,16 @@ export const TILE_MOVE_MODIFIER: Record<string, number> = {
   mountain:   0.00,
   cliff:      0.00,
   bush:       0.80,  // low shrub slows movement slightly
+  healroot:   0.90,  // low herb growth; slight tangle underfoot
 }
 
 // ─── Night warmth penalty ────────────────────────────────────────────────────
 // Night doubles effective warmth decay: tickNeeds applies base/winter drain,
 // then tickCreatures applies this extra on top of it during night phase.
-export const NIGHT_WARMTH_EXTRA = true  // sentinel — actual extra = same as base/winter decay
+export const NIGHT_WARMTH_EXTRA = true  // sentinel; actual extra = same as base/winter decay
 
 // ─── Social behavior ─────────────────────────────────────────────────────────
-// Cohesion radius reduced from 18 — only Nurturing/Timid cluster; others explore freely.
+// Cohesion radius reduced from 18; only Nurturing/Timid cluster; others explore freely.
 export const SOCIAL_COHESION_RADIUS = 10
 
 // ─── Recluse trait ───────────────────────────────────────────────────────────
@@ -273,7 +274,7 @@ export const ENRICHMENT_MAX_PER_TILE = 1       // one item per tile
 export const ENRICHMENT_COOLDOWN_TICKS = 80    // sim ticks before creature can use enrichment again
 export const ENRICHMENT_MAX_USES = 40          // item degrades and disappears after this many uses
 
-// Effects per enrichment type — stat delta per tick while in use.
+// Effects per enrichment type; stat delta per tick while in use.
 export const ENRICHMENT_EFFECTS: Record<string, {
   stress: number; hunger: number; thirst: number; warmth: number; health: number
 }> = {
@@ -287,7 +288,7 @@ export const ENRICHMENT_EFFECTS: Record<string, {
   springy_moss:    { stress: -3.5, hunger:  1.0, thirst:  0.5, warmth:  0.0, health:  0.0 },
 }
 
-// ─── Natural enrichment — passive bonuses from world terrain ─────────────────
+// ─── Natural enrichment; passive bonuses from world terrain ─────────────────
 // Applied in tickCreatures for creatures standing on or adjacent to these tiles.
 export const NATURAL_CAVE_STRESS_REDUCTION   = 1.5   // per tick on cave tile
 export const NATURAL_RIVER_STRESS_REDUCTION  = 0.5   // per tick on river/mud tile
@@ -299,12 +300,98 @@ export const NATURAL_BUSH_STRESS_REDUCTION   = 0.18  // per tick on bush tile (c
 export const BUSH_FOOD_MAX         = 35   // max berry amount per bush tile
 export const BUSH_FOOD_REGROW_RATE = 0.12 // berries regrow slowly without needing a tree
 
+// ─── Healroot ────────────────────────────────────────────────────────────────
+// Medicinal herb patches that grow in lush and wetland biomes.
+// Sick creatures instinctively seek them; consuming heals health over time.
+// Healroot also spawns near death sites (grief-and-growth feedback loop).
+export const HEALROOT_MAX_AMOUNT      = 100  // max potency per tile
+export const HEALROOT_REGROW_RATE     = 0.06 // potency restored per tick (slow)
+export const HEALROOT_HEAL_PER_USE    = 22   // health restored when a creature feeds
+export const HEALROOT_CONSUME_AMOUNT  = 35   // potency consumed per feeding event
+export const HEALROOT_SEEK_HEALTH     = 40   // health threshold: creature will seek healroot
+export const HEALROOT_CARRY_HEAL      = 15   // health restored when a carried healroot is delivered
+
+// How close to a death site healroot can spontaneously spawn (memorial growth)
+export const HEALROOT_DEATH_SITE_RADIUS = 3
+export const HEALROOT_DEATH_SPAWN_CHANCE = 0.08  // per death event
+
+// ─── Micro-animations ────────────────────────────────────────────────────────
+// Short body-language bursts triggered by creature state and conditions.
+// Duration in real milliseconds; renderer interpolates within the window.
+export const MICRO_ANIM_DURATION_MS: Record<string, number> = {
+  jump:    600,   // happy leap; triggered during play or birth
+  shake:   500,   // full-body shudder; triggered when cold, sick, or emerging from water
+  sneeze:  400,   // rapid head-jerk; triggered when sick or dusty (arid biome)
+  groom:   900,   // slow body-wave; triggered during bonding/grooming state
+  wag:     700,   // tail/limb wag; triggered when a bond partner arrives nearby
+}
+
+// Per-tick chance of triggering each micro-animation (very low; feels rare and special)
+export const MICRO_ANIM_TRIGGER_CHANCE: Record<string, number> = {
+  jump:    0.008,  // during playing state
+  shake:   0.012,  // when warmth < 30 OR just recovered from sick
+  sneeze:  0.018,  // when sick OR in arid biome with dust
+  groom:   0.025,  // during grooming state
+  wag:     0.010,  // when a bonded partner enters proximity
+}
+
 // ─── Cave visual depth ────────────────────────────────────────────────────────
 export const CAVE_CREATURE_ALPHA = 0.50        // creatures inside caves render dimmer
 
 // ─── Rendering ───────────────────────────────────────────────────────────────
-// 120×120 world — responsive canvas fills viewport; camera pan+zoom to navigate
+// 120×120 world; responsive canvas fills viewport; camera pan+zoom to navigate
 export const ISO_TILE_WIDTH = 18
 export const ISO_TILE_HEIGHT = 9
 export const CANVAS_PADDING_X = 50
 export const CANVAS_PADDING_Y = 55
+
+// ─── Vegetation lifecycle ─────────────────────────────────────────────────────
+// Trees have a finite productive lifespan. After TREE_PEAK_AGE ticks they enter
+// a declining phase, dropping fruit less often. At TREE_WITHER_AGE they stop
+// producing entirely. At TREE_DECAY_AGE the tile reverts to barren, and
+// TREE_REGROW_FROM_DECAY gives a small chance for the tile to become a sapling.
+export const TREE_PEAK_AGE        = TREE_GROW_DAYS * 4   // ~480 ticks
+export const TREE_WITHER_AGE      = TREE_GROW_DAYS * 7   // ~840 ticks
+export const TREE_DECAY_AGE       = TREE_GROW_DAYS * 10  // ~1200 ticks
+export const TREE_REGROW_FROM_DECAY = 0.006               // chance per tick at decay age
+
+// Shrubs (bush) wither seasonally and may regenerate or die.
+export const BUSH_WITHER_CHANCE   = 0.0002  // per tick in drought or late autumn/winter
+export const BUSH_REGROW_CHANCE   = 0.0004  // per tick on grass tile in spring/lush biome
+
+// Fruit decay; fruit_patch tiles near no mature tree decay over time.
+// If they persist long enough they may become a new sapling (natural seeding).
+export const FRUIT_DECAY_RATE        = 0.15   // food lost per tick when isolated (no tree nearby)
+export const FRUIT_SEED_CHANCE       = 0.002  // chance a decaying food tile spawns a sapling
+export const FRUIT_OVERPRODUCTION_CAP = 0.004 // max drop chance regardless of season multiplier
+
+// ─── Weather; rain puddles & rivers ─────────────────────────────────────────
+// Rain accumulates on grass tiles. When a tile's puddle level reaches the
+// PUDDLE_FORM_THRESHOLD it converts to a mud tile. Adjacent puddle/mud tiles
+// flowing downhill (toward lower-elevation tiles) form streams and eventually
+// join rivers. Puddles evaporate in clear/drought weather.
+export const PUDDLE_FORM_THRESHOLD = 0.65   // water accumulation 0–1 on a grass tile
+export const PUDDLE_ACCUMULATE_RATE = 0.008 // per tick during rain/storm
+export const PUDDLE_EVAPORATE_RATE  = 0.012 // per tick in clear/drought
+export const PUDDLE_FLOW_CHANCE     = 0.008 // chance a puddle tile flows to adjacent lower tile
+export const PUDDLE_RIVER_THRESHOLD = 0.90  // water level at which puddle becomes a river tile
+export const RIVER_OVERFLOW_CHANCE  = 0.003 // rain causes rivers to overflow to adjacent grass
+
+// Creature behaviour near puddles
+export const PUDDLE_THIRST_RELIEF   = 8.0   // thirst reduced per tick when drinking from puddle
+export const PUDDLE_MOVE_MODIFIER   = 0.75  // movement speed on puddle tile (slippery)
+
+// ─── Snow ─────────────────────────────────────────────────────────────────────
+// Snow only occurs during winter in cold biomes (rocky, temperate) or anywhere
+// during a storm in winter. Snow accumulates on tiles, reducing movement, food
+// visibility, and warmth. It melts in spring or when temperature rises.
+export const SNOW_ENABLED = true
+export const SNOW_ACCUMULATE_RATE  = 0.007  // depth added per tick during snowfall
+export const SNOW_MELT_RATE        = 0.003  // depth removed per tick in clear spring
+export const SNOW_MAX_DEPTH        = 1.0    // 0..1, normalised
+export const SNOW_MOVE_PENALTY     = 0.55   // tile move modifier under full snow cover
+export const SNOW_WARMTH_DRAIN     = 0.06   // extra warmth decay per tick in snow
+export const SNOW_FOOD_COVER_FACTOR = 0.0   // food invisible to creatures when fully covered
+export const SNOW_VISIBILITY_REDUCE = 0.50  // renderer alpha on snow-covered food tiles
+// Biomes that can accumulate snow (wetland stays wetter, arid rarely gets snow)
+export const SNOW_BIOMES = ['temperate','rocky','lush'] as const

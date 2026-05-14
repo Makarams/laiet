@@ -26,7 +26,7 @@ export function drawAtmosphere(
     const heavy = weather === 'storm'
     const count = heavy ? 200 : 100
 
-    // Night rain is barely visible — ambient light is low, streaks are darker
+    // Night rain is barely visible ; ambient light is low, streaks are darker
     const phaseAlpha = phase === 'night' ? 0.10
       : (phase === 'dawn' || phase === 'dusk') ? 0.16
       : 0.22
@@ -54,13 +54,50 @@ export function drawAtmosphere(
       ctx.stroke()
     }
 
-    // Storm: ground mist at lower third — tinted for night vs day
+    // Storm: ground mist at lower third ; tinted for night vs day
     if (heavy) {
       ctx.fillStyle = phase === 'night'
         ? 'rgba(30, 50, 120, 0.07)'
         : 'rgba(100, 130, 200, 0.04)'
       ctx.fillRect(0, height * 0.68, width, height * 0.32)
     }
+
+    ctx.restore()
+
+  // ── Snow ─────────────────────────────────────────────────────────────────────
+  } else if (weather === 'snow') {
+    const count = 160
+    const phaseAlpha = phase === 'night' ? 0.55
+      : (phase === 'dawn' || phase === 'dusk') ? 0.62
+      : 0.70
+    ctx.save()
+
+    // Slower, softer flakes ; drift diagonally
+    const scroll  = (now / 600) % (height + 40)
+    const driftX  = Math.sin(now / 4000) * 0.35   // gentle horizontal sway
+
+    for (let i = 0; i < count; i++) {
+      const seed   = i * 237.7 + 13.3
+      const baseX  = ((seed % width + driftX * scroll * 0.15) % (width + 20))
+      const baseY  = ((seed * 0.713 % (height + 40) + scroll) % (height + 40)) - 20
+      const radius = 1.0 + (i % 5) * 0.55   // variety of flake sizes
+      const alpha  = phaseAlpha * (0.55 + (i % 7) * 0.07)
+
+      // Night snow is pale blue-white, day snow is pure white
+      ctx.fillStyle = phase === 'night'
+        ? `rgba(180, 210, 255, ${alpha})`
+        : `rgba(235, 245, 255, ${alpha})`
+
+      ctx.beginPath()
+      ctx.arc(baseX, baseY, radius, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    // Blizzard ground haze at base of screen
+    ctx.fillStyle = phase === 'night'
+      ? 'rgba(140, 180, 230, 0.06)'
+      : 'rgba(220, 235, 255, 0.08)'
+    ctx.fillRect(0, height * 0.72, width, height * 0.28)
 
     ctx.restore()
 
@@ -71,7 +108,7 @@ export function drawAtmosphere(
     ctx.fillStyle = `rgba(220, 160, 40, ${baseAlpha + shimmer})`
     ctx.fillRect(0, 0, width, height)
 
-    // Ground shimmer bands — only legible during day and dusk
+    // Ground shimmer bands ; only legible during day and dusk
     if (phase === 'day' || phase === 'dusk') {
       ctx.fillStyle = 'rgba(255, 180, 60, 0.022)'
       for (let i = 0; i < 4; i++) {
@@ -81,12 +118,13 @@ export function drawAtmosphere(
     }
   }
 
-  // ── Phase tint — modulated by weather ────────────────────────────────────────
+  // ── Phase tint ; modulated by weather ────────────────────────────────────────
   if (phase === 'night') {
     // Storm deepens dark, drought clears it slightly (dry air = clearer sky)
     const nightAlpha = weather === 'storm' ? 0.50
       : weather === 'drought'              ? 0.34
       : weather === 'rain'                 ? 0.46
+      : weather === 'snow'                 ? 0.38   // snow reflects moonlight ; lighter night
       : 0.42
     ctx.fillStyle = `rgba(6, 8, 32, ${nightAlpha})`
     ctx.fillRect(0, 0, width, height)
@@ -96,6 +134,8 @@ export function drawAtmosphere(
       ctx.fillStyle = 'rgba(120, 140, 180, 0.06)'
     } else if (weather === 'drought') {
       ctx.fillStyle = 'rgba(240, 155, 55, 0.11)'
+    } else if (weather === 'snow') {
+      ctx.fillStyle = 'rgba(180, 210, 245, 0.08)'  // cool blue-white dawn through snow
     } else {
       ctx.fillStyle = 'rgba(220, 150, 80, 0.07)'
     }
@@ -105,6 +145,8 @@ export function drawAtmosphere(
       ctx.fillStyle = 'rgba(100, 80, 120, 0.07)'
     } else if (weather === 'drought') {
       ctx.fillStyle = 'rgba(210, 90, 60, 0.12)'
+    } else if (weather === 'snow') {
+      ctx.fillStyle = 'rgba(140, 170, 210, 0.07)'  // cold purple dusk in snow
     } else {
       ctx.fillStyle = 'rgba(180, 70, 100, 0.09)'
     }
@@ -113,20 +155,18 @@ export function drawAtmosphere(
   // 'day' phase has no tint (clear or handled by drought/rain above)
 }
 
-// ─── Scanlines (CRT aesthetic) ─────────────────────────────────────────────────
+// ─── Scanlines ; removed in Field Guide design (replaced by vignette only) ─────
 
 export function drawScanlines(
-  ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number
+  _ctx: CanvasRenderingContext2D,
+  _width: number,
+  _height: number
 ): void {
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.04)'
-  for (let y = 0; y < height; y += 3) {
-    ctx.fillRect(0, y, width, 1)
-  }
+  // No-op: scanlines were a sci-fi CRT aesthetic.
+  // The Field Guide system uses clean isometric rendering.
 }
 
-// ─── Vignette — dark corners for depth ────────────────────────────────────────
+// ─── Vignette ; dark corners for depth ────────────────────────────────────────
 
 export function drawVignette(
   ctx: CanvasRenderingContext2D,

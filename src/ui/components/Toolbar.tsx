@@ -3,298 +3,130 @@ import styled from 'styled-components'
 import { Season, DayPhase, MessageStage, EnrichmentType } from '@/types'
 import { useLaietStore } from '@/store/gameStore'
 import { THUNDER_CHARGES_PER_DAY, FIRE_CHARGES_PER_DAY } from '@/engine/constants'
+import { THEME } from '@/ui/theme'
 
 const Bar = styled.div`
   display: flex;
-  gap: 8px;
   align-items: stretch;
-  padding: 7px 12px;
-  background:
-    linear-gradient(180deg, rgba(20, 20, 50, 0.55), rgba(12, 12, 36, 0.85)),
-    #0a0a22;
-  border: 1px solid #1c1c40;
-  border-radius: 4px;
-  font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
+  height: 44px;
+  background: #242424;
+  border: 2px solid ${THEME.border};
+  border-radius: 6px;
+  font-family: ${THEME.font};
   font-size: 12px;
-  flex-wrap: wrap;
-  row-gap: 6px;
-  box-shadow:
-    0 0 0 1px rgba(80, 60, 140, 0.10),
-    inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  flex-shrink: 0;
+  overflow: visible;
 `
-
-// ─── Brand block ─────────────────────────────────────────────────────────────
-
 const Brand = styled.div`
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: 0 14px 0 4px;
-  border-right: 1px solid #2a2a55;
+  display: flex; align-items: center; padding: 0 16px;
+  border-right: 2px solid ${THEME.border}; gap: 8px; flex-shrink: 0;
 `
-
 const BrandLogo = styled.div`
-  font-size: 14px;
-  letter-spacing: 0.32em;
-  color: #d088ff;
-  text-shadow: 0 0 10px rgba(200, 120, 240, 0.45);
-  font-weight: bold;
+  font-size: 14px; font-weight: 700; color: ${THEME.textPrimary}; letter-spacing: 0.04em;
 `
-
 const BrandSub = styled.div`
-  font-size: 10px;
-  letter-spacing: 0.24em;
-  color: #9090b8;
-  margin-top: 2px;
+  font-size: 9px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.2em; color: ${THEME.textTertiary};
 `
-
-// ─── Tools ───────────────────────────────────────────────────────────────────
-
-const ToolGroup = styled.div`
-  display: flex;
-  gap: 5px;
-  align-items: center;
-  flex-wrap: wrap;
-`
-
-const ToolBtn = styled.button<{ active: boolean; accent: string }>`
-  background: ${p => p.active ? `${p.accent}28` : 'rgba(28, 28, 50, 0.35)'};
-  border: 1px solid ${p => p.active ? p.accent : '#3a3a60'};
-  color: ${p => p.active ? p.accent : '#b0b0d8'};
-  font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
-  font-size: 11px;
-  padding: 5px 8px;
-  cursor: pointer;
-  border-radius: 2px;
-  letter-spacing: 0.08em;
-  transition: all 0.15s;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  position: relative;
-  font-weight: ${p => p.active ? 'bold' : 'normal'};
-
-  ${p => p.active && `
-    box-shadow: 0 0 12px ${p.accent}55, inset 0 0 10px ${p.accent}20;
-    text-shadow: 0 0 6px ${p.accent}80;
-  `}
-
-  &:hover {
-    border-color: ${p => p.accent};
-    color: ${p => p.accent};
-  }
-`
-
-const ToolGlyph = styled.span`
-  font-size: 13px;
-  line-height: 1;
-`
-
-const KeyHint = styled.span`
-  font-size: 10px;
-  opacity: 0.80;
-  margin-left: 2px;
-`
-
-// ─── Status block (center) ───────────────────────────────────────────────────
-
-const Spacer = styled.div`
-  flex: 1;
-  min-width: 4px;
-`
-
-const StatusBlock = styled.div`
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding: 0 12px;
-  border-left: 1px solid #2a2a55;
-  border-right: 1px solid #2a2a55;
-  flex-wrap: wrap;
-  row-gap: 4px;
-`
-
-const StatusCell = styled.div`
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  min-width: 36px;
-`
-
-const StatusLabel = styled.span`
-  font-size: 10px;
-  color: #9898c0;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-`
-
-const StatusValue = styled.span<{ accent?: string }>`
-  font-size: 13px;
-  color: ${p => p.accent ?? '#d0d8f0'};
-  letter-spacing: 0.06em;
-  font-weight: bold;
-`
-
-// ─── Awareness pips ──────────────────────────────────────────────────────────
-
-const AwarenessPips = styled.div`
-  display: flex;
-  gap: 4px;
-  align-items: center;
-`
-
-const Pip = styled.span<{ active: boolean; level: number }>`
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: ${p => p.active
-    ? p.level === 3 ? '#d088ff'
-    : p.level === 2 ? '#5ec8e0'
-    : '#80f0a0'
-    : '#1a1a32'};
-  box-shadow: ${p => p.active
-    ? `0 0 7px ${p.level === 3 ? '#d088ff' : p.level === 2 ? '#5ec8e0' : '#80f0a0'}`
-    : 'none'};
-  border: 1px solid ${p => p.active ? 'transparent' : '#2e2e54'};
-`
-
-// ─── Right-side controls ─────────────────────────────────────────────────────
-
-const CtrlBtn = styled.button<{ active?: boolean; accent?: string }>`
-  background: ${p => p.active ? `${p.accent ?? '#5ec8e0'}22` : 'rgba(28, 28, 50, 0.35)'};
-  border: 1px solid ${p => p.active ? (p.accent ?? '#5ec8e0') : '#3a3a60'};
-  color: ${p => p.active ? (p.accent ?? '#8af0ff') : '#9a9ac0'};
-  font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
-  font-size: 11px;
-  padding: 6px 9px;
-  cursor: pointer;
-  border-radius: 2px;
-  letter-spacing: 0.10em;
-  transition: all 0.15s;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  white-space: nowrap;
-
-  &:hover {
-    border-color: ${p => p.accent ?? '#5ec8e0'};
-    color: ${p => p.accent ?? '#8af0ff'};
-    box-shadow: 0 0 8px ${p => p.accent ? `${p.accent}44` : 'rgba(94, 200, 224, 0.25)'};
-  }
-`
-
-// Keep alias for mute button (semantically identical, just named)
-const MuteBtn = CtrlBtn
-
-const SpeedGroup = styled.div`
-  display: flex;
-  border: 1px solid #2a2a50;
-  border-radius: 2px;
-  overflow: hidden;
-`
-
-const SpeedBtn = styled.button<{ active: boolean }>`
-  background: ${p => p.active ? 'rgba(180, 160, 240, 0.18)' : 'transparent'};
+const ToolGroup = styled.div`display: flex; align-items: stretch;`
+const ToolBtn = styled.button<{ $active: boolean }>`
+  background: ${p => p.$active ? 'rgba(232,200,74,0.10)' : 'transparent'};
   border: none;
-  border-right: 1px solid #2a2a50;
-  color: ${p => p.active ? '#d0b8ff' : '#6868a0'};
-  font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
-  font-size: 10px;
-  padding: 5px 8px;
-  cursor: pointer;
-  letter-spacing: 0.06em;
-  transition: all 0.12s;
-
+  border-right: 1px solid ${THEME.border};
+  border-bottom: 2px solid ${p => p.$active ? THEME.amber : 'transparent'};
+  color: ${p => p.$active ? THEME.amber : THEME.textSecondary};
+  font-family: ${THEME.font}; font-size: 11px; font-weight: ${p => p.$active ? 700 : 500};
+  padding: 0 11px; cursor: pointer; display: flex; align-items: center;
+  gap: 5px; white-space: nowrap; transition: color 0.12s, background 0.12s;
+  position: relative; margin-bottom: -2px;
+  &:hover { color: ${THEME.textPrimary}; background: rgba(255,255,255,0.04); }
+`
+const KeyHint = styled.span`font-size: 9px; color: ${THEME.textTertiary};`
+const ChargeBadge = styled.span<{ $empty: boolean }>`
+  position: absolute; top: 4px; right: 4px;
+  background: ${p => p.$empty ? 'rgba(200,80,80,0.15)' : 'rgba(120,200,120,0.15)'};
+  border: 1px solid ${p => p.$empty ? '#7a2828' : '#3a6a3a'};
+  color: ${p => p.$empty ? THEME.death : THEME.alive};
+  font-size: 9px; font-weight: 700; padding: 0 4px; border-radius: 3px;
+`
+const EnrichDropdown = styled.div`
+  position: absolute; top: calc(100% + 4px); left: 0;
+  background: #242424; border: 2px solid ${THEME.border}; border-radius: 6px;
+  z-index: 200; min-width: 200px; overflow: hidden;
+`
+const EnrichOption = styled.button<{ $selected: boolean }>`
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; background: ${p => p.$selected ? 'rgba(120,200,120,0.10)' : 'transparent'};
+  border: none; border-bottom: 1px solid ${THEME.border};
+  color: ${p => p.$selected ? THEME.alive : THEME.textSecondary};
+  font-family: ${THEME.font}; font-size: 12px; font-weight: 500;
+  padding: 9px 13px; cursor: pointer; text-align: left;
+  &:hover { background: rgba(255,255,255,0.05); color: ${THEME.textPrimary}; }
+  &:last-child { border-bottom: none; }
+`
+const Spacer = styled.div`flex: 1; min-width: 4px;`
+const StatusBlock = styled.div`
+  display: flex; align-items: stretch;
+  border-left: 2px solid ${THEME.border}; border-right: 2px solid ${THEME.border};
+`
+const StatusCell = styled.div`
+  display: flex; flex-direction: column; justify-content: center;
+  align-items: flex-start; padding: 0 13px;
+  border-right: 1px solid ${THEME.border}; gap: 1px;
   &:last-child { border-right: none; }
-  &:hover { background: rgba(180, 160, 240, 0.10); color: #c0a8ff; }
+`
+const StatusLabel = styled.span`
+  font-size: 9px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.2em; color: ${THEME.textTertiary};
+`
+const StatusValue = styled.span<{ $color?: string }>`
+  font-size: 13px; font-weight: 700;
+  color: ${p => p.$color ?? THEME.textPrimary};
+`
+const AwarenessPips = styled.div`display: flex; gap: 4px; align-items: center; margin-top: 2px;`
+const Pip = styled.span<{ $active: boolean; $level: number }>`
+  width: 8px; height: 8px; border-radius: 50%;
+  background: ${p => p.$active
+    ? p.$level === 3 ? '#c878f0' : p.$level === 2 ? THEME.water : THEME.alive
+    : THEME.border};
+  border: 1px solid ${p => p.$active ? 'transparent' : THEME.borderMid};
+`
+const CtrlBtn = styled.button<{ $active?: boolean }>`
+  background: ${p => p.$active ? 'rgba(232,200,74,0.10)' : 'transparent'};
+  border: none; border-left: 2px solid ${THEME.border};
+  color: ${p => p.$active ? THEME.amber : THEME.textSecondary};
+  font-family: ${THEME.font}; font-size: 11px; font-weight: 600;
+  padding: 0 12px; cursor: pointer; display: flex; align-items: center;
+  gap: 5px; white-space: nowrap; transition: all 0.12s;
+  &:hover { color: ${THEME.textPrimary}; background: rgba(255,255,255,0.05); }
+`
+const SpeedGroup = styled.div`display: flex; align-items: stretch; border-left: 2px solid ${THEME.border};`
+const SpeedBtn = styled.button<{ $active: boolean }>`
+  background: ${p => p.$active ? 'rgba(232,200,74,0.10)' : 'transparent'};
+  border: none; border-right: 1px solid ${THEME.border};
+  color: ${p => p.$active ? THEME.amber : THEME.textTertiary};
+  font-family: ${THEME.font}; font-size: 11px; font-weight: 700;
+  padding: 0 10px; cursor: pointer; transition: all 0.12s;
+  &:last-child { border-right: none; }
+  &:hover { color: ${THEME.textPrimary}; background: rgba(255,255,255,0.04); }
 `
 
-// ─── Charge badge ────────────────────────────────────────────────────────────
-
-const ChargeBadge = styled.span<{ empty: boolean }>`
-  position: absolute;
-  top: -5px;
-  right: -5px;
-  background: ${p => p.empty ? '#3a1a1a' : '#0e2018'};
-  border: 1px solid ${p => p.empty ? '#7a2828' : '#3a6a3a'};
-  color: ${p => p.empty ? '#ff5060' : '#80f0a0'};
-  font-size: 9px;
-  padding: 1px 4px;
-  border-radius: 2px;
-  letter-spacing: 0.08em;
-  pointer-events: none;
-  font-weight: bold;
-`
-
-// ─── Constants ───────────────────────────────────────────────────────────────
-
-const SEASON_GLYPH: Record<Season, string> = {
-  spring: '✦', summer: '◆', autumn: '☁', winter: '❄',
-}
-
-const SEASON_COLOR: Record<Season, string> = {
-  spring: '#80f0a0',
-  summer: '#ffc060',
-  autumn: '#ff8048',
-  winter: '#80c8ff',
-}
-
-const PHASE_LABEL: Record<DayPhase, string> = {
-  dawn: 'DAWN', day: 'DAY', dusk: 'DUSK', night: 'NIGHT',
-}
-
-const PHASE_COLOR: Record<DayPhase, string> = {
-  dawn:  '#ffc070',
-  day:   '#f0e6c8',
-  dusk:  '#ff9070',
-  night: '#b0a8e8',
-}
-
+const WEATHER_GLYPH: Record<string, string> = { clear:'☀', rain:'☂', storm:'⚡', drought:'◌', snow:'❄' }
+const WEATHER_COLOR: Record<string, string> = { clear: THEME.amber, rain: THEME.water, storm: '#a0c8f0', drought: THEME.threat, snow: '#d0eeff' }
+const SEASON_COLOR: Record<string, string> = { spring: THEME.spring, summer: THEME.summer, autumn: THEME.autumn, winter: THEME.winter }
+const PHASE_COLOR: Record<string, string> = { dawn:'#ffc070', day: THEME.textPrimary, dusk: THEME.threat, night: THEME.water }
 
 export type Tool = 'select' | 'food' | 'tree' | 'river' | 'thunder' | 'fire' | 'enrich'
 
-const EnrichDropdown = styled.div`
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  background: rgba(8, 8, 28, 0.98);
-  border: 1px solid #3a3a70;
-  border-radius: 3px;
-  z-index: 200;
-  min-width: 160px;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.6);
-  overflow: hidden;
-`
-
-const EnrichOption = styled.button<{ selected: boolean }>`
-  display: block;
-  width: 100%;
-  background: ${p => p.selected ? 'rgba(100, 200, 120, 0.18)' : 'transparent'};
-  border: none;
-  border-bottom: 1px solid #1c1c40;
-  color: ${p => p.selected ? '#80f0a0' : '#b0b0d8'};
-  font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
-  font-size: 10.5px;
-  padding: 7px 12px;
-  cursor: pointer;
-  text-align: left;
-  letter-spacing: 0.06em;
-  transition: background 0.10s;
-
-  &:hover { background: rgba(100, 200, 120, 0.12); color: #c0f0c0; }
-  &:last-child { border-bottom: none; }
-`
-
-const ENRICHMENT_OPTIONS: { type: EnrichmentType; label: string; glyph: string; hint: string }[] = [
-  { type: 'resting_spot',    label: 'Resting Spot',  glyph: '≈', hint: 'stress↓ · warmth↑' },
-  { type: 'scratching_post', label: 'Scratch Post',  glyph: '|', hint: 'stress↓↓' },
-  { type: 'burrow',          label: 'Burrow',        glyph: 'U', hint: 'stress↓ · warmth↑↑' },
-  { type: 'warm_stone',      label: 'Warm Stone',    glyph: '◆', hint: 'warmth↑↑↑ · stress↓' },
-  { type: 'mud_pool',        label: 'Mud Pool',      glyph: '~', hint: 'thirst↓↓ · wallow' },
-  { type: 'worn_path',       label: 'Worn Path',     glyph: '○', hint: 'exercise · stress↓' },
-  { type: 'play_stones',     label: 'Play Stones',   glyph: '●', hint: 'stress↓↓ · social' },
-  { type: 'springy_moss',    label: 'Springy Moss',  glyph: '^', hint: 'stress↓↓↓ · health↑' },
+const ENRICHMENT_OPTIONS: { type: EnrichmentType; label: string; hint: string }[] = [
+  { type: 'resting_spot',    label: 'Rest site',     hint: 'stress↓ warmth↑' },
+  { type: 'scratching_post', label: 'Scratch Post',  hint: 'stress↓↓' },
+  { type: 'burrow',          label: 'Burrow',        hint: 'stress↓ warmth↑↑' },
+  { type: 'warm_stone',      label: 'Heat stone',    hint: 'warmth↑↑↑' },
+  { type: 'mud_pool',        label: 'Mud Pool',      hint: 'thirst↓↓' },
+  { type: 'worn_path',       label: 'Worn Path',     hint: 'exercise' },
+  { type: 'play_stones',     label: 'Play Stones',   hint: 'stress↓↓ social' },
+  { type: 'springy_moss',    label: 'Springy Moss',  hint: 'stress↓↓↓ health↑' },
 ]
 
 interface ToolbarProps {
@@ -326,17 +158,18 @@ export function Toolbar({
 }: ToolbarProps) {
   const [showEnrichDropdown, setShowEnrichDropdown] = useState(false)
   const caretaker = useLaietStore(s => s.gameState?.caretaker)
+  const weather    = useLaietStore(s => s.gameState?.weather ?? 'clear')
 
   const thunderCharges = caretaker?.thunderChargesToday ?? THUNDER_CHARGES_PER_DAY
   const fireCharges    = caretaker?.fireChargesToday    ?? FIRE_CHARGES_PER_DAY
 
-  const tools: { key: Tool; label: string; glyph: string; hotkey: string; accent: string; charge?: { used: number; max: number } }[] = [
-    { key: 'select',  label: 'OBSERVE',  glyph: '◎', hotkey: '1', accent: '#5ec8e0' },
-    { key: 'food',    label: 'FEED',     glyph: '✦', hotkey: '2', accent: '#80f0a0' },
-    { key: 'tree',    label: 'PLANT',    glyph: '⬡', hotkey: '3', accent: '#a8c060' },
-    { key: 'river',   label: 'REDIRECT', glyph: '≋', hotkey: '4', accent: '#80c8ff' },
-    { key: 'thunder', label: 'STRIKE',   glyph: '⚡', hotkey: '5', accent: '#ffe060', charge: { used: thunderCharges, max: THUNDER_CHARGES_PER_DAY } },
-    { key: 'fire',    label: 'IGNITE',   glyph: '◈', hotkey: '6', accent: '#ff7848', charge: { used: fireCharges,   max: FIRE_CHARGES_PER_DAY } },
+  const tools: { key: Tool; label: string; hotkey: string; charge?: { used: number; max: number } }[] = [
+    { key: 'select',  label: 'Observe',  hotkey: '1' },
+    { key: 'food',    label: 'Feed',     hotkey: '2' },
+    { key: 'tree',    label: 'Plant',    hotkey: '3' },
+    { key: 'river',   label: 'Divert',   hotkey: '4' },
+    { key: 'thunder', label: 'Strike',   hotkey: '5', charge: { used: thunderCharges, max: THUNDER_CHARGES_PER_DAY } },
+    { key: 'fire',    label: 'Ignite',   hotkey: '6', charge: { used: fireCharges,    max: FIRE_CHARGES_PER_DAY } },
   ]
 
   const activeEnrichOption = ENRICHMENT_OPTIONS.find(o => o.type === selectedEnrichment) ?? ENRICHMENT_OPTIONS[0]
@@ -344,54 +177,32 @@ export function Toolbar({
   return (
     <Bar>
       <Brand>
-        <BrandLogo>◈ LA-IET</BrandLogo>
-        <BrandSub>specimen cabinet</BrandSub>
+        <BrandLogo>LAIET</BrandLogo>
+        <BrandSub>Field Log</BrandSub>
       </Brand>
 
       <ToolGroup>
         {tools.map(t => (
-          <ToolBtn
-            key={t.key}
-            active={activeTool === t.key}
-            accent={t.accent}
-            onClick={() => onToolChange(t.key)}
-            title={`${t.label} [${t.hotkey}]`}
-          >
-            <ToolGlyph>{t.glyph}</ToolGlyph>
+          <ToolBtn key={t.key} $active={activeTool === t.key}
+            onClick={() => onToolChange(t.key)} title={`${t.label} [${t.hotkey}]`}>
+            {t.label}
             <KeyHint>[{t.hotkey}]</KeyHint>
-            {t.charge && (
-              <ChargeBadge empty={t.charge.used <= 0}>
-                {t.charge.used}
-              </ChargeBadge>
-            )}
+            {t.charge && <ChargeBadge $empty={t.charge.used <= 0}>{t.charge.used}</ChargeBadge>}
           </ToolBtn>
         ))}
-
-        {/* Enrichment tool — dropdown to select item type */}
-        <div style={{ position: 'relative' }}>
-          <ToolBtn
-            active={activeTool === 'enrich'}
-            accent='#58b858'
-            onClick={() => {
-              onToolChange('enrich')
-              setShowEnrichDropdown(v => !v)
-            }}
-            title={`ENRICH: ${activeEnrichOption.label} [7]`}
-          >
-            <ToolGlyph>{activeEnrichOption.glyph}</ToolGlyph>
-            <KeyHint>[7]</KeyHint>
+        <div style={{ position: 'relative', display: 'flex', alignSelf: 'stretch' }}>
+          <ToolBtn $active={activeTool === 'enrich'}
+            onClick={() => { onToolChange('enrich'); setShowEnrichDropdown(v => !v) }}
+            title={`Enrich: ${activeEnrichOption.label} [7]`}>
+            Enrich <KeyHint>[7]</KeyHint>
           </ToolBtn>
           {showEnrichDropdown && activeTool === 'enrich' && (
             <EnrichDropdown>
               {ENRICHMENT_OPTIONS.map(opt => (
-                <EnrichOption
-                  key={opt.type}
-                  selected={selectedEnrichment === opt.type}
-                  onClick={() => { onEnrichmentChange(opt.type); setShowEnrichDropdown(false) }}
-                  title={opt.hint}
-                >
-                  {opt.glyph}  {opt.label}
-                  <span style={{ marginLeft: 6, opacity: 0.5, fontSize: 9 }}>{opt.hint}</span>
+                <EnrichOption key={opt.type} $selected={selectedEnrichment === opt.type}
+                  onClick={() => { onEnrichmentChange(opt.type); setShowEnrichDropdown(false) }}>
+                  {opt.label}
+                  <span style={{ fontSize: 10, color: THEME.textTertiary }}>{opt.hint}</span>
                 </EnrichOption>
               ))}
             </EnrichDropdown>
@@ -403,76 +214,47 @@ export function Toolbar({
 
       <StatusBlock>
         <StatusCell>
-          <StatusLabel>day</StatusLabel>
+          <StatusLabel>Day</StatusLabel>
           <StatusValue>
             {day}
-            <span style={{ color: '#8888b0', fontSize: 10, marginLeft: 4, fontWeight: 'normal' }}>y{year}</span>
+            <span style={{ color: THEME.textTertiary, fontWeight: 500, fontSize: 11, marginLeft: 4 }}>Y{year + 1}</span>
           </StatusValue>
         </StatusCell>
-
         <StatusCell>
-          <StatusLabel>season</StatusLabel>
-          <StatusValue accent={SEASON_COLOR[season]}>
-            {SEASON_GLYPH[season]} {season.slice(0, 3).toUpperCase()}
+          <StatusLabel>Season</StatusLabel>
+          <StatusValue $color={SEASON_COLOR[season]}>{season.charAt(0).toUpperCase() + season.slice(1)}</StatusValue>
+        </StatusCell>
+        <StatusCell>
+          <StatusLabel>Phase</StatusLabel>
+          <StatusValue $color={PHASE_COLOR[phase]}>{phase.charAt(0).toUpperCase() + phase.slice(1)}</StatusValue>
+        </StatusCell>
+        <StatusCell>
+          <StatusLabel>Weather</StatusLabel>
+          <StatusValue $color={WEATHER_COLOR[weather] ?? THEME.amber}>
+            {WEATHER_GLYPH[weather] ?? '?'} {weather.charAt(0).toUpperCase() + weather.slice(1)}
           </StatusValue>
         </StatusCell>
-
         <StatusCell>
-          <StatusLabel>phase</StatusLabel>
-          <StatusValue accent={PHASE_COLOR[phase]}>{PHASE_LABEL[phase]}</StatusValue>
+          <StatusLabel>Alive</StatusLabel>
+          <StatusValue $color={alive > 0 ? THEME.alive : THEME.death}>{alive}</StatusValue>
         </StatusCell>
-
         <StatusCell>
-          <StatusLabel>alive</StatusLabel>
-          <StatusValue accent={alive > 0 ? '#80f0a0' : '#ff5060'}>
-            {alive}
-          </StatusValue>
-        </StatusCell>
-
-        <StatusCell>
-          <StatusLabel>awareness</StatusLabel>
-          <AwarenessPips style={{ marginTop: 3 }}>
-            {[1, 2, 3].map(n => (
-              <Pip key={n} active={awarenessStage >= n} level={n} />
-            ))}
+          <StatusLabel>Signal</StatusLabel>
+          <AwarenessPips>
+            {[1, 2, 3].map(n => <Pip key={n} $active={awarenessStage >= n} $level={n} />)}
           </AwarenessPips>
         </StatusCell>
       </StatusBlock>
 
-      {/* Pause / resume */}
-      <CtrlBtn
-        onClick={onPauseToggle}
-        active={isPaused}
-        accent='#ffc060'
-        title={isPaused ? 'Resume [Space]' : 'Pause [Space]'}
-      >
-        <span style={{ fontSize: 14 }}>{isPaused ? '▶' : '⏸'}</span>
-      </CtrlBtn>
-
-      {/* Speed selector */}
-      <SpeedGroup title='Simulation speed'>
+      <CtrlBtn $active={isPaused} onClick={onPauseToggle}>{isPaused ? '▶ Resume' : '⏸ Pause'}</CtrlBtn>
+      <SpeedGroup>
         {([1, 2, 4] as const).map(s => (
-          <SpeedBtn key={s} active={simSpeed === s && !isPaused} onClick={() => onSpeedChange(s)}>
-            {s}×
-          </SpeedBtn>
+          <SpeedBtn key={s} $active={simSpeed === s && !isPaused} onClick={() => onSpeedChange(s)}>{s}×</SpeedBtn>
         ))}
       </SpeedGroup>
-
-      <MuteBtn onClick={onMuteToggle} active={!isMuted} accent='#5ec8e0' title={isMuted ? 'Unmute audio' : 'Mute audio'}>
-        <span style={{ fontSize: 14 }}>{isMuted ? '♪' : '♫'}</span>
-      </MuteBtn>
-
-      <CtrlBtn onClick={onSave} title='Save colony (Ctrl+S)'>
-        <span style={{ fontSize: 13 }}>◈</span>
-      </CtrlBtn>
-
-      <CtrlBtn
-        onClick={onRestartRequest}
-        title='Reset colony'
-        style={{ borderColor: '#3a2040', color: '#9070a8' }}
-      >
-        <span style={{ fontSize: 13 }}>◇</span>
-      </CtrlBtn>
+      <CtrlBtn onClick={onMuteToggle}>{isMuted ? '♪' : '♫'}</CtrlBtn>
+      <CtrlBtn onClick={onSave}>Save</CtrlBtn>
+      <CtrlBtn onClick={onRestartRequest} style={{ color: THEME.textTertiary, borderRight: 'none' }}>Reset</CtrlBtn>
     </Bar>
   )
 }

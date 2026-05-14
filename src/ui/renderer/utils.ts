@@ -1,4 +1,4 @@
-// ─── Color helpers — clamped to prevent invalid hex ──────────────────────────
+// ─── Color helpers ; clamped to prevent invalid hex ──────────────────────────
 
 export function lighten(hex: string, amount: number): string {
   const num = parseInt(hex.replace('#', ''), 16)

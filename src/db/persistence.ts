@@ -80,7 +80,7 @@ export function wipeAllIDB(): Promise<void> {
     req.onsuccess = () => resolve()
     req.onerror   = () => reject(new Error(`IDB wipe failed: ${req.error?.message}`))
     req.onblocked = () => {
-      console.warn('[laiet] IDB wipe blocked — close other tabs and retry')
+      console.warn('[laiet] IDB wipe blocked; close other tabs and retry')
       reject(new Error('IDB wipe blocked by open connection in another tab'))
     }
   })
@@ -107,10 +107,10 @@ async function attemptCloudUpsert(state: GameState): Promise<boolean> {
 }
 
 export async function saveToCloud(state: GameState): Promise<void> {
-  // IDB first — local copy is always preserved before any network attempt.
+  // IDB first; local copy is always preserved before any network attempt.
   await saveToIDB(state)
 
-  // One cloud save at a time — skip if a previous attempt is still in flight.
+  // One cloud save at a time; skip if a previous attempt is still in flight.
   if (cloudSaveInProgress) return
   cloudSaveInProgress = true
 
@@ -190,13 +190,13 @@ export async function deleteColonyFromCloud(worldId: string): Promise<void> {
 // it is impossible to delete another user's data regardless of client input.
 //
 // After the cloud wipe succeeds, the entire local IndexedDB is deleted so no
-// stale world state survives the reset. The user's auth.users row — and
-// therefore their login session — is not touched.
+// stale world state survives the reset. The user's auth.users row; and
+// therefore their login session; is not touched.
 export async function resetUserData(): Promise<void> {
   const { error } = await supabase.rpc('reset_user_data')
   if (error) throw new Error(`[laiet] Cloud reset failed: ${error.message}`)
   // Wipe IDB after confirmed cloud delete. If this fails, the old IDB data
-  // will be ignored on next load because the cloud is now empty — but we still
+  // will be ignored on next load because the cloud is now empty; but we still
   // throw so the caller can surface a warning.
   await wipeAllIDB()
 }

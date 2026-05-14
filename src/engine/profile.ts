@@ -42,7 +42,7 @@ export function computeSimModifiers(profile: CaretakerProfile): SimModifiers {
 
   // ── Evolution ─────────────────────────────────────────────────────────────
   // fast: higher mutation rate, faster sentience accumulation
-  // slow: lower mutation rate, slower drift — lineages are more stable
+  // slow: lower mutation rate, slower drift; lineages are more stable
   if (profile.evolution === 'fast') {
     m.mutationChance     = 0.22
     m.sentienceGrowthMult *= 1.35
@@ -67,14 +67,26 @@ export function computeSimModifiers(profile: CaretakerProfile): SimModifiers {
   }
 
   // ── Expectation ───────────────────────────────────────────────────────────
-  // ascension:   ascension threshold lowered — easier to trigger the ending
+  // ascension:   ascension threshold lowered; easier to trigger the ending
   // persistence: no change
-  // extinction:  harsher baseline — drought lingers, food thins
+  // extinction:  harsher baseline; drought lingers, food thins
   if (profile.expectation === 'ascension') {
     m.ascensionThresholdOffset = -10
   } else if (profile.expectation === 'extinction') {
     m.droughtDurationMult  *= 1.20
     m.foodRegrowMult       *= 0.88
+  }
+
+  // ── Visibility ────────────────────────────────────────────────────────────
+  // attentive: creatures sense your presence clearly, awareness grows faster
+  // neutral:   balanced
+  // hidden:    your presence is subtle, awareness grows slower, more autonomy
+  if (profile.visibility === 'attentive') {
+    m.sentienceGrowthMult *= 1.25
+    m.awarenessMessageMult *= 0.80
+  } else if (profile.visibility === 'hidden') {
+    m.sentienceGrowthMult *= 0.75
+    m.awarenessMessageMult *= 1.15
   }
 
   return m

@@ -16,6 +16,7 @@ import {
   initMorphology,
 } from '@/engine/genetics'
 import { createRng } from '@/world/worldGen'
+import { starterEmoji, inheritEmoji } from '@/engine/speech'
 
 export function spawnCreature(
   overrides: Partial<Creature> & {
@@ -69,10 +70,14 @@ export function spawnCreature(
 
     currentThought: null,
     thoughtTimer: 0,
+
+    // speech system; starter vocab derived from mind + personality
+    knownEmoji: overrides.knownEmoji ?? starterEmoji(genome.mind, genome.personality, rng),
+    role: overrides.role,
   }
 }
 
-// Detect which genome slots in offspring differ from BOTH parents — true mutation.
+// Detect which genome slots in offspring differ from BOTH parents; true mutation.
 // Returns list of slot names that changed vs. both parents.
 function detectMutations(offspring: Genome, parentA: Creature, parentB: Creature): string[] {
   const mutated: string[] = []
@@ -92,7 +97,8 @@ export function createOffspring(
   y: number,
   currentDay: number,
   rng: () => number,
-  mutationChance?: number
+  mutationChance?: number,
+  tribalLexicon: string[] = []
 ): Creature {
   const genome = inheritGenome(parentA.genome, parentB.genome, rng, mutationChance)
   const generation = Math.max(parentA.generation, parentB.generation) + 1
@@ -112,6 +118,7 @@ export function createOffspring(
     parentIds: [parentA.id, parentB.id],
     lineageId: inheritFromA ? parentA.lineageId : parentB.lineageId,
     bornOnDay: currentDay,
+    knownEmoji: inheritEmoji(parentA, parentB, tribalLexicon, rng),
   }, rng)
 
   if (mutatedTraits.length > 0) {
@@ -124,7 +131,7 @@ export function createOffspring(
   return c
 }
 
-// Single-cell-style division — one parent, higher mutation rate.
+// Single-cell-style division; one parent, higher mutation rate.
 // Inherits family name with possible mutation, keeps lineage id.
 export function createAsexualOffspring(
   parent: Creature,
@@ -143,6 +150,7 @@ export function createAsexualOffspring(
     parentIds: [parent.id, null],
     lineageId: parent.lineageId,
     bornOnDay: currentDay,
+    knownEmoji: inheritEmoji(parent, null, [], rng),
   }, rng)
 }
 
@@ -150,7 +158,7 @@ export function createAsexualOffspring(
 //
 // Constraints applied:
 //   • Each starter has a different personality (no two same)
-//   • All four body types present from turn one — each body is a distinct
+//   • All four body types present from turn one; each body is a distinct
 //     ecological role; missing one at start means it can never appear unless
 //     it mutates in (15% per gene per birth, so rare).
 //   • No Aggressive starters (would block bonding/reproduction in the critical
@@ -173,7 +181,7 @@ function shuffle<T>(arr: T[], rng: () => number): T[] {
 
 function pickStarterGenomes(rng: () => number): Genome[] {
   const personalities = shuffle(STARTER_PERSONALITY_POOL, rng).slice(0, 4)
-  // All four bodies in random order — every ecological role present from start.
+  // All four bodies in random order; every ecological role present from start.
   const bodies: BodyTrait[] = shuffle(['Spore', 'Shell', 'Spike', 'Wisp'] as BodyTrait[], rng)
   // Minds: shuffle weighted pool, pick 4, force at least one Aware for early messaging.
   const minds = shuffle(STARTER_MIND_POOL, rng).slice(0, 4)
@@ -222,7 +230,7 @@ export function createStarterCreatures(
 
   // Pre-seed weak bonds between every pair of starters.
   // STARTER_BOND_STRENGTH (18) is below the >20 threshold that disables
-  // bond-seeking, so starters still actively seek each other — they just
+  // bond-seeking, so starters still actively seek each other; they just
   // reach the reproduction threshold ~2× faster than starting from 0.
   const ids = creatures.map(c => c.id)
   return creatures.map(c => ({

@@ -2,6 +2,7 @@ import { Tile, TileType, Season, EnrichmentItem } from '@/types'
 import {
   ISO_TILE_WIDTH, ISO_TILE_HEIGHT, CANVAS_PADDING_Y,
   DEATH_SITE_DECAY_DAYS, LIGHTNING_VISUAL_DURATION_MS,
+  TREE_FOOD_MATURE_AGE, TREE_PEAK_AGE, TREE_DECAY_AGE,
 } from '@/engine/constants'
 import { lighten } from './utils'
 
@@ -38,7 +39,7 @@ export function resetCanvasState(ctx: CanvasRenderingContext2D): void {
 
 // ─── Tile palette ─────────────────────────────────────────────────────────────
 // Top faces are the primary readable surface. Left/right faces form the depth
-// skirt — always darker than top to reinforce the isometric light direction.
+// skirt ; always darker than top to reinforce the isometric light direction.
 // Colors are warm and saturated enough to be readable on a dark background.
 
 const TILE_COLORS: Record<TileType, { top: string; left: string; right: string }> = {
@@ -56,9 +57,10 @@ const TILE_COLORS: Record<TileType, { top: string; left: string; right: string }
   cave:       { top: '#201e2c', left: '#16141e', right: '#0e0c16' },
   cliff:      { top: '#3e3c52', left: '#2c2a3e', right: '#201e2c' },
   bush:       { top: '#1a4016', left: '#112a0e', right: '#0c1e0a' },
+  healroot:   { top: '#2c3c1a', left: '#1e2c12', right: '#162008' },
 }
 
-// Biome tint — painted over the top face only, giving each biome a chromatic
+// Biome tint ; painted over the top face only, giving each biome a chromatic
 // identity that layers on top of tile type without overwriting it.
 const BIOME_TOP_TINTS: Partial<Record<string, string>> = {
   temperate: 'rgba(80, 160, 40, 0.12)',
@@ -148,7 +150,7 @@ export function drawTile(
   ctx.fillStyle = SEASON_TINT[season]
   ctx.fill()
 
-  // Biome tint — each biome gets a faint chromatic overlay for visual identity
+  // Biome tint ; each biome gets a faint chromatic overlay for visual identity
   const biomeTint = BIOME_TOP_TINTS[tile.biome]
   if (biomeTint) {
     ctx.beginPath()
@@ -161,7 +163,7 @@ export function drawTile(
     ctx.fill()
   }
 
-  // Elevation brightening — peaks catch more light from above
+  // Elevation brightening ; peaks catch more light from above
   if (elev > 0.44) {
     const elevAlpha = Math.min(0.28, (elev - 0.44) * 0.52)
     ctx.beginPath()
@@ -193,26 +195,60 @@ function drawTileDecoration(
   switch (tile.type) {
     case 'tree':
     case 'shelter': {
-      const mature = tile.treeAge >= 300 || tile.shelter
-      const trunkH = mature ? 14 * s : 7 * s
-      const canopyR = mature ? 8 * s : 4.5 * s
+      const age    = tile.treeAge ?? 0
+      const mature = age >= TREE_FOOD_MATURE_AGE || tile.shelter
+      const withering = age >= TREE_PEAK_AGE && age < TREE_DECAY_AGE
+      const decaying  = age >= TREE_DECAY_AGE
 
-      ctx.fillStyle = '#3a2614'
+      // Decayed trees render as a mossy stump, not a full tree
+      if (decaying) {
+        ctx.fillStyle = '#2a1a0a'
+        ctx.fillRect(cx - 2 * s, cy - 4 * s, 4 * s, 6 * s)
+        ctx.fillStyle = '#4a6040'
+        ctx.beginPath()
+        ctx.ellipse(cx, cy - 5 * s, 4.5 * s, 2.5 * s, 0, 0, Math.PI * 2)
+        ctx.fill()
+        // Moss highlight
+        ctx.fillStyle = 'rgba(100,180,80,0.25)'
+        ctx.beginPath()
+        ctx.ellipse(cx - s, cy - 6 * s, 2 * s, s, 0, 0, Math.PI * 2)
+        ctx.fill()
+        break
+      }
+
+      // Wither phase ; sparse, yellowing canopy
+      const witherFactor = withering
+        ? Math.max(0.25, 1 - (age - TREE_PEAK_AGE) / (TREE_DECAY_AGE - TREE_PEAK_AGE))
+        : 1.0
+
+      const trunkH = mature ? 14 * s * witherFactor : 7 * s
+      const canopyR = mature ? (8 * s * (0.5 + witherFactor * 0.5)) : 4.5 * s
+
+      // Trunk
+      ctx.fillStyle = withering ? '#4a3018' : '#3a2614'
       ctx.fillRect(cx - 1.5 * s, cy - trunkH + 5 * s, 3 * s, trunkH - 2 * s)
 
       if (mature) {
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.22)'
+        // Shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.18)'
         ctx.beginPath()
         ctx.ellipse(cx, cy - trunkH + 4 * s + 2, canopyR + 2 * s, (canopyR + 2 * s) * 0.4, 0, 0, Math.PI * 2)
         ctx.fill()
 
-        ctx.fillStyle = season === 'autumn' ? '#5a4818' : season === 'winter' ? '#22382a' : '#1e6a26'
+        // Canopy backing ; shifts yellow-brown when withering
+        const backingColor = withering
+          ? `rgba(100,80,20,${0.7 * witherFactor})`
+          : season === 'autumn' ? '#5a4818' : season === 'winter' ? '#22382a' : '#1e6a26'
+        ctx.fillStyle = backingColor
         ctx.beginPath()
         ctx.ellipse(cx, cy - trunkH + 7 * s, canopyR + 2 * s, canopyR * 0.65, 0, 0, Math.PI * 2)
         ctx.fill()
       }
 
-      const treeColor = season === 'winter' ? '#2a3e30'
+      // Main canopy
+      const treeColor = withering
+        ? `rgba(${Math.round(120 + (1-witherFactor)*50)},${Math.round(80 - (1-witherFactor)*40)},10,0.9)`
+        : season === 'winter' ? '#2a3e30'
         : season === 'autumn' ? '#8a4818'
         : mature ? '#2a8030' : '#356420'
       ctx.fillStyle = treeColor
@@ -220,23 +256,24 @@ function drawTileDecoration(
       ctx.arc(cx, cy - trunkH + 4 * s, canopyR, 0, Math.PI * 2)
       ctx.fill()
 
-      ctx.fillStyle = season === 'winter'
-        ? 'rgba(180, 220, 255, 0.12)'
-        : 'rgba(180, 255, 200, 0.14)'
+      // Canopy highlight
+      ctx.fillStyle = withering
+        ? `rgba(180,160,60,${0.12 * witherFactor})`
+        : season === 'winter' ? 'rgba(180,220,255,0.12)' : 'rgba(180,255,200,0.14)'
       ctx.beginPath()
       ctx.arc(cx - s, cy - trunkH + 2 * s, canopyR * 0.48, 0, Math.PI * 2)
       ctx.fill()
 
-      // Fruit/apple drops — visible on mature trees in spring/summer/autumn
-      // These are the primary food source; creatures seek food_patches nearby.
-      if (mature && season !== 'winter') {
+      // Fruit ; only on healthy mature trees (not withering) in non-winter seasons
+      const canShowFruit = mature && !withering && season !== 'winter'
+      if (canShowFruit) {
         const appleOffsets: [number, number][] = [
           [-canopyR * 0.45, canopyR * 0.20],
           [ canopyR * 0.50, canopyR * 0.10],
           [ canopyR * 0.15, canopyR * 0.40],
           [-canopyR * 0.20, canopyR * 0.38],
         ]
-        const appleColor = season === 'autumn' ? '#cc4420' : '#cc2828'
+        const appleColor     = season === 'autumn' ? '#cc4420' : '#cc2828'
         const appleHighlight = season === 'autumn' ? '#ff8040' : '#ff5050'
         const canopyTopY = cy - trunkH + 4 * s
         for (const [aox, aoy] of appleOffsets) {
@@ -248,7 +285,6 @@ function drawTileDecoration(
           ctx.beginPath()
           ctx.arc(cx + aox - 0.4 * s, canopyTopY + aoy - 0.4 * s, 0.5 * s, 0, Math.PI * 2)
           ctx.fill()
-          // Tiny stem
           ctx.strokeStyle = '#5a3a10'
           ctx.lineWidth = 0.5
           ctx.beginPath()
@@ -256,7 +292,7 @@ function drawTileDecoration(
           ctx.lineTo(cx + aox, canopyTopY + aoy - 2.2 * s)
           ctx.stroke()
         }
-      } else if (mature && (season === 'spring' || season === 'summer') && tile.shelter) {
+      } else if (mature && (season === 'spring' || season === 'summer') && tile.shelter && !withering) {
         ctx.fillStyle = 'rgba(168, 255, 192, 0.65)'
         const fp: [number, number][] = [[-canopyR * 0.5, -canopyR * 0.3], [canopyR * 0.6, canopyR * 0.1]]
         for (const [dx, dy] of fp) {
@@ -269,16 +305,36 @@ function drawTileDecoration(
     }
 
     case 'food_patch': {
-      const fullness = Math.max(0, Math.min(1, tile.foodAmount / 100))
-      // Earthy ground for fallen fruit
-      ctx.fillStyle = fullness > 0.5 ? '#2a1808' : '#1e1206'
+      const fullness   = Math.max(0, Math.min(1, tile.foodAmount / 100))
+      const snowDepth  = tile.snowDepth ?? 0
+      // When snow covers fruit, fade it out proportionally
+      const visibility = Math.max(0, 1 - snowDepth * 1.6)
+      if (visibility <= 0.05) break  // completely buried ; don't render at all
+
+      ctx.globalAlpha = visibility
+
+      // Earthy ground for fallen fruit (darkens as fruit decays)
+      const fruitAge   = tile.fruitAge ?? 0
+      const decayTint  = Math.min(1, fruitAge / 300)
+      const groundR    = Math.round(42  - decayTint * 16)
+      const groundG    = Math.round(24  - decayTint * 10)
+      const groundB    = Math.round(8)
+      ctx.fillStyle    = `rgb(${groundR},${groundG},${groundB})`
       ctx.beginPath()
       ctx.ellipse(cx, cy + s, 7 * s, 3 * s, 0, 0, Math.PI * 2)
       ctx.fill()
 
-      // Red apple dots — fallen fruit from nearby trees
-      const appleColor = '#cc2828'
-      const appleHighlight = '#ff5050'
+      // Apple dots ; colour shifts brownish as fruit ages/decays
+      const freshness  = Math.max(0, 1 - decayTint)
+      const appleR     = Math.round(204 - decayTint * 80)
+      const appleG     = Math.round(40  + decayTint * 60)
+      const appleB     = Math.round(40  - decayTint * 30)
+      const appleColor = `rgb(${appleR},${appleG},${appleB})`
+      const hlR        = Math.round(255 - decayTint * 100)
+      const hlG        = Math.round(80  + decayTint * 80)
+      const hlB        = Math.round(80)
+      const appleHighlight = `rgb(${hlR},${hlG},${hlB})`
+
       const offsets: [number, number][] = [[-5*s, 0], [0, -2*s], [5*s, s], [-2*s, 3*s], [4*s, -1.5*s]]
       for (const [ox, oy] of offsets) {
         if (Math.abs(ox) + Math.abs(oy) < fullness * 12 * s + 3 * s) {
@@ -286,10 +342,12 @@ function drawTileDecoration(
           ctx.beginPath()
           ctx.arc(cx + ox, cy + oy, 2.2 * s, 0, Math.PI * 2)
           ctx.fill()
-          ctx.fillStyle = appleHighlight
-          ctx.beginPath()
-          ctx.arc(cx + ox - 0.5 * s, cy + oy - 0.5 * s, 0.7 * s, 0, Math.PI * 2)
-          ctx.fill()
+          if (freshness > 0.3) {
+            ctx.fillStyle = appleHighlight
+            ctx.beginPath()
+            ctx.arc(cx + ox - 0.5 * s, cy + oy - 0.5 * s, 0.7 * s, 0, Math.PI * 2)
+            ctx.fill()
+          }
           ctx.strokeStyle = '#5a3a10'
           ctx.lineWidth = 0.5
           ctx.beginPath()
@@ -298,6 +356,8 @@ function drawTileDecoration(
           ctx.stroke()
         }
       }
+
+      ctx.globalAlpha = 1.0
       break
     }
 
@@ -419,7 +479,7 @@ function drawTileDecoration(
       ctx.ellipse(cx, cy - 2 * s, 6 * s, 4.5 * s, 0, 0, Math.PI * 2)
       ctx.fill()
 
-      // Outer rim texture — dashed ring
+      // Outer rim texture ; dashed ring
       ctx.strokeStyle = 'rgba(70, 65, 95, 0.40)'
       ctx.lineWidth = 0.5
       ctx.setLineDash([1.5, 2.5])
@@ -428,13 +488,13 @@ function drawTileDecoration(
       ctx.stroke()
       ctx.setLineDash([])
 
-      // Inner void — absolute darkness
+      // Inner void ; absolute darkness
       ctx.fillStyle = '#04030a'
       ctx.beginPath()
       ctx.ellipse(cx, cy - 1.5 * s, 4 * s, 3 * s, 0, 0, Math.PI * 2)
       ctx.fill()
 
-      // Depth rings — concentric faint ellipses suggest interior depth
+      // Depth rings ; concentric faint ellipses suggest interior depth
       for (let d = 1; d <= 2; d++) {
         const dr = 1 - d * 0.30
         ctx.strokeStyle = `rgba(50, 45, 80, ${0.18 + d * 0.05})`
@@ -454,7 +514,7 @@ function drawTileDecoration(
       ctx.ellipse(cx, cy - 1.5 * s, 4 * s, 3 * s, 0, 0, Math.PI * 2)
       ctx.fill()
 
-      // Stalactites — dark mineral formations hanging from the cave mouth top
+      // Stalactites ; dark mineral formations hanging from the cave mouth top
       const voidTopY = (cy - 1.5 * s) - 3 * s
       const stalConfigs: [number, number][] = [
         [-1.8 * s, 2.4 * s],
@@ -480,7 +540,7 @@ function drawTileDecoration(
         ctx.fill()
       }
 
-      // Rim catchlight — upper arc of void catches ambient surface light
+      // Rim catchlight ; upper arc of void catches ambient surface light
       ctx.strokeStyle = 'rgba(100, 90, 145, 0.72)'
       ctx.lineWidth = 0.9
       ctx.beginPath()
@@ -593,7 +653,7 @@ function drawTileDecoration(
       ctx.fill()
 
       if (isWinter) {
-        // Bare winter skeleton — sparse crossing branches
+        // Bare winter skeleton ; sparse crossing branches
         ctx.strokeStyle = 'rgba(45, 55, 38, 0.75)'
         ctx.lineWidth = Math.max(0.9, bs * 0.7)
         ctx.beginPath()
@@ -616,7 +676,7 @@ function drawTileDecoration(
         ctx.lineTo(cx + 2 * bs, cy - 5 * bs)
         ctx.stroke()
       } else {
-        // Main foliage mass — center is above tile surface so it reads as vegetation
+        // Main foliage mass ; center is above tile surface so it reads as vegetation
         const bushColor = isAutumn ? '#4a5020' : '#1e5a1a'
         ctx.fillStyle = bushColor
         ctx.beginPath()
@@ -635,13 +695,13 @@ function drawTileDecoration(
         ctx.ellipse(cx - 2.2 * bs, cy - 2.5 * bs, 2.4 * bs, 1.8 * bs, -0.2, 0, Math.PI * 2)
         ctx.fill()
 
-        // Canopy highlight — catches light from upper-left
+        // Canopy highlight ; catches light from upper-left
         ctx.fillStyle = 'rgba(100, 190, 80, 0.13)'
         ctx.beginPath()
         ctx.ellipse(cx - 1 * bs, cy - 3.5 * bs, 2.5 * bs, 1.5 * bs, -0.3, 0, Math.PI * 2)
         ctx.fill()
 
-        // Berries — spring/summer/autumn when food level > 0.1
+        // Berries ; spring/summer/autumn when food level > 0.1
         if (foodLevel > 0.1) {
           const berryColor = isAutumn ? '#cc6030' : '#cc2828'
           const berryGlow  = isAutumn ? '#ff9060' : '#ff5050'
@@ -667,12 +727,55 @@ function drawTileDecoration(
     }
   }
 
-  // Fire overlay — drawn over ANY burning tile
+  // Fire overlay ; drawn over ANY burning tile
   if ((tile.burning ?? 0) > 0) {
     drawFireOverlay(ctx, tile, cx, cy, s)
   }
 
-  // Lightning flash — drawn last so bolt appears over everything
+  // ── Snow depth overlay ────────────────────────────────────────────────────
+  const snowDepth = tile.snowDepth ?? 0
+  if (snowDepth > 0.05 && tile.type !== 'mountain' && tile.type !== 'cliff') {
+    const snowAlpha = Math.min(0.80, snowDepth * 0.95)
+    ctx.fillStyle = `rgba(220, 238, 255, ${snowAlpha})`
+    ctx.beginPath()
+    ctx.moveTo(sx,                         sy + ISO_TILE_HEIGHT * 0.12)
+    ctx.lineTo(sx + ISO_TILE_WIDTH / 2,    sy + ISO_TILE_HEIGHT * 0.5)
+    ctx.lineTo(sx,                         sy + ISO_TILE_HEIGHT * 0.88)
+    ctx.lineTo(sx - ISO_TILE_WIDTH / 2,    sy + ISO_TILE_HEIGHT * 0.5)
+    ctx.closePath()
+    ctx.fill()
+    // Surface highlight at high depths
+    if (snowDepth > 0.55) {
+      ctx.fillStyle = `rgba(255,255,255,${(snowDepth - 0.55) * 0.45})`
+      ctx.beginPath()
+      ctx.ellipse(sx, sy + ISO_TILE_HEIGHT * 0.38, ISO_TILE_WIDTH * 0.2, ISO_TILE_HEIGHT * 0.06, 0, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  }
+
+  // ── Puddle / standing water overlay ───────────────────────────────────────
+  const puddleLevel = tile.puddleLevel ?? 0
+  if (puddleLevel > 0.08 && tile.type !== 'river') {
+    const phase = (Date.now() / 1800) % (Math.PI * 2)
+    const baseAlpha = Math.min(0.48, puddleLevel * 0.60)
+    const shimAlpha = baseAlpha * (0.82 + Math.sin(phase) * 0.18)
+    ctx.fillStyle = `rgba(70, 150, 220, ${shimAlpha})`
+    ctx.beginPath()
+    ctx.moveTo(sx,                       sy + ISO_TILE_HEIGHT * 0.30)
+    ctx.lineTo(sx + ISO_TILE_WIDTH / 2,  sy + ISO_TILE_HEIGHT * 0.58)
+    ctx.lineTo(sx,                       sy + ISO_TILE_HEIGHT * 0.85)
+    ctx.lineTo(sx - ISO_TILE_WIDTH / 2,  sy + ISO_TILE_HEIGHT * 0.58)
+    ctx.closePath()
+    ctx.fill()
+    // Reflection strip
+    ctx.fillStyle = `rgba(180, 225, 255, ${shimAlpha * 0.45})`
+    ctx.beginPath()
+    ctx.ellipse(sx, sy + ISO_TILE_HEIGHT * 0.52,
+      ISO_TILE_WIDTH * 0.20, ISO_TILE_HEIGHT * 0.07, 0, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  // Lightning flash ; drawn last so bolt appears over everything
   if ((tile.lightningFlash ?? 0) > 0) {
     const flashAge = Date.now() - (tile.lightningFlash ?? 0)
     if (flashAge < LIGHTNING_VISUAL_DURATION_MS) {
@@ -845,7 +948,7 @@ export function drawEnrichmentItem(
 
   switch (item.type) {
     case 'resting_spot': {
-      // Soft oval nest — slow breathing pulse
+      // Soft oval nest ; slow breathing pulse
       const pulse = 1 + Math.sin(now / 1800) * 0.06
       ctx.fillStyle = '#5a3e20'
       ctx.beginPath()
@@ -1055,7 +1158,7 @@ export function drawEnrichmentItem(
       ctx.beginPath()
       ctx.ellipse(cx, cy - mossH * 0.35 + 0.5 * s, mossW * 0.45, mossH * 0.45, 0, 0, Math.PI * 2)
       ctx.fill()
-      // Highlight — captures the sponginess of sphagnum
+      // Highlight ; captures the sponginess of sphagnum
       ctx.fillStyle = 'rgba(80, 180, 60, 0.14)'
       ctx.beginPath()
       ctx.ellipse(cx - mossW * 0.12, cy - mossH * 0.55 + 0.5 * s, mossW * 0.26, mossH * 0.22, 0, 0, Math.PI * 2)

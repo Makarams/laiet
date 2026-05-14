@@ -167,6 +167,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
       totalDeaths: 0,
       lastSaved: Date.now(),
       lastSessionEnd: null,
+      snowAccumulation: 0,
     }
 
     set({ gameState: state })
@@ -188,7 +189,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
       // Non-fatal: local state is already cleared. Cloud data may linger until
       // the next successful reset or until the user's auth row is eventually
       // cascaded. Log so it's visible in devtools.
-      console.warn('[laiet] Reset incomplete — cloud data may still exist:', e)
+      console.warn('[laiet] Reset incomplete; cloud data may still exist:', e)
     }
   },
 
@@ -197,7 +198,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     try {
       const state = await loadBestAvailable(userId)
       if (state) {
-        // If already extinct, restore for viewing only — no tick loop, no autosave
+        // If already extinct, restore for viewing only; no tick loop, no autosave
         if (state.endgame) {
           set({ gameState: state })
           return
@@ -207,7 +208,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
         const hoursAway   = computeAbsenceHours(state.lastSessionEnd)
         let advanced = state
         for (let i = 0; i < passiveTicks; i++) {
-          if (advanced.endgame) break   // colony died during catch-up — stop here
+          if (advanced.endgame) break   // colony died during catch-up; stop here
           advanced = tickSimulation(advanced)
         }
 
@@ -235,8 +236,9 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
   },
 
   startTicking: () => {
-    const { isPaused, simSpeed } = get()
+    const { isPaused, simSpeed, gameState } = get()
     if (isPaused) return
+    if (!gameState || gameState.endgame) return
     const existing = get().tickInterval
     if (existing) clearInterval(existing)
     const intervalMs = Math.floor(TICK_INTERVAL_MS / (simSpeed ?? 1))
@@ -251,7 +253,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     set({ tickInterval: interval })
   },
 
-  // stopTicking only clears the tick interval — it does NOT stop auto-save.
+  // stopTicking only clears the tick interval; it does NOT stop auto-save.
   // Call stopAutoSave() explicitly where needed (markSessionEnd, resetWorld).
   stopTicking: () => {
     const interval = get().tickInterval

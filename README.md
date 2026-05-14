@@ -1,6 +1,6 @@
-# LA-IET.EXE — Generational Insect Colony Simulation
+# LA-IET.EXE; Generational Insect Colony Simulation
 
-> *"la-iet" — small animal or insect, in Khmer*
+> *"la-iet"; small animal or insect, in Khmer*
 
 A **generational insect colony simulation** that runs in your browser. Watch your colony live, breed, fracture, and eventually become aware that something is watching them. Cloud-saved. Time passes while you're away.
 
@@ -12,15 +12,15 @@ Inspired by Black Mirror S7E4 "Plaything" (the Thronglets) and Dwarf Fortress.
 
 ## What it is
 
-- **Isometric 240×240 world** — procedurally generated from a numeric seed; five biomes, rivers, mountains, caves, cliffs, food patches, trees, and dense understorey bush vegetation
+- **Isometric 240×240 world**; procedurally generated from a numeric seed; five biomes, rivers, mountains, caves, cliffs, food patches, trees, and dense understorey bush vegetation
 - **Insect creatures** with inherited genetics across 3 gene slots (personality, body, mind) plus accumulated morphological traits that diverge per lineage over generations
-- **Caretaker profile** — five questions answered before the world begins shape the entire simulation: food abundance, mutation rate, bond speed, awareness pacing, and ending tendencies
+- **Caretaker profile**; five questions answered before the world begins shape the entire simulation; food abundance, mutation rate, bond speed, awareness pacing, and ending tendencies
 - **Four body types** with distinct ecological roles: Spore (r-strategist, divides asexually), Shell (K-strategist, long-lived), Spike (territorial fighter), Wisp (scout, empathic)
-- **Day/night + 4 seasons + weather** — clear, rain, storm, drought. Real time drives the simulation (1 real minute = 1 game day)
-- **Three endings** — extinction, fracture, or ascension, depending on how you play
-- **Colony awareness arc** — creatures evolve through three stages of sentience, eventually noticing the player, then addressing them directly by name
-- **Cloud save** — your colony persists across devices via Supabase; IndexedDB provides a local fallback
-- **God-mode caretaker** — no caps on healing, tools, or interventions. The simulation balances itself naturally.
+- **Day/night + 4 seasons + weather**; clear, rain, storm, drought. Real time drives the simulation (1 real minute = 1 game day)
+- **Three endings**; extinction, fracture, or ascension, depending on how you play
+- **Colony awareness arc**; creatures evolve through three stages of sentience, eventually noticing the player, then addressing them directly by name
+- **Cloud save**; your colony persists across devices via Supabase; IndexedDB provides a local fallback
+- **God-mode caretaker**; no caps on healing, tools, or interventions. The simulation balances itself naturally.
 
 ---
 
@@ -60,7 +60,7 @@ npm install
 
 1. Go to [supabase.com](https://supabase.com) and create a new project
 2. Go to **SQL Editor** → **New Query**
-3. Paste the contents of `supabase_schema.sql` and run it — this creates the `colonies` and `fossil_records` tables, RLS policies, and the `reset_user_data()` server function
+3. Paste the contents of `supabase_schema.sql` and run it; this creates the `colonies` and `fossil_records` tables, RLS policies, and the `reset_user_data()` server function
 4. Go to **Project Settings** → **API**
 5. Copy your **Project URL** and **anon public** key
 
@@ -77,7 +77,7 @@ VITE_SUPABASE_URL=https://your-project-id.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key-here
 ```
 
-The anon key is safe to commit — Supabase RLS enforces all access control server-side.
+The anon key is safe to commit; Supabase RLS enforces all access control server-side.
 
 ### 5. Run locally
 
@@ -91,7 +91,7 @@ Open [http://localhost:5173](http://localhost:5173)
 
 ## Deploy to Vercel
 
-### Option A — CLI
+### Option A; CLI
 
 ```bash
 npm install -g vercel
@@ -102,7 +102,7 @@ When prompted, add:
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
-### Option B — Dashboard
+### Option B; Dashboard
 
 1. Push to GitHub
 2. Vercel → **New Project** → import repo → Framework preset: **Vite**
@@ -120,7 +120,7 @@ src/
 ├── types/
 │   └── index.ts              <- all TypeScript types; read this first
 ├── engine/
-│   ├── constants.ts          <- every tuning value — single source of truth
+│   ├── constants.ts          <- every tuning value; single source of truth
 │   ├── genetics.ts           <- trait pools, inheritance, mutation, morphology, naming, color
 │   ├── messages.ts           <- colony message pools for all 3 awareness stages
 │   ├── profile.ts            <- CaretakerProfile -> SimModifiers; DEFAULT_MODIFIERS

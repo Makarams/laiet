@@ -61,7 +61,7 @@ function assignBiome(elevation: number, moisture: number): BiomePatch {
 // ─── River carving ────────────────────────────────────────────────────────────
 
 function carveRiver(tiles: Tile[][], rng: () => number): void {
-  // Main river — enters from top, exits at bottom. Wider on the larger world.
+  // Main river; enters from top, exits at bottom. Wider on the larger world.
   const startX = Math.floor(WORLD_SIZE * 0.3 + rng() * WORLD_SIZE * 0.4)
   let x = startX
   let widthPhase = 0
@@ -81,7 +81,7 @@ function carveRiver(tiles: Tile[][], rng: () => number): void {
       }
     }
 
-    // Gentle meander — biased to stay in central third
+    // Gentle meander; biased to stay in central third
     const drift = rng()
     const pullToCenter = x < WORLD_SIZE * 0.25 ? 0.55
       : x > WORLD_SIZE * 0.75 ? 0.15
@@ -152,7 +152,7 @@ function carveRiver(tiles: Tile[][], rng: () => number): void {
 // ─── Tree clusters ────────────────────────────────────────────────────────────
 
 function plantTrees(tiles: Tile[][], _seed: number, rng: () => number): void {
-  // Scale clusters with world area — 120×120 is 4× the old 60×60
+  // Scale clusters with world area; 120×120 is 4× the old 60×60
   const clusterCount = 100 + Math.floor(rng() * 40)
   for (let cluster = 0; cluster < clusterCount; cluster++) {
     const cx = 1 + Math.floor(rng() * (WORLD_SIZE - 2))
@@ -192,7 +192,7 @@ function scatterRocks(tiles: Tile[][], rng: () => number): void {
     }
   }
 
-  // Scattered rock outcroppings — scaled by world area vs 60×60 baseline
+  // Scattered rock outcroppings; scaled by world area vs 60×60 baseline
   const outcrops = 28 + Math.floor(rng() * 20)
   for (let o = 0; o < outcrops; o++) {
     const ox = 2 + Math.floor(rng() * (WORLD_SIZE - 4))
@@ -213,7 +213,7 @@ function scatterRocks(tiles: Tile[][], rng: () => number): void {
 // ─── Cliffs ───────────────────────────────────────────────────────────────────
 // A cliff forms where a high-elevation tile drops sharply to a low-elevation
 // neighbor. We scan every tile and compare it to its cardinal neighbors; if the
-// elevation delta exceeds the threshold the tile becomes a cliff — impassable
+// elevation delta exceeds the threshold the tile becomes a cliff; impassable
 // to creatures, acting as a natural barrier between isolated zones.
 
 function carveCliffs(tiles: Tile[][], elevMap: number[][], rng: () => number): void {
@@ -245,7 +245,7 @@ function seedCenterResources(tiles: Tile[][], rng: () => number): void {
   const cy = Math.floor(WORLD_SIZE / 2)
   const radius = 8
 
-  // Ensure a mature tree exists near center — food patches require a nearby mature
+  // Ensure a mature tree exists near center; food patches require a nearby mature
   // tree to persist and regrow; a guaranteed starter tree seeds the initial food supply.
   let hasMatureTreeNearCenter = false
   for (let dy = -radius; dy <= radius && !hasMatureTreeNearCenter; dy++) {
@@ -316,7 +316,7 @@ function raiseMountains(tiles: Tile[][], elevMap: number[][]): void {
 }
 
 // ─── Bush / understorey vegetation ───────────────────────────────────────────
-// Scattered low fruiting shrubs — denser in humid biomes, rare in arid, absent
+// Scattered low fruiting shrubs; denser in humid biomes, rare in arid, absent
 // in rocky zones. Each bush starts with a random berry amount (0–25).
 
 function scatterBushes(tiles: Tile[][], rng: () => number): void {
@@ -332,6 +332,41 @@ function scatterBushes(tiles: Tile[][], rng: () => number): void {
       if (rng() < density) {
         t.type = 'bush'
         t.foodAmount = Math.floor(rng() * 25)
+        t.treeAge = -1
+      }
+    }
+  }
+}
+
+// Healroot patches; medicinal herb clusters in lush/wetland margins and near
+// water sources. Rare in temperate, absent in arid/rocky.
+// Also seeded near rivers (riparian herb growth).
+function scatterHealroot(tiles: Tile[][], rng: () => number): void {
+  for (let y = 1; y < WORLD_SIZE - 1; y++) {
+    for (let x = 1; x < WORLD_SIZE - 1; x++) {
+      const t = tiles[y][x]
+      if (t.type !== 'grass') continue
+
+      // Base density by biome
+      let density = t.biome === 'lush'      ? 0.042
+        : t.biome === 'wetland'   ? 0.038
+        : t.biome === 'temperate' ? 0.018
+        : 0
+
+      // Bonus density adjacent to rivers (riverside herbs)
+      if (density > 0) {
+        const hasNearbyRiver = (
+          tiles[y - 1]?.[x]?.type === 'river' ||
+          tiles[y + 1]?.[x]?.type === 'river' ||
+          tiles[y]?.[x - 1]?.type === 'river' ||
+          tiles[y]?.[x + 1]?.type === 'river'
+        )
+        if (hasNearbyRiver) density *= 2.2
+      }
+
+      if (density > 0 && rng() < density) {
+        t.type = 'healroot'
+        t.healrootAmount = Math.floor(40 + rng() * 60)  // starts 40–100
         t.treeAge = -1
       }
     }
@@ -411,6 +446,7 @@ export function generateWorld(seed: number): Tile[][] {
   digCaves(tiles, rng)
   plantTrees(tiles, elevSeed, rng)
   scatterBushes(tiles, rng)
+  scatterHealroot(tiles, rng)
   seedCenterResources(tiles, rng)
 
   return tiles
@@ -434,7 +470,7 @@ export function applySeasonToTile(tile: Tile, season: Season): void {
 // ─── Tile type index ─────────────────────────────────────────────────────────
 // Pre-built map from tile type → coordinate list. Rebuilding costs O(WORLD_SIZE²)
 // but replaces O((2×maxDist)²) scans in findNearestTileOfType with O(k) where
-// k = number of tiles of that type — typically 5-200 vs up to 2,401 per call.
+// k = number of tiles of that type; typically 5-200 vs up to 2,401 per call.
 
 export type TileTypeIndex = Partial<Record<TileType, ReadonlyArray<readonly [number, number]>>>
 

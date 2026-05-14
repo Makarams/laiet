@@ -12,82 +12,73 @@ const TICK_MS = 1000
 
 const ZOOM_MIN  = 0.08
 const ZOOM_MAX  = 5.0
-const ZOOM_INIT = 1.0   // 240×240 world — start at 1× so colony area is visible; zoom with scroll
+const ZOOM_INIT = 2.8   // Start zoomed in on creatures for better performance; reduces tile rendering
 
 const CanvasWrapper = styled.div`
   position: relative;
   width: 100%;
   flex: 1;
   min-height: 0;
-  background: radial-gradient(ellipse at center, #0a0a1e 0%, #04040e 85%);
-  border: 1px solid #1c1c40;
-  border-radius: 4px;
+  background: #141414;
+  border: 2px solid #2a2a2a;
+  border-radius: 6px;
   overflow: hidden;
   cursor: crosshair;
   user-select: none;
-  box-shadow:
-    inset 0 0 60px rgba(0, 0, 0, 0.55),
-    0 0 0 1px rgba(94, 200, 224, 0.08);
 
   canvas { display: block; }
 `
 
 const Corner = styled.div<{ pos: string }>`
   position: absolute;
-  ${p => p.pos.includes('top')    ? 'top: 6px;'    : ''}
-  ${p => p.pos.includes('bottom') ? 'bottom: 6px;' : ''}
-  ${p => p.pos.includes('left')   ? 'left: 8px;'   : ''}
-  ${p => p.pos.includes('right')  ? 'right: 8px;'  : ''}
-  font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
-  font-size: 11px;
-  color: rgba(160, 160, 215, 0.80);
+  ${p => p.pos.includes('top')    ? 'top: 8px;'    : ''}
+  ${p => p.pos.includes('bottom') ? 'bottom: 8px;' : ''}
+  ${p => p.pos.includes('left')   ? 'left: 10px;'  : ''}
+  ${p => p.pos.includes('right')  ? 'right: 10px;' : ''}
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
   letter-spacing: 0.18em;
+  color: #444444;
   pointer-events: none;
   z-index: 3;
   user-select: none;
 `
 
-const CRTOverlay = styled.div`
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0, 0, 0, 0.03) 2px,
-    rgba(0, 0, 0, 0.03) 3px
-  );
-  border-radius: 4px;
-  z-index: 2;
-`
+// CRTOverlay removed ; Field Guide design uses clean isometric rendering
+const CRTOverlay = styled.div`display: none;`
 
 const ToolHint = styled.div`
   position: absolute;
   bottom: 10px;
   left: 50%;
   transform: translateX(-50%);
-  font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
-  font-size: 12px;
-  color: rgba(140, 220, 240, 0.65);
-  letter-spacing: 0.2em;
-  background: rgba(4, 4, 14, 0.6);
-  padding: 4px 14px;
-  border-radius: 2px;
-  border: 1px solid rgba(94, 200, 224, 0.22);
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: #888888;
+  background: rgba(20, 20, 20, 0.82);
+  padding: 5px 14px;
+  border-radius: 4px;
+  border: 1px solid #2a2a2a;
   pointer-events: none;
   z-index: 3;
-  text-transform: uppercase;
+  white-space: nowrap;
 `
 
 const CameraReadout = styled.div`
   position: absolute;
   top: 8px;
-  right: 8px;
-  font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
-  font-size: 11px;
-  color: rgba(190, 170, 250, 0.80);
-  letter-spacing: 0.12em;
+  right: 10px;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: #444444;
   pointer-events: none;
   z-index: 3;
   text-align: right;
@@ -96,16 +87,18 @@ const CameraReadout = styled.div`
 
 const CameraHelp = styled.div`
   position: absolute;
-  bottom: 8px;
-  right: 8px;
-  font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
-  font-size: 11px;
-  color: rgba(140, 140, 185, 0.70);
-  letter-spacing: 0.10em;
-  pointer-events: none;
-  z-index: 3;
+  bottom: 10px;
+  right: 10px;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: #3a3a3a;
+  line-height: 1.9;
   text-align: right;
-  line-height: 1.6;
+  pointer-events: none;
+  user-select: none;
 `
 
 type Tool = 'select' | 'food' | 'tree' | 'river' | 'thunder' | 'fire' | 'enrich'
@@ -185,7 +178,7 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
   const redirectRiver = useLaietStore(s => s.redirectRiver)
   const placeEnrichment = useLaietStore(s => s.placeEnrichment)
 
-  // Canvas pixel dimensions — updated by ResizeObserver
+  // Canvas pixel dimensions ; updated by ResizeObserver
   const [cw, setCw] = useState(1120)
   const [ch, setCh] = useState(580)
   const cwRef = useRef(1120)
@@ -205,7 +198,7 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
   const [riverSource, setRiverSource] = useState<{ x: number; y: number } | null>(null)
   const riverSourceRef = useRef<{ x: number; y: number } | null>(null)
 
-  // Camera — mutable ref so animation loop and event handlers share state
+  // Camera ; mutable ref so animation loop and event handlers share state
   const cameraRef = useRef<Camera>(makeInitialCamera(1120, 580))
   const [, setCameraTick] = useState(0)
 
@@ -328,7 +321,7 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
       const t = Math.min(1, (Date.now() - lastTickTimeRef.current) / TICK_MS)
 
       ctx.clearRect(0, 0, cw_, ch_)
-      ctx.fillStyle = '#04040e'
+      ctx.fillStyle = '#141414'
       ctx.fillRect(0, 0, cw_, ch_)
 
       // Camera transform
@@ -369,7 +362,7 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
         }
       }
 
-      // Creatures — depth sorted
+      // Creatures ; depth sorted
       const alive = Object.values(gs.creatures)
         .filter(c => c.diedOnDay === null)
         .map(c => {
@@ -401,7 +394,7 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
         drawEnrichmentItem(ctx, item, esx, esy)
       }
 
-      // River redirect preview — dotted line from source to hovered tile
+      // River redirect preview ; dotted line from source to hovered tile
       const src = riverSourceRef.current
       const hov = hoveredTileRef.current
       if (src && hov) {
@@ -433,12 +426,12 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
 
       ctx.restore()
 
-      // Full-canvas overlays (no camera transform) — atmosphere combines weather + phase
+      // Full-canvas overlays (no camera transform) ; atmosphere combines weather + phase
       drawAtmosphere(ctx, cw_, ch_, gs.weather ?? 'clear', phase, season)
       drawVignette(ctx, cw_, ch_)
       drawScanlines(ctx, cw_, ch_)
 
-      // Season transition overlay — brief lowercase text fades in/out over 3 seconds
+      // Season transition overlay ; brief lowercase text fades in/out over 3 seconds
       const overlay = seasonOverlayRef.current
       if (overlay) {
         const elapsed = Date.now() - overlay.startTime
@@ -451,8 +444,8 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
             : 1.0
           ctx.save()
           ctx.globalAlpha = Math.max(0, Math.min(1, alpha)) * 0.82
-          ctx.font = '13px "JetBrains Mono", Consolas, "Courier New", monospace'
-          ctx.fillStyle = '#c8e8f0'
+          ctx.font = '600 12px "Space Grotesk", system-ui, sans-serif'
+          ctx.fillStyle = '#888888'
           ctx.textAlign = 'center'
           ctx.letterSpacing = '0.2em'
           ctx.fillText(overlay.text, cw_ / 2, ch_ - 28)
@@ -536,10 +529,10 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
       case 'river': {
         const src = riverSourceRef.current
         if (!src) {
-          // First click — mark source
+          // First click ; mark source
           setRiverSource({ x: grid.x, y: grid.y })
         } else {
-          // Second click — confirm redirect and clear
+          // Second click ; confirm redirect and clear
           redirectRiver(src.x, src.y, grid.x, grid.y)
           setRiverSource(null)
         }
@@ -577,15 +570,15 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
   }, [handleWheel])
 
   const toolHints: Record<Tool, string> = {
-    select:  '∙ click a specimen to inspect ∙',
-    food:    '∙ click a tile to drop sustenance ∙',
-    tree:    '∙ click a tile to plant a tree ∙',
+    select:  'Click specimen to inspect',
+    food:    'Click tile to drop food',
+    tree:    'Click tile to plant tree',
     river:   riverSource
-      ? '∙ click destination to redirect river ∙'
-      : '∙ click source tile to begin redirect ∙',
-    thunder: '∙ click to strike. kills creatures and trees in radius ∙',
-    fire:    '∙ click a flammable tile to ignite. fire spreads ∙',
-    enrich:  '∙ click a tile to place enrichment item ∙',
+      ? 'Click destination to redirect river'
+      : 'Click source tile to begin redirect',
+    thunder: 'Click to strike ; kills creatures and trees',
+    fire:    'Click flammable tile to ignite ; fire spreads',
+    enrich:  'Click tile to place enrichment item',
   }
 
   const cam = cameraRef.current
@@ -606,8 +599,8 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
         onMouseLeave={() => { hoverTile(null); dragRef.current.active = false }}
       />
       <CRTOverlay />
-      <Corner pos='top-left'>◐ OBSERVATION FIELD ◑</Corner>
-      <Corner pos='bottom-left'>SUBJECT N° {gameStateRef.current?.worldId.slice(0, 8) ?? '────'}</Corner>
+      <Corner pos='top-left'>Observation Field</Corner>
+      <Corner pos='bottom-left'>ID {gameStateRef.current?.worldId.slice(0, 8) ?? ';'}</Corner>
       <CameraReadout>
         ZOOM ×{cam.zoom.toFixed(2)}<br />
         ROT  {rotLabel}

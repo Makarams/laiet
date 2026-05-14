@@ -10,7 +10,7 @@ const BIOME_TINT: Record<string, [number, number, number, number]> = {
   wetland:   [40,  120, 160, 0.07],   // cool wet sheen
   lush:      [60,  200, 100, 0.06],   // verdant glow
   rocky:     [100, 100, 120, 0.08],   // grey mineral dust
-  temperate: [0,   0,   0,   0],      // neutral — no overlay
+  temperate: [0,   0,   0,   0],      // neutral ; no overlay
 }
 
 // ─── Draw creature ─────────────────────────────────────────────────────────────
@@ -37,7 +37,7 @@ export function drawCreature(
   const bodyColor = adjustBrightness(baseColor, healthFade)
   const glow = mindGlow(creature.genome.mind)
 
-  // Playing state — slight vertical bounce
+  // Playing state ; slight vertical bounce
   const playBounce = creature.state === 'playing'
     ? Math.sin(Date.now() / 120 + creature.id.charCodeAt(0)) * 3.5
     : 0
@@ -45,13 +45,13 @@ export function drawCreature(
   const cx = screenX
   const cy = screenY + ISO_TILE_HEIGHT * 0.5 + playBounce
 
-  // Age factor — grows from 60% at birth to 100% at maturity
+  // Age factor ; grows from 60% at birth to 100% at maturity
   const ageRatio = Math.min(1.0, creature.age / 40)
   const ageFactor = 0.60 + ageRatio * 0.40
   const morphSize = 0.85 + (creature.genome.morphSeed ?? 0.5) * 0.30
   const asym = ((creature.genome.morphSeed ?? 0.5) - 0.5) * 0.18
 
-  // Accumulated heritable morphology — drives per-lineage structural divergence.
+  // Accumulated heritable morphology ; drives per-lineage structural divergence.
   // Falls back to neutral defaults for old saves without morphology data.
   const morph = creature.genome.morphology ?? { sizeScale: 1.0, limbLength: 0, spinalLength: 0, colorDrift: 0, eyeSize: 1.0 }
 
@@ -59,27 +59,27 @@ export function drawCreature(
   // develop noticeably different proportions over 5-10 generations.
   const r = Math.max(3.2, ISO_TILE_WIDTH * 0.36 * ageFactor * morphSize * morph.sizeScale)
 
-  // Generation factor — unlocks and deepens visual features over lineage history.
+  // Generation factor ; unlocks and deepens visual features over lineage history.
   // Gen 0: minimal, Gen 3: intermediate, Gen 5+: fully expressed.
   // Works alongside morphology: genFactor gates the feature class, morphology
   // controls how far that feature has evolved within this specific lineage.
   const genFactor = Math.min(1.0, (creature.generation ?? 0) / 5)
 
-  // Night dimming — nocturnal traits stay bright
+  // Night dimming ; nocturnal traits stay bright
   const isNight = phase === 'night'
   const nocturnal = creature.genome.personality === 'Curious' || creature.genome.mind === 'Dreaming'
   let baseAlpha = isNight ? (nocturnal ? 0.92 : 0.55) : 1.0
-  // Cave depth — creatures inside caves appear dimmer and tinted
+  // Cave depth ; creatures inside caves appear dimmer and tinted
   if (isInCave) baseAlpha *= CAVE_CREATURE_ALPHA
   ctx.globalAlpha = baseAlpha
 
-  // Glow for sentient creatures — intensity grows with generation
+  // Glow for sentient creatures ; intensity grows with generation
   if (glow !== 'transparent' && creature.sentience > 15) {
     ctx.shadowColor = glow
     ctx.shadowBlur = r * (2.0 + genFactor * 0.8)
   }
 
-  // Newborn halo — pulsing yellow halo for age < 60 ticks
+  // Newborn halo ; pulsing yellow halo for age < 60 ticks
   if (creature.age < 60) {
     const newbornFade = 1 - creature.age / 60
     const pulse = 0.65 + Math.sin(Date.now() / 180) * 0.35
@@ -101,7 +101,7 @@ export function drawCreature(
     ctx.restore()
   }
 
-  // Selection ring — cyan dashed
+  // Selection ring ; cyan dashed
   if (selected) {
     ctx.save()
     ctx.shadowBlur = 0
@@ -138,7 +138,7 @@ export function drawCreature(
     ctx.strokeStyle = lighten(bodyColor, 32)
     ctx.lineWidth = shellThick
     ctx.stroke()
-    // Second ridge — adults, or lineages with developed spinal morphology
+    // Second ridge ; adults, or lineages with developed spinal morphology
     if (ageRatio > 0.5 || genFactor > 0.4 || morph.spinalLength > 0.25) {
       ctx.beginPath()
       ctx.arc(cx - r * 0.08, cy - r * 0.02, r * 0.40, Math.PI * 1.15, Math.PI * 1.82)
@@ -146,7 +146,7 @@ export function drawCreature(
       ctx.lineWidth = shellThick * 0.6
       ctx.stroke()
     }
-    // Third ornamental ridge — high-gen OR lineages with strong spinal elongation
+    // Third ornamental ridge ; high-gen OR lineages with strong spinal elongation
     if (genFactor > 0.7 || morph.spinalLength > 0.55) {
       ctx.beginPath()
       ctx.arc(cx + r * 0.04, cy + r * 0.06, r * (0.25 + morph.spinalLength * 0.12), Math.PI * 1.2, Math.PI * 1.75)
@@ -154,7 +154,7 @@ export function drawCreature(
       ctx.lineWidth = shellThick * 0.35
       ctx.stroke()
     }
-    // Lateral lobes — lineages with high limb morphology develop side flanges
+    // Lateral lobes ; lineages with high limb morphology develop side flanges
     // like a trilobite acquiring lateral shields; visible once limbLength > 0.35
     if (morph.limbLength > 0.35) {
       const lobeAlpha = Math.round(((morph.limbLength - 0.35) / 0.65) * 180)
@@ -182,7 +182,7 @@ export function drawCreature(
     ctx.ellipse(cx, cy, r, r * 0.88, 0, 0, Math.PI * 2)
     ctx.fillStyle = bodyColor
     ctx.fill()
-    // Dorsal spine — grows with kills, generation, and accumulated spinal morphology.
+    // Dorsal spine ; grows with kills, generation, and accumulated spinal morphology.
     // High spinalLength lineages develop imposing crests even at low generation.
     const spineGrowth = 0.40 + ageRatio * 0.35 + Math.min(creature.killCount * 0.04, 0.30)
       + genFactor * 0.15 + morph.spinalLength * 0.30
@@ -200,7 +200,7 @@ export function drawCreature(
     ctx.moveTo(cx, cy - r - r * spineGrowth + 0.5)
     ctx.lineTo(cx, cy - r * 0.32)
     ctx.stroke()
-    // Side nubs — emerge with age/generation OR with high limb morphology.
+    // Side nubs ; emerge with age/generation OR with high limb morphology.
     // High limbLength lineages grow proper articulated side protrusions.
     if (ageRatio > 0.5 || genFactor > 0.5 || morph.limbLength > 0.30) {
       for (const side of [-1, 1]) {
@@ -212,7 +212,7 @@ export function drawCreature(
         ctx.closePath()
         ctx.fillStyle = darken(bodyColor, 14)
         ctx.fill()
-        // Limb segmentation in high-limbLength lineages — looks like developing legs
+        // Limb segmentation in high-limbLength lineages ; looks like developing legs
         if (morph.limbLength > 0.55) {
           ctx.strokeStyle = darken(bodyColor, 8)
           ctx.lineWidth = 0.5
@@ -223,7 +223,7 @@ export function drawCreature(
         }
       }
     }
-    // Rear barbs — high-gen OR lineages with high spinal morphology
+    // Rear barbs ; high-gen OR lineages with high spinal morphology
     if (genFactor > 0.65 || morph.spinalLength > 0.45) {
       for (const side of [-1, 1]) {
         ctx.beginPath()
@@ -240,7 +240,7 @@ export function drawCreature(
     ctx.ellipse(cx, cy - r * 0.15, r * 0.72, r * 1.18, 0, 0, Math.PI * 2)
     ctx.fillStyle = bodyColor
     ctx.fill()
-    // Tail — length grows with age, bonds, generation, and accumulated spinal morphology.
+    // Tail ; length grows with age, bonds, generation, and accumulated spinal morphology.
     // High spinalLength lineages trail long ghostly streamers even at early generations.
     const tailLen = 1.8 + ageRatio * 0.7 + Math.min(creature.bonds.length * 0.15, 0.5)
       + genFactor * 0.35 + morph.spinalLength * 0.45
@@ -256,7 +256,7 @@ export function drawCreature(
     ctx.lineWidth = Math.max(0.8, r * 0.35)
     ctx.lineCap = 'round'
     ctx.stroke()
-    // Secondary fraying strand — adults, mid-gen, or developed spinal lineages
+    // Secondary fraying strand ; adults, mid-gen, or developed spinal lineages
     if (ageRatio > 0.6 || genFactor > 0.4 || morph.spinalLength > 0.30) {
       ctx.beginPath()
       ctx.moveTo(cx + r * 0.1, cy + r * 0.9)
@@ -269,7 +269,7 @@ export function drawCreature(
       ctx.lineWidth = Math.max(0.5, r * 0.18)
       ctx.stroke()
     }
-    // Trailing filaments — high-gen OR high spinal morphology lineages
+    // Trailing filaments ; high-gen OR high spinal morphology lineages
     if (genFactor > 0.6 || morph.spinalLength > 0.50) {
       const wave2 = Math.sin(Date.now() / 260 + creature.id.charCodeAt(1)) * 0.18
       ctx.beginPath()
@@ -283,7 +283,7 @@ export function drawCreature(
       ctx.lineWidth = Math.max(0.4, r * 0.12)
       ctx.stroke()
     }
-    // Lateral fin-like appendages — lineages with high limb morphology develop
+    // Lateral fin-like appendages ; lineages with high limb morphology develop
     // diaphanous side fins like a deep-sea siphonophore; animate with the tail wave.
     if (morph.limbLength > 0.30) {
       const finAlpha = Math.round(((morph.limbLength - 0.30) / 0.70) * 160)
@@ -307,7 +307,7 @@ export function drawCreature(
     }
 
   } else {
-    // Spore — asymmetric blob that develops pseudopods and lobes over generations.
+    // Spore ; asymmetric blob that develops pseudopods and lobes over generations.
     // limbLength drives the number and size of cellular extensions; spinalLength
     // drives a flagellum-like tail that longer-evolved lines develop.
     ctx.beginPath()
@@ -315,7 +315,7 @@ export function drawCreature(
     ctx.fillStyle = bodyColor
     ctx.fill()
 
-    // Pseudopods / cellular lobes — lineages with high limb morphology extend
+    // Pseudopods / cellular lobes ; lineages with high limb morphology extend
     // multiple lobes, resembling an amoeba developing specialised protrusions.
     if (morph.limbLength > 0.20) {
       const lobCount = Math.min(5, Math.floor(1 + morph.limbLength * 4))
@@ -335,7 +335,7 @@ export function drawCreature(
       }
     }
 
-    // Flagellum — high spinal morphology Spores develop a trailing whip; unique
+    // Flagellum ; high spinal morphology Spores develop a trailing whip; unique
     // visual signature that distinguishes fast-dividing evolved strains.
     if (morph.spinalLength > 0.35) {
       const flagLen = r * (1.2 + morph.spinalLength * 1.6)
@@ -353,7 +353,7 @@ export function drawCreature(
       ctx.stroke()
     }
 
-    // Lineage speckles — more speckles in evolved lineages
+    // Lineage speckles ; more speckles in evolved lineages
     const speckleCount = Math.floor((creature.genome.morphSeed ?? 0) * 4
       * Math.min(1, ageRatio * 2)
       * (1 + genFactor))
@@ -377,7 +377,7 @@ export function drawCreature(
     ctx.fillStyle = 'rgba(255, 255, 255, 0.20)'
     ctx.fill()
 
-    // Budding site — Spores that have produced offspring show a faint division
+    // Budding site ; Spores that have produced offspring show a faint division
     // scar; in high-limbLength lineages the scar becomes a ring of lobes.
     if (genFactor > 0.3 && creature.offspringIds.length > 0) {
       const budAng = creature.genome.morphSeed * Math.PI * 2
@@ -399,7 +399,7 @@ export function drawCreature(
     ctx.fill()
   }
 
-  // ── Stress stress marks — visible wear at high stress ─────────────────────
+  // ── Stress stress marks ; visible wear at high stress ─────────────────────
   // Jagged micro-cracks across the body surface indicate chronic stress
   if (creature.stress > 65 && creature.age > 20) {
     const stressIntensity = (creature.stress - 65) / 35   // 0..1
@@ -455,12 +455,23 @@ export function drawCreature(
     }
   }
 
+  // ── Speech bubble ; overhead emoji dialogue ───────────────────────────────
+  // Shown above the thought symbol; fades out over 3.5s
+  if (creature.currentSpeech && creature.currentSpeech.sentence.length > 0) {
+    const elapsed = Date.now() - creature.currentSpeech.tick
+    const fadeWindow = 3500
+    if (elapsed < fadeWindow) {
+      const fade = Math.max(0, 1 - elapsed / fadeWindow)
+      drawSpeechBubble(ctx, creature.currentSpeech.sentence, cx, cy - r - 18, fade)
+    }
+  }
+
   // ── Thought symbol ────────────────────────────────────────────────────────
   if (creature.currentThought && creature.thoughtTimer > 5 && creature.currentThought !== 'content') {
     drawThoughtSymbol(ctx, creature.currentThought, cx, cy - r - 4)
   }
 
-  // ── Mutation spark — newly born mutated creatures emit a colored pulse ────
+  // ── Mutation spark ; newly born mutated creatures emit a colored pulse ────
   const mutationAge = creature.recentMutation !== undefined ? currentDay - creature.recentMutation : -1
   if (mutationAge >= 0 && mutationAge < MUTATION_DISPLAY_DAYS) {
     const fade = 1 - mutationAge / MUTATION_DISPLAY_DAYS
@@ -485,7 +496,7 @@ export function drawCreature(
     ctx.restore()
   }
 
-  // ── Cave depth overlay — tint creature blue-black when inside cave ────────
+  // ── Cave depth overlay ; tint creature blue-black when inside cave ────────
   if (isInCave) {
     ctx.globalAlpha = 0.30
     ctx.fillStyle = 'rgba(10, 8, 28, 0.65)'
@@ -526,4 +537,75 @@ function drawThoughtSymbol(
   ctx.fillStyle = THOUGHT_COLORS[thought] ?? '#cdc4a8'
   ctx.textAlign = 'center'
   ctx.fillText(symbol, cx, cy)
+}
+
+// ─── Speech bubble ─────────────────────────────────────────────────────────────
+// Renders a small pill-shaped bubble with 1-3 emoji as a sentence.
+// Fades in 200ms, holds, fades out toward the end of the 3.5s window.
+
+function drawSpeechBubble(
+  ctx: CanvasRenderingContext2D,
+  sentence: string[],
+  cx: number,
+  cy: number,
+  alpha: number
+): void {
+  if (sentence.length === 0 || alpha <= 0) return
+
+  ctx.save()
+  ctx.globalAlpha = alpha
+
+  const fontSize = Math.max(10, Math.round(ISO_TILE_WIDTH * 0.62))
+  ctx.font = `${fontSize}px serif`  // serif renders emoji more reliably
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+
+  // Measure total width
+  const gap = 2
+  const charWidths = sentence.map(e => ctx.measureText(e).width)
+  const totalW = charWidths.reduce((a, b) => a + b, 0) + gap * (sentence.length - 1)
+  const padX = 5
+  const padY = 3
+  const bubbleW = totalW + padX * 2
+  const bubbleH = fontSize + padY * 2
+
+  const bx = cx - bubbleW / 2
+  const by = cy - bubbleH / 2
+
+  // Bubble background
+  ctx.fillStyle = 'rgba(12, 10, 24, 0.82)'
+  ctx.strokeStyle = 'rgba(180, 160, 100, 0.55)'
+  ctx.lineWidth = 0.8
+  const r = 4
+  ctx.beginPath()
+  ctx.moveTo(bx + r, by)
+  ctx.lineTo(bx + bubbleW - r, by)
+  ctx.quadraticCurveTo(bx + bubbleW, by, bx + bubbleW, by + r)
+  ctx.lineTo(bx + bubbleW, by + bubbleH - r)
+  ctx.quadraticCurveTo(bx + bubbleW, by + bubbleH, bx + bubbleW - r, by + bubbleH)
+  ctx.lineTo(bx + r, by + bubbleH)
+  ctx.quadraticCurveTo(bx, by + bubbleH, bx, by + bubbleH - r)
+  ctx.lineTo(bx, by + r)
+  ctx.quadraticCurveTo(bx, by, bx + r, by)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+
+  // Small tail pointing downward toward creature
+  ctx.beginPath()
+  ctx.moveTo(cx - 3, by + bubbleH)
+  ctx.lineTo(cx, by + bubbleH + 4)
+  ctx.lineTo(cx + 3, by + bubbleH)
+  ctx.closePath()
+  ctx.fillStyle = 'rgba(12, 10, 24, 0.82)'
+  ctx.fill()
+
+  // Emoji text
+  let drawX = cx - totalW / 2
+  for (let i = 0; i < sentence.length; i++) {
+    ctx.fillText(sentence[i], drawX + charWidths[i] / 2, cy)
+    drawX += charWidths[i] + gap
+  }
+
+  ctx.restore()
 }

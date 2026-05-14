@@ -31,7 +31,7 @@ function inheritMorphology(a: MorphologyTraits, b: MorphologyTraits, rng: () => 
   }
 }
 
-// Asexual mutation: single parent but larger drift per trait — clonal lines
+// Asexual mutation; single parent but larger drift per trait; clonal lines
 // diverge faster, producing visibly distinct sub-populations over fewer generations.
 function mutateMorphologyAsexual(parent: MorphologyTraits, rng: () => number): MorphologyTraits {
   const m = parent ?? initMorphology()
@@ -54,7 +54,7 @@ export function randomGenome(rng: () => number): Genome {
   }
 }
 
-// Sexual inheritance — mix from two parents with mutation chance per slot.
+// Sexual inheritance; mix from two parents with mutation chance per slot.
 // mutationChance defaults to the constant but can be overridden by SimModifiers.
 export function inheritGenome(parentA: Genome, parentB: Genome, rng: () => number, mutationChance = MUTATION_CHANCE): Genome {
   const pick = <T>(a: T, b: T, pool: T[]): T => {
@@ -82,7 +82,7 @@ export function inheritGenome(parentA: Genome, parentB: Genome, rng: () => numbe
   }
 }
 
-// Asexual mutation — single parent, higher mutation rate, larger morph drift
+// Asexual mutation; single parent, higher mutation rate, larger morph drift
 export function mutateGenomeAsexual(parent: Genome, rng: () => number, mutationChance: number): Genome {
   const mut = <T>(current: T, pool: T[]): T =>
     rng() < mutationChance ? pool[Math.floor(rng() * pool.length)] : current
@@ -151,26 +151,26 @@ export function mutateFamily(familyName: string, rng: () => number): string {
 
 export function describeGenome(genome: Genome): string {
   const pDesc: Record<PersonalityTrait, string> = {
-    Curious: 'explores relentlessly, needs new terrain',
-    Timid: 'stays near shelter, stressed by conflict',
-    Aggressive: 'claims territory, fights for resources',
-    Lazy: 'stays close to food, moves rarely',
-    Greedy: 'hoards food, stressed by scarcity',
-    Nurturing: 'bonds deeply, tends to sick and young',
-    Wanderer: 'roams vast distances, pioneers new land',
-    Recluse: 'avoids crowds, thrives in solitude',
+    Curious:    'explores widely, range-dependent',
+    Timid:      'shelter-proximate, conflict-averse',
+    Aggressive: 'territorial, resource-competitive',
+    Lazy:       'low-displacement, food-proximate',
+    Greedy:     'resource-accumulating, scarcity-sensitive',
+    Nurturing:  'high-attachment, caregiving tendency',
+    Wanderer:   'long-range dispersal, habitat pioneer',
+    Recluse:    'solitary preference, crowd-averse',
   }
   const bDesc: Record<BodyTrait, string> = {
-    Spore: 'breeds fast, short life',
-    Shell: 'lives long, slow and resilient',
-    Spike: 'strong fighter, average life',
-    Wisp: 'very fast, drawn to water',
+    Spore: 'rapid reproduction, short lifespan',
+    Shell: 'long lifespan, high resilience',
+    Spike: 'combat-capable, average lifespan',
+    Wisp:  'high mobility, water-seeking',
   }
   const mDesc: Record<MindTrait, string> = {
-    Feral: 'instinct-driven, no messages',
-    Aware: 'observes, sends simple messages',
-    Dreaming: 'returns to memories, cryptic logs',
-    Sentinel: 'watches the world — and you',
+    Feral:    'instinct-only, no signal output',
+    Aware:    'observing, low-frequency signal',
+    Dreaming: 'memory-recursive, high-ambiguity signal',
+    Sentinel: 'boundary surveillance, operator-aware',
   }
   return `${pDesc[genome.personality]} · ${bDesc[genome.body]} · ${mDesc[genome.mind]}`
 }
@@ -185,8 +185,8 @@ export function genomeColor(genome: Genome): string {
     Lazy:      [230, 35, 70],
     Greedy:    [ 32, 92, 72],
     Nurturing: [338, 84, 82],
-    Wanderer:  [ 38, 88, 70],  // amber-gold — the traveling lantern
-    Recluse:   [222, 28, 62],  // muted steel-blue — the hermit
+    Wanderer:  [ 38, 88, 70],  // amber-gold; the traveling lantern
+    Recluse:   [222, 28, 62],  // muted steel-blue; the hermit
   }
 
   const bodyMod: Record<BodyTrait, [number, number]> = {

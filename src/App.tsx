@@ -5,6 +5,7 @@ import { AuthScreen } from '@/ui/components/AuthScreen'
 import { ProfileScreen } from '@/ui/components/ProfileScreen'
 import { CaretakerProfile } from '@/types'
 import styled, { createGlobalStyle, keyframes } from 'styled-components'
+import { THEME } from '@/ui/theme'
 
 const NewWorldScreen = lazy(() =>
   import('@/ui/components/NewWorldScreen').then(m => ({ default: m.NewWorldScreen }))
@@ -13,79 +14,49 @@ const GameLayout = lazy(() =>
   import('@/ui/components/GameLayout').then(m => ({ default: m.GameLayout }))
 )
 
+// ─── Global baseline (Field Guide) ───────────────────────────────────────────
+// GameLayout injects its own GlobalStyle for the in-game view.
+// This baseline covers auth, loading, and profile screens.
 const GlobalStyle = createGlobalStyle`
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   html, body, #root {
     height: 100%;
-    background: #04040e;
-    background-image:
-      radial-gradient(ellipse at top, rgba(40, 30, 90, 0.18), transparent 60%),
-      radial-gradient(ellipse at bottom, rgba(20, 60, 120, 0.10), transparent 70%),
-      linear-gradient(180deg, #04040e 0%, #06061a 100%);
-    color: #ede2c4;
-    font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
+    background: ${THEME.bg};
+    color: ${THEME.textPrimary};
+    font-family: ${THEME.font};
+    -webkit-font-smoothing: antialiased;
     overflow-x: auto;
   }
 
-  ::-webkit-scrollbar { width: 5px; height: 5px; }
-  ::-webkit-scrollbar-track { background: #04040e; }
-  ::-webkit-scrollbar-thumb {
-    background: linear-gradient(180deg, #2e2e60, #1a1a32);
-    border-radius: 3px;
-  }
-  ::-webkit-scrollbar-thumb:hover { background: #4a4a80; }
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: ${THEME.bgDeep}; }
+  ::-webkit-scrollbar-thumb { background: ${THEME.borderMid}; border-radius: 2px; }
 
   button { font-family: inherit; }
 
-  /* Selection */
   ::selection {
-    background: rgba(200, 120, 240, 0.35);
+    background: rgba(232, 200, 74, 0.25);
     color: #ffffff;
   }
 `
 
-// Subtle vertical scan moving slowly down
-const scanH = keyframes`
-  0%   { transform: translateY(-100%); opacity: 0; }
-  8%   { opacity: 1; }
-  92%  { opacity: 1; }
-  100% { transform: translateY(100vh); opacity: 0; }
+// ─── Loading screen ───────────────────────────────────────────────────────────
+
+const fadeIn = keyframes`from { opacity: 0; } to { opacity: 1; }`
+
+const pulseBar = keyframes`
+  0%   { width: 0%; }
+  40%  { width: 65%; }
+  70%  { width: 82%; }
+  100% { width: 100%; }
 `
 
-const flicker = keyframes`
-  0%, 100% { opacity: 1; }
-  47%      { opacity: 1; }
-  48%      { opacity: 0.6; }
-  49%      { opacity: 1; }
-  82%      { opacity: 1; }
-  83%      { opacity: 0.85; }
-  84%      { opacity: 1; }
-`
-
-const ScanLine = styled.div`
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(180deg,
-    transparent,
-    rgba(180, 140, 255, 0.08) 50%,
-    transparent
-  );
-  pointer-events: none;
-  z-index: 9999;
-  animation: ${scanH} 14s linear infinite;
-`
-
-const Vignette = styled.div`
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 9998;
-  background:
-    radial-gradient(ellipse 90% 70% at center, transparent 55%, rgba(0, 0, 8, 0.55) 100%);
+const dotPulse = keyframes`
+  0%, 100% { opacity: 0.2; transform: scale(0.8); }
+  50%       { opacity: 1;   transform: scale(1.0); }
 `
 
 const LoadingScreen = styled.div`
@@ -94,68 +65,85 @@ const LoadingScreen = styled.div`
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
-  font-size: 13px;
-  letter-spacing: 0.3em;
-  gap: 14px;
-  animation: ${flicker} 6s infinite;
+  background: ${THEME.bg};
+  font-family: ${THEME.font};
+  gap: 10px;
+  animation: ${fadeIn} 0.3s ease;
 `
 
 const LoadingLogo = styled.div`
   font-size: 22px;
-  color: #c878f0;
-  text-shadow: 0 0 18px rgba(200, 120, 240, 0.55);
-  letter-spacing: 0.4em;
+  font-weight: 700;
+  color: ${THEME.textPrimary};
+  letter-spacing: 0.08em;
 `
 
-const LoadingHint = styled.div`
-  font-size: 11px;
-  color: #8888b0;
-  letter-spacing: 0.25em;
+const LoadingAccent = styled.span`color: ${THEME.amber};`
+
+const LoadingLabel = styled.div`
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.28em;
+  color: ${THEME.textTertiary};
+  margin-bottom: 6px;
+`
+
+const LoadingBarTrack = styled.div`
+  width: 180px;
+  height: 2px;
+  background: ${THEME.border};
+  border-radius: 1px;
+  overflow: hidden;
+  margin-top: 4px;
+`
+
+const LoadingBarFill = styled.div`
+  height: 100%;
+  background: ${THEME.amber};
+  border-radius: 1px;
+  animation: ${pulseBar} 2.2s ease-out infinite;
 `
 
 const LoadingDots = styled.div`
   display: flex;
   gap: 6px;
-  margin-top: 8px;
+  margin-top: 6px;
 `
 
-const Dot = styled.div<{ delay: number }>`
-  width: 6px;
-  height: 6px;
+const Dot = styled.div<{ $delay: number }>`
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
-  background: #5ec8e0;
-  opacity: 0.3;
-  animation: pulse 1.4s infinite;
-  animation-delay: ${p => p.delay}s;
-
-  @keyframes pulse {
-    0%, 100% { opacity: 0.2; }
-    50%      { opacity: 1; box-shadow: 0 0 6px #5ec8e0; }
-  }
+  background: ${THEME.amber};
+  animation: ${dotPulse} 1.2s ease-in-out infinite;
+  animation-delay: ${p => p.$delay}s;
 `
 
 function LazyFallback({ hint }: { hint: string }) {
   return (
     <LoadingScreen>
-      <LoadingLogo>◈ LA-IET ◈</LoadingLogo>
-      <LoadingHint>{hint}</LoadingHint>
+      <LoadingLogo>LA<LoadingAccent>·</LoadingAccent>IET</LoadingLogo>
+      <LoadingLabel>{hint}</LoadingLabel>
+      <LoadingBarTrack><LoadingBarFill /></LoadingBarTrack>
       <LoadingDots>
-        <Dot delay={0} /><Dot delay={0.2} /><Dot delay={0.4} />
+        <Dot $delay={0} /><Dot $delay={0.2} /><Dot $delay={0.4} />
       </LoadingDots>
     </LoadingScreen>
   )
 }
 
+// ─── App ──────────────────────────────────────────────────────────────────────
+
 export function App() {
-  const userId = useLaietStore(s => s.userId)
+  const userId    = useLaietStore(s => s.userId)
   const gameState = useLaietStore(s => s.gameState)
   const isLoading = useLaietStore(s => s.isLoading)
-  const setUser = useLaietStore(s => s.setUser)
+  const setUser   = useLaietStore(s => s.setUser)
   const clearUser = useLaietStore(s => s.clearUser)
   const loadWorld = useLaietStore(s => s.loadWorld)
+
   const [authChecked, setAuthChecked] = useState(false)
-  // Held in App until NewWorldScreen consumes it. Cleared when a world loads.
   const [pendingProfile, setPendingProfile] = useState<CaretakerProfile | null>(null)
 
   useEffect(() => {
@@ -175,29 +163,20 @@ export function App() {
     })
 
     return () => { listener.subscription.unsubscribe() }
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (userId && !gameState && !isLoading) {
       loadWorld(userId)
     }
-  }, [userId])
+  }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Loading state ───────────────────────────────────────────────────────────
   if (!authChecked || isLoading) {
     return (
       <>
         <GlobalStyle />
-        <LoadingScreen>
-          <LoadingLogo>◈ LA-IET ◈</LoadingLogo>
-          <LoadingHint>
-            {!authChecked ? '∙ checking session ∙' : '∙ awakening specimen ∙'}
-          </LoadingHint>
-          <LoadingDots>
-            <Dot delay={0} />
-            <Dot delay={0.2} />
-            <Dot delay={0.4} />
-          </LoadingDots>
-        </LoadingScreen>
+        <LazyFallback hint={!authChecked ? 'Connecting' : 'Loading record'} />
       </>
     )
   }
@@ -205,19 +184,21 @@ export function App() {
   return (
     <>
       <GlobalStyle />
-      <ScanLine />
-      <Vignette />
+
       {!userId && <AuthScreen />}
+
       {userId && !gameState && !pendingProfile && (
         <ProfileScreen onComplete={setPendingProfile} />
       )}
+
       {userId && !gameState && pendingProfile && (
-        <Suspense fallback={<LazyFallback hint="∙ preparing world ∙" />}>
+        <Suspense fallback={<LazyFallback hint="Building world" />}>
           <NewWorldScreen profile={pendingProfile} onWorldCreated={() => setPendingProfile(null)} />
         </Suspense>
       )}
+
       {userId && gameState && (
-        <Suspense fallback={<LazyFallback hint="∙ awakening specimen ∙" />}>
+        <Suspense fallback={<LazyFallback hint="Loading record" />}>
           <GameLayout />
         </Suspense>
       )}

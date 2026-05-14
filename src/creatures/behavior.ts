@@ -12,6 +12,7 @@ import {
   RECLUSE_CROWD_RADIUS, RECLUSE_CROWD_THRESHOLD,
   PLAY_TRIGGER_SATISFACTION, PLAY_PARTNER_RADIUS,
   ENRICHMENT_USE_RADIUS, ENRICHMENT_EFFECTS, ENRICHMENT_COOLDOWN_TICKS,
+  HEALROOT_SEEK_HEALTH, HEALROOT_HEAL_PER_USE, HEALROOT_CONSUME_AMOUNT,
 } from '@/engine/constants'
 import { findNearestTileOfType, findNearestInIndex, getTile, isTilePassable, TileTypeIndex } from '@/world/worldGen'
 import { tickSentience } from './factory'
@@ -96,8 +97,10 @@ function pickThought(c: Creature): ThoughtSymbol {
   if (c.state === 'fighting') return 'fighting'
   if (c.state === 'mourning') return 'mourning'
   if (c.state === 'bonding') return 'bonding'
+  if (c.state === 'grooming') return 'grooming'
   if (c.state === 'dreaming') return 'dreaming'
   if (c.state === 'playing' || c.state === 'using_enrichment') return 'playing'
+  if (c.carrying) return 'carrying'
   if (c.genome.mind === 'Sentinel') return 'watching'
   if (c.hunger > HUNGER_CRITICAL) return 'hungry'
   if (c.thirst > THIRST_CRITICAL) return 'thirsty'
@@ -114,8 +117,8 @@ export function tickBehavior(
   tiles: Tile[][],
   _allCreatures: Record<string, Creature>,
   season: Season,
-  aliveCreatures: Creature[],       // pre-filtered alive array — avoids repeated Object.values
-  tileIdx?: TileTypeIndex,          // pre-built index — avoids O(d²) tile scans
+  aliveCreatures: Creature[],       // pre-filtered alive array; avoids repeated Object.values
+  tileIdx?: TileTypeIndex,          // pre-built index; avoids O(d²) tile scans
   enrichmentItems?: Record<string, EnrichmentItem>
 ): Partial<Creature> {
   const c = creature
@@ -127,7 +130,7 @@ export function tickBehavior(
       ? findNearestInIndex(tileIdx, tiles, c.x, c.y, types, maxDist)
       : findNearestTileOfType(tiles, c.x, c.y, types, maxDist)
 
-  // ── Recluse crowding — solitude is their natural state; crowds add stress ──
+  // ── Recluse crowding; solitude is their natural state; crowds add stress ──
   if (c.genome.personality === 'Recluse') {
     const crowd = aliveCreatures.filter(
       o => o.id !== c.id
@@ -152,7 +155,21 @@ export function tickBehavior(
     return changes
   }
 
-  // ── 2.5. Fear response — low-health or Timid creatures flee from threats ──
+  // ── 2.1. Seeking healroot; sick creatures head toward medicine ──
+  // Nurturing/healer creatures also seek healroot to carry to sick tribemates.
+  if (c.health < HEALROOT_SEEK_HEALTH && c.state !== 'seeking_healroot') {
+    const hrTile = findNearest(['healroot'], 30)
+    if (hrTile) {
+      changes.state = 'seeking_healroot'
+      changes.targetX = hrTile.x
+      changes.targetY = hrTile.y
+      changes.currentThought = 'sick'
+      changes.thoughtTimer = 20
+      return changes
+    }
+  }
+
+  // ── 2.5. Fear response; low-health or Timid creatures flee from threats ──
   // Triggers when health is critically low OR personality is Timid + stress is high.
   // Flees away from the centroid of nearby creatures toward map edges.
   const fearTrigger = (c.health < 28)
@@ -175,7 +192,7 @@ export function tickBehavior(
     }
   }
 
-  // ── 3. Critical survival (pre-emptive — seek before truly desperate) ──
+  // ── 3. Critical survival (pre-emptive; seek before truly desperate) ──
   if (c.hunger > HUNGER_SEEK_THRESHOLD) {
     const foodTile = findNearest(['food_patch', 'bush'], 20)
     if (foodTile && foodTile.foodAmount > 0) {
@@ -185,7 +202,7 @@ export function tickBehavior(
       return changes
     }
 
-    // No food found locally — migrate. Pick a distant random spot to scout.
+    // No food found locally; migrate. Pick a distant random spot to scout.
     // This is the colony's response to environmental scarcity.
     if (c.hunger > 55) {
       const tx = Math.max(0, Math.min(WORLD_SIZE - 1, c.x + (Math.random() < 0.5 ? -1 : 1) * (15 + Math.floor(Math.random() * 15))))
@@ -196,7 +213,7 @@ export function tickBehavior(
       return changes
     }
 
-    // Last resort — head for the nearest fresh corpse. Cannibalism only
+    // Last resort; head for the nearest fresh corpse. Cannibalism only
     // triggers if the creature is desperately hungry (handled at the tile
     // contact point in tick.ts). Here we just route them to it.
     if (c.hunger > 70) {
@@ -221,7 +238,7 @@ export function tickBehavior(
   }
 
   if (c.warmth < WARMTH_SEEK_THRESHOLD && season === 'winter') {
-    // Caves are preferred over trees — warmer and more reliable
+    // Caves are preferred over trees; warmer and more reliable
     const caveTile = findNearest(['cave'], 18)
     const shelterTile = caveTile ?? findNearest(['tree', 'shelter'], 12)
     if (shelterTile) {
@@ -257,7 +274,7 @@ export function tickBehavior(
   // ── 5. Personality-driven behaviors ──
   let targetSet = changes.targetX !== undefined
 
-  // ── 4.5. Group defense — bonded allies rally toward partners under attack ──
+  // ── 4.5. Group defense; bonded allies rally toward partners under attack ──
   // Creates emergent pack loyalty: when a bonded creature is fighting, others move to help.
   if (!targetSet
       && c.health > 45
@@ -283,7 +300,7 @@ export function tickBehavior(
 
   switch (c.genome.personality) {
     case 'Curious':
-      // Explores within a bounded range — curious, not migrating across the world
+      // Explores within a bounded range; curious, not migrating across the world
       if (!targetSet && (c.targetX === null || Math.random() < 0.025)) {
         const range = 30
         for (let attempt = 0; attempt < 6; attempt++) {
@@ -384,7 +401,7 @@ export function tickBehavior(
       break
 
     case 'Timid':
-      // Seek bush cover when stressed — concealment calms Timid creatures
+      // Seek bush cover when stressed; concealment calms Timid creatures
       if (!targetSet && c.stress > 40 && Math.random() < 0.08) {
         const bushTile = findNearest(['bush'], 12)
         if (bushTile) {
@@ -410,7 +427,7 @@ export function tickBehavior(
       break
 
     case 'Wanderer':
-      // Constantly on the move — picks distant destinations across the whole map
+      // Constantly on the move; picks distant destinations across the whole map
       if (!targetSet && (c.targetX === null || Math.random() < 0.03)) {
         const dist = 20 + Math.floor(Math.random() * 30)
         const angle = Math.random() * Math.PI * 2
@@ -424,7 +441,7 @@ export function tickBehavior(
       break
 
     case 'Recluse':
-      // Actively disperses away from clusters — a natural colony spreader
+      // Actively disperses away from clusters; a natural colony spreader
       if (!targetSet && Math.random() < 0.12) {
         const crowdNearby = aliveCreatures.filter(
           o => o.id !== c.id
@@ -460,7 +477,7 @@ export function tickBehavior(
       break
   }
 
-  // ── 5.5. Terrain affinity — body type draws creatures toward their preferred environment ──
+  // ── 5.5. Terrain affinity; body type draws creatures toward their preferred environment ──
   // Wisp body → water; Shell body → shelter/cave; Spore body → food; Spike body → open ground.
   // Produces emergent ecological niches and spreads the population across different terrain.
   if (!targetSet && Math.random() < 0.07) {
@@ -479,9 +496,9 @@ export function tickBehavior(
     }
   }
 
-  // ── 6. Social cohesion — only inherently social personalities cluster; others explore freely ──
+  // ── 6. Social cohesion; only inherently social personalities cluster; others explore freely ──
   // Nurturing and Timid seek proximity to safe peers. All other personalities navigate
-  // independently — Curious explores, Wanderer migrates, Recluse disperses, etc.
+  // independently; Curious explores, Wanderer migrates, Recluse disperses, etc.
   // This replaces the old 18%-chance centroid-pull that forced the whole colony to cluster.
   if (!targetSet
       && (c.genome.personality === 'Nurturing' || c.genome.personality === 'Timid')
@@ -537,14 +554,14 @@ export function tickBehavior(
     }
   }
 
-  // ── 7.5. Enrichment seeking — trait-driven, state-gated, with trade-off awareness ──
+  // ── 7.5. Enrichment seeking; trait-driven, state-gated, with trade-off awareness ──
   // Creatures decide to use enrichment based on internal states, not forced logic.
   // Aggressive creatures can displace current users. Timid avoids exposed items.
   // Recluse avoids items if others are nearby. Cooldown prevents spam.
   if (!targetSet && enrichmentItems && c.health > 35) {
     const cooldownOk = !c.lastEnrichmentTick
       || (c.stateTimer - (c.lastEnrichmentTick ?? 0)) > ENRICHMENT_COOLDOWN_TICKS
-    // Recluse avoids enrichment if others are within range — solitude first
+    // Recluse avoids enrichment if others are within range; solitude first
     const recluseBlocked = c.genome.personality === 'Recluse'
       && aliveCreatures.some(o => o.id !== c.id && Math.abs(o.x - c.x) <= 4 && Math.abs(o.y - c.y) <= 4)
 
@@ -604,7 +621,7 @@ export function tickBehavior(
     }
   }
 
-  // ── 7.7. Play behavior — high-satisfaction creatures near others may play ──
+  // ── 7.7. Play behavior; high-satisfaction creatures near others may play ──
   if (!targetSet
       && c.needSatisfaction >= PLAY_TRIGGER_SATISFACTION
       && c.hunger < 40
@@ -627,7 +644,30 @@ export function tickBehavior(
     }
   }
 
-  // ── 8. Bond-seeking — mature non-Aggressive creatures without bonds seek partners ──
+  // ── 7.8. Grooming; bonded adjacent creatures occasionally groom each other ──
+  // Reduces stress for both. More common in Nurturing/Timid; rare in Aggressive.
+  if (!targetSet
+      && c.genome.personality !== 'Aggressive'
+      && c.genome.personality !== 'Recluse'
+      && c.state !== 'grooming'
+      && c.stress > 20
+      && Math.random() < 0.022) {
+    const groomPartner = aliveCreatures.find(
+      other => other.id !== c.id
+        && Math.abs(other.x - c.x) <= 1
+        && Math.abs(other.y - c.y) <= 1
+        && c.bonds.some(b => b.targetId === other.id && b.strength > 25)
+    )
+    if (groomPartner) {
+      changes.state = 'grooming'
+      changes.stateTimer = 0
+      changes.currentThought = 'grooming'
+      changes.thoughtTimer = 25
+      targetSet = true
+    }
+  }
+
+  // ── 8. Bond-seeking; mature non-Aggressive creatures without bonds seek partners ──
   // Recluses never actively seek bonds (solitude is their nature).
   // Wanderers seek bonds only rarely (too mobile to commit).
   if (!targetSet
@@ -703,7 +743,7 @@ export function tickMovement(creature: Creature, tiles: Tile[][]): Partial<Creat
     }
   }
 
-  // Completely blocked — abandon target and try elsewhere
+  // Completely blocked; abandon target and try elsewhere
   if (Math.random() < 0.45) {
     return { targetX: null, targetY: null, state: 'idle' }
   }
@@ -718,6 +758,31 @@ export function eatFromTile(creature: Creature, tile: Tile): { creature: Creatur
   return {
     creature: { ...creature, hunger: Math.max(0, creature.hunger - amount * 0.8) },
     tile: { ...tile, foodAmount: tile.foodAmount - amount },
+  }
+}
+
+// Creature consumes healroot from tile; restores health, depletes potency
+export function healFromRoot(creature: Creature, tile: Tile): { creature: Creature; tile: Tile } {
+  if (tile.type !== 'healroot') return { creature, tile }
+  const potency = tile.healrootAmount ?? 0
+  if (potency <= 0) return { creature, tile }
+  const healed = Math.min(HEALROOT_HEAL_PER_USE, potency)
+  return {
+    creature: {
+      ...creature,
+      health: Math.min(100, creature.health + healed),
+      stress: Math.max(0, creature.stress - 8),
+      state: creature.health + healed >= 40 ? 'idle' : 'seeking_healroot',
+    },
+    tile: { ...tile, healrootAmount: potency - HEALROOT_CONSUME_AMOUNT },
+  }
+}
+
+// Grooming reduces stress in both participants (tick.ts calls this)
+export function applyGroomingEffect(groomer: Creature, partner: Creature): { groomer: Creature; partner: Creature } {
+  return {
+    groomer:  { ...groomer,  stress: Math.max(0, groomer.stress  - 1.8) },
+    partner:  { ...partner,  stress: Math.max(0, partner.stress  - 2.5) },
   }
 }
 
@@ -746,7 +811,7 @@ export function canReproduce(c: Creature, season: Season, populationFactor = 1.0
 }
 
 export function canAsexuallyReproduce(c: Creature, season: Season, populationFactor = 1.0): boolean {
-  // Only Spore body type divides asexually — other body types must bond to reproduce.
+  // Only Spore body type divides asexually; other body types must bond to reproduce.
   // This makes asexual reproduction rare and biologically specific.
   if (c.genome.body !== 'Spore') return false
   if (c.age < CREATURE_MATURITY_TICKS * 1.5) return false
@@ -760,14 +825,14 @@ export function canAsexuallyReproduce(c: Creature, season: Season, populationFac
 // ─── Enrichment interaction ───────────────────────────────────────────────────
 
 // Apply per-tick effects of an enrichment item to a creature.
-// Trait modifiers adjust effect magnitude — trade-offs are inherent per type.
+// Trait modifiers adjust effect magnitude; trade-offs are inherent per type.
 export function applyEnrichmentEffect(creature: Creature, itemType: string, partnerNearby = false): Partial<Creature> {
   const fx = ENRICHMENT_EFFECTS[itemType]
   if (!fx) return {}
 
   let stressDelta = fx.stress
 
-  // play_stones: social bonus when partner is adjacent — stress reduction doubles
+  // play_stones; social bonus when partner is adjacent; stress reduction doubles
   if (itemType === 'play_stones' && partnerNearby) stressDelta *= 2.0
 
   // warm_stone: Timid gets extra stress relief from thermal safety
