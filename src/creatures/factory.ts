@@ -6,6 +6,7 @@ import {
   WORLD_SIZE,
   ASEXUAL_MUTATION_CHANCE,
   STARTER_BOND_STRENGTH,
+  REPRODUCE_BOND_MIN_STRENGTH,
 } from '@/engine/constants'
 import {
   randomGenome,
@@ -14,6 +15,7 @@ import {
   generateName,
   mutateFamily,
   initMorphology,
+  RACES,
 } from '@/engine/genetics'
 import { createRng } from '@/world/worldGen'
 import { starterEmoji, inheritEmoji } from '@/engine/speech'
@@ -87,6 +89,15 @@ function detectMutations(offspring: Genome, parentA: Creature, parentB: Creature
     mutated.push('body')
   if (offspring.mind !== parentA.genome.mind && offspring.mind !== parentB.genome.mind)
     mutated.push('mind')
+  // Race counts as a mutation only if it differs from both parents AND isn't a latent revival
+  // (revivals are expected; raw random mutations are the notable events)
+  if (offspring.race
+    && offspring.race !== parentA.genome.race
+    && offspring.race !== parentB.genome.race
+    && !(parentA.genome.latentAncestry?.[offspring.race])
+    && !(parentB.genome.latentAncestry?.[offspring.race])) {
+    mutated.push('race')
+  }
   return mutated
 }
 
@@ -193,6 +204,8 @@ function pickStarterGenomes(rng: () => number): Genome[] {
     mind: minds[i],
     morphSeed: rng(),
     morphology: initMorphology(),
+    race: RACES[Math.floor(rng() * RACES.length)],
+    latentAncestry: {},
   }))
 }
 
@@ -245,6 +258,13 @@ export function createStarterCreatures(
 
 export function tickSentience(creature: Creature): number {
   const growth = SENTIENCE_GROWTH_BY_MIND[creature.genome.mind] ?? 0
+  // Below 50, sentience grows freely — baseline cognition requires no social input.
+  // Above 50, a meaningful bond (strength ≥ 35) is required for further awakening.
+  // Isolated creatures plateau: inner worlds only deepen through others reflecting them back.
+  if (creature.sentience >= 50) {
+    const hasMeaningfulBond = creature.bonds.some(b => b.strength >= REPRODUCE_BOND_MIN_STRENGTH)
+    return Math.min(100, creature.sentience + growth * (hasMeaningfulBond ? 1.0 : 0.2))
+  }
   return Math.min(100, creature.sentience + growth)
 }
 
@@ -265,8 +285,12 @@ export function computeAwarenessStage(state: GameState): 1 | 2 | 3 {
   const alive = Object.values(state.creatures).filter(c => c.diedOnDay === null)
   const maxGen = alive.length > 0 ? Math.max(0, ...alive.map(c => c.generation)) : 0
   const hasSentinel = alive.some(c => c.genome.mind === 'Sentinel')
+  // Dreaming creatures at high sentience serve as a soft Sentinel substitute —
+  // the awareness arc can still progress even if no Sentinel lineage survives.
+  const hasDreamingFallback = alive.some(c => c.genome.mind === 'Dreaming' && c.sentience >= 80)
+  const sentientEnough = hasSentinel || hasDreamingFallback
 
   if (alive.length >= 50 && maxGen >= 4 && hasSentinel) return 3
-  if (maxGen >= 3 && hasSentinel) return 2
+  if (maxGen >= 3 && sentientEnough) return 2
   return 1
 }

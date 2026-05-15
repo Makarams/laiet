@@ -70,8 +70,8 @@ const TRACKS: Record<string, Track> = {
       [N.C4, R,    N.E4, R,    R,    R,    N.G4, R   ],
       [R,    R,    N.E4, R,    R,    N.C4, R,    R   ],
     ],
-    wave: 'sine', beatLen: 0.58, noteLen: 0.40, gain: 0.065,
-    gapBeats: 3,
+    wave: 'sine', beatLen: 0.52, noteLen: 0.36, gain: 0.065,
+    gapBeats: 2,
     bassFreqs: null, bassGain: 0,
   },
 
@@ -84,7 +84,7 @@ const TRACKS: Record<string, Track> = {
       [N.D4, R,    N.E4, N.G4, R,    N.E4, R,    N.D4, R,    N.C4],
     ],
     wave: 'triangle', beatLen: 0.30, noteLen: 0.20, gain: 0.085,
-    gapBeats: 2,
+    gapBeats: 1,
     bassFreqs: [N.C3, N.G3], bassGain: 0.036,
   },
 
@@ -96,8 +96,8 @@ const TRACKS: Record<string, Track> = {
       [N.G3, N.A3, N.C4, R,    N.G3        ],
       [R,    N.E3, R,    N.G3, R,    N.E3  ],
     ],
-    wave: 'sine', beatLen: 0.44, noteLen: 0.30, gain: 0.062,
-    gapBeats: 4,
+    wave: 'sine', beatLen: 0.40, noteLen: 0.28, gain: 0.062,
+    gapBeats: 2,
     bassFreqs: null, bassGain: 0,
   },
 
@@ -110,7 +110,7 @@ const TRACKS: Record<string, Track> = {
       [N.A4, R,    N.G4, N.E4, R,    N.D4, R,    N.E4, R,    N.G4],
     ],
     wave: 'triangle', beatLen: 0.32, noteLen: 0.22, gain: 0.080,
-    gapBeats: 2,
+    gapBeats: 1,
     bassFreqs: [N.G3, N.D3], bassGain: 0.034,
   },
 
@@ -122,8 +122,8 @@ const TRACKS: Record<string, Track> = {
       [R,    N.A4, R,    R,    R,    N.G4, R,    N.E4],
       [N.E4, R,    N.D4, R,    R,    R,    N.G4, R   ],
     ],
-    wave: 'sine', beatLen: 0.50, noteLen: 0.34, gain: 0.062,
-    gapBeats: 4,
+    wave: 'sine', beatLen: 0.44, noteLen: 0.30, gain: 0.062,
+    gapBeats: 2,
     bassFreqs: null, bassGain: 0,
   },
 
@@ -136,7 +136,7 @@ const TRACKS: Record<string, Track> = {
       [N.C4, R,    N.E4, N.G4, R,    N.E4, N.D4, R, N.C4],
     ],
     wave: 'triangle', beatLen: 0.32, noteLen: 0.22, gain: 0.080,
-    gapBeats: 3,
+    gapBeats: 2,
     bassFreqs: [N.A3, N.E3], bassGain: 0.032,
   },
 
@@ -148,8 +148,8 @@ const TRACKS: Record<string, Track> = {
       [N.C4, R,    R,    N.A3, R,    N.G3  ],
       [R,    N.A3, R,    N.C4, R,    R     ],
     ],
-    wave: 'sine', beatLen: 0.50, noteLen: 0.34, gain: 0.062,
-    gapBeats: 4,
+    wave: 'sine', beatLen: 0.44, noteLen: 0.30, gain: 0.062,
+    gapBeats: 2,
     bassFreqs: null, bassGain: 0,
   },
 
@@ -161,8 +161,8 @@ const TRACKS: Record<string, Track> = {
       [R,    N.D4, R,    R,    N.F4, R,    N.A4, R   ],
       [N.D5, R,    R,    N.C5, R,    N.A4, R,    R   ],
     ],
-    wave: 'triangle', beatLen: 0.50, noteLen: 0.34, gain: 0.070,
-    gapBeats: 5,
+    wave: 'triangle', beatLen: 0.44, noteLen: 0.30, gain: 0.070,
+    gapBeats: 3,
     bassFreqs: null, bassGain: 0,
   },
 
@@ -174,8 +174,8 @@ const TRACKS: Record<string, Track> = {
       [N.A4, R, R, R, N.D4, R, R,  R],
       [R,    R, R, N.F4, R, R, R,  R],
     ],
-    wave: 'sine', beatLen: 0.70, noteLen: 0.50, gain: 0.055,
-    gapBeats: 6,
+    wave: 'sine', beatLen: 0.56, noteLen: 0.40, gain: 0.055,
+    gapBeats: 3,
     bassFreqs: null, bassGain: 0,
   },
 
@@ -188,7 +188,7 @@ const TRACKS: Record<string, Track> = {
       [N.G4, R,    N.Ab4, N.A4, R,     N.Bb4,R,     N.G4  ],
     ],
     wave: 'triangle', beatLen: 0.22, noteLen: 0.15, gain: 0.065,
-    gapBeats: 1,
+    gapBeats: 0,
     bassFreqs: [N.A3, N.E3], bassGain: 0.026,
   },
 
@@ -200,8 +200,8 @@ const TRACKS: Record<string, Track> = {
       [N.G4, R, R, R, N.D5, R, R, R, R, N.G4, R, R],
       [R, R, N.E4, R, R, R, R, R, N.B4, R, R, R],
     ],
-    wave: 'sine', beatLen: 0.70, noteLen: 0.50, gain: 0.060,
-    gapBeats: 4,
+    wave: 'sine', beatLen: 0.56, noteLen: 0.40, gain: 0.060,
+    gapBeats: 2,
     bassFreqs: null, bassGain: 0,
   },
 
@@ -213,8 +213,8 @@ const TRACKS: Record<string, Track> = {
       [N.D5, R, R, R, R, R, R, R, N.A4, R, R, R],
       [R, R, R, R, R, R, N.G4, R, R, R, R, R],
     ],
-    wave: 'sine', beatLen: 0.90, noteLen: 0.64, gain: 0.048,
-    gapBeats: 6,
+    wave: 'sine', beatLen: 0.70, noteLen: 0.50, gain: 0.048,
+    gapBeats: 3,
     bassFreqs: null, bassGain: 0,
   },
 
@@ -226,8 +226,8 @@ const TRACKS: Record<string, Track> = {
       [R, R, N.E4, R, R, R, R, R, R, R, N.G4, R, R, R, R, R],
       [N.C5, R, R, R, R, R, R, R, R, R, R, R, R, R, N.G4, R],
     ],
-    wave: 'sine', beatLen: 0.95, noteLen: 0.72, gain: 0.052,
-    gapBeats: 8,
+    wave: 'sine', beatLen: 0.75, noteLen: 0.58, gain: 0.052,
+    gapBeats: 4,
     bassFreqs: null, bassGain: 0,
   },
 
@@ -240,7 +240,7 @@ const TRACKS: Record<string, Track> = {
       [N.E4, R, N.G4, R, N.C5, R, N.E5, R, N.G5, R, N.E5],
     ],
     wave: 'sine', beatLen: 0.26, noteLen: 0.20, gain: 0.090,
-    gapBeats: 2,
+    gapBeats: 1,
     bassFreqs: [N.C3, N.G3], bassGain: 0.040,
   },
 }

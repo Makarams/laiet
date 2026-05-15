@@ -70,7 +70,7 @@ interface LaietStore {
   // Game state
   gameState: GameState | null
   isLoading: boolean
-  tickInterval: ReturnType<typeof setInterval> | null
+  tickInterval: ReturnType<typeof setTimeout> | null
 
   // Time controls
   isPaused: boolean
@@ -92,6 +92,7 @@ interface LaietStore {
   plantTree: (x: number, y: number) => void
   healCreature: (creatureId: string) => void
   breakUpFight: (eventId: string) => void
+  placeWater: (x: number, y: number) => void
   redirectRiver: (fromX: number, fromY: number, toX: number, toY: number) => void
   resolveEvent: (eventId: string, action: EventAction) => void
   // Environmental tools
@@ -109,6 +110,13 @@ interface LaietStore {
   markMessagesRead: () => void
   unreadMessageCount: number
 }
+
+// ─── Tick-loop wall-clock anchor (module-level) ───────────────────────────────
+// Tracks when the last tick actually fired so the time-delta loop can
+// determine how many simulation ticks are owed on every callback, regardless
+// of how much real time elapsed between callbacks (browser throttling, GC
+// pauses, tab switching, etc.).
+let _lastTickWallMs = 0
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
@@ -204,7 +212,12 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
           return
         }
 
-        const passiveTicks = computePassiveTicks(state.lastSessionEnd)
+        // Q10C: Asymmetric idle consequences — spring/summer absence is safe (0 ticks),
+        // autumn/storm applies limited catch-up, winter/drought applies full catch-up.
+        const rawPassiveTicks = computePassiveTicks(state.lastSessionEnd)
+        const isHarsh    = state.time.season === 'winter' || (state.weather ?? 'clear') === 'drought'
+        const isModerate  = state.time.season === 'autumn' || (state.weather ?? 'clear') === 'storm'
+        const passiveTicks = isHarsh ? rawPassiveTicks : isModerate ? Math.min(rawPassiveTicks, 40) : 0
         const hoursAway   = computeAbsenceHours(state.lastSessionEnd)
         let advanced = state
         for (let i = 0; i < passiveTicks; i++) {
@@ -236,29 +249,106 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
   },
 
   startTicking: () => {
-    const { isPaused, simSpeed, gameState } = get()
+    const { isPaused, gameState } = get()
     if (isPaused) return
     if (!gameState || gameState.endgame) return
+
+    // Clear any pre-existing handle before arming a new loop.
     const existing = get().tickInterval
-    if (existing) clearInterval(existing)
-    const intervalMs = Math.floor(TICK_INTERVAL_MS / (simSpeed ?? 1))
-    const interval = setInterval(() => {
+    if (existing) clearTimeout(existing)
+
+    // ── Time-delta tick loop ──────────────────────────────────────────────
+    //
+    // Goal: the simulation advances at the correct real-time rate regardless
+    // of whether the browser throttles or delays our callbacks.  Browsers
+    // may coalesce or slow setTimeout in background tabs (Chrome: 1 Hz
+    // minimum; others may be worse), but they never *skip* callbacks
+    // entirely while the tab is open.  By measuring actual wall-clock
+    // elapsed time on every callback we can fire as many ticks as are owed
+    // and stay perfectly in sync.
+    //
+    // Visibility / focus state is deliberately IGNORED here.  The loop
+    // runs unconditionally while the tab exists — switching windows, other
+    // tabs coming to the foreground, or document.hidden being true are all
+    // irrelevant.  The only things that stop the loop are:
+    //   • stopTicking() called explicitly (manual pause, session end, reset)
+    //   • the game reaching an endgame state
+    //   • the tab being closed / page unloaded (timer is GC'd naturally)
+    //
+    // Max-catch-up cap: if the browser was heavily throttled (e.g. the tab
+    // was backgrounded for a long time) we cap the number of ticks that fire
+    // in a single callback so we never freeze the UI for seconds at a time.
+    // The existing passive-tick system in loadWorld already handles genuine
+    // "tab closed and reopened" catch-up; this cap only guards against
+    // in-session bursts.
+    const MAX_TICKS_PER_CALLBACK = 3
+
+    const loop = () => {
       const state = get().gameState
-      if (!state || state.endgame) return
-      if (get().isPaused) return
-      const nextState = tickSimulation(state)
-      const unread = nextState.messages.filter(m => !m.read).length
-      set({ gameState: nextState, unreadMessageCount: unread })
-    }, intervalMs)
-    set({ tickInterval: interval })
+      if (!state || state.endgame || get().isPaused) {
+        set({ tickInterval: null })
+        return
+      }
+
+      const now = Date.now()
+      const speed = get().simSpeed ?? 1
+      const tickMs = TICK_INTERVAL_MS / speed  // real ms per one simulation tick
+
+      // Seed the wall-clock anchor the first time (or after a speed change
+      // reset it via startTicking).
+      if (_lastTickWallMs === 0) _lastTickWallMs = now
+
+      const elapsed = now - _lastTickWallMs
+      const ticksOwed = Math.floor(elapsed / tickMs)
+
+      // If no full tick has elapsed yet just reschedule for the remainder.
+      if (ticksOwed === 0) {
+        const remaining = tickMs - (elapsed % tickMs)
+        set({ tickInterval: setTimeout(loop, Math.max(4, remaining)) })
+        return
+      }
+
+      // Apply up to MAX_TICKS_PER_CALLBACK ticks in this callback.
+      const ticksToRun = Math.min(ticksOwed, MAX_TICKS_PER_CALLBACK)
+      let current = state
+      for (let i = 0; i < ticksToRun; i++) {
+        if (current.endgame) break
+        current = tickSimulation(current)
+      }
+
+      // Advance the anchor by however many ticks we actually ran so any
+      // remaining debt carries forward to the next callback rather than
+      // being silently dropped.
+      _lastTickWallMs += ticksToRun * tickMs
+
+      const unread = current.messages.filter(m => !m.read).length
+      set({ gameState: current, unreadMessageCount: unread })
+
+      if (current.endgame) {
+        set({ tickInterval: null })
+        return
+      }
+
+      // Schedule the next callback for when the next tick will be due.
+      const nextIn = tickMs - ((Date.now() - _lastTickWallMs) % tickMs)
+      set({ tickInterval: setTimeout(loop, Math.max(4, nextIn)) })
+    }
+
+    // Reset the wall-clock anchor whenever startTicking is called fresh
+    // (new world, speed change, un-pause) so elapsed-time accounting starts
+    // clean and we don't inherit a stale gap from a previous loop run.
+    _lastTickWallMs = 0
+
+    loop()
   },
 
-  // stopTicking only clears the tick interval; it does NOT stop auto-save.
-  // Call stopAutoSave() explicitly where needed (markSessionEnd, resetWorld).
+  // stopTicking clears the pending timeout.  Does NOT touch auto-save —
+  // call stopAutoSave() explicitly where needed (markSessionEnd, resetWorld).
   stopTicking: () => {
-    const interval = get().tickInterval
-    if (interval) clearInterval(interval)
+    const handle = get().tickInterval
+    if (handle) clearTimeout(handle)
     set({ tickInterval: null })
+    _lastTickWallMs = 0
   },
 
   togglePause: () => {
@@ -266,8 +356,8 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     const next = !isPaused
     set({ isPaused: next })
     if (next) {
-      const interval = get().tickInterval
-      if (interval) clearInterval(interval)
+      const handle = get().tickInterval
+      if (handle) clearTimeout(handle)
       set({ tickInterval: null })
     } else if (gameState && !gameState.endgame) {
       get().startTicking()
@@ -278,9 +368,10 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     set({ simSpeed: speed })
     const { isPaused, gameState } = get()
     if (!isPaused && gameState && !gameState.endgame) {
-      // Restart interval with new period
+      // Clear the pending timeout; startTicking will reset _lastTickWallMs
+      // so there is no phantom elapsed-time debt at the new speed.
       const existing = get().tickInterval
-      if (existing) clearInterval(existing)
+      if (existing) clearTimeout(existing)
       set({ tickInterval: null })
       get().startTicking()
     }
@@ -309,15 +400,16 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     if (!state) return
     const now = Date.now()
     const cooldown = state.modifiers?.foodDropCooldownMs ?? FOOD_DROP_COOLDOWN_MS
-    if (now - state.caretaker.lastFoodDrop < cooldown) return  // short 0.5s anti-spam only
+    if (now - state.caretaker.lastFoodDrop < cooldown) return
 
-    const tiles = state.tiles.map(row => row.map(t => ({ ...t })))
-    const tile = tiles[y]?.[x]
-    if (!tile) return
-    if (tile.type === 'rock' || tile.type === 'river' || tile.type === 'flooded') return
+    const srcTile = state.tiles[y]?.[x]
+    if (!srcTile) return
+    if (srcTile.type === 'rock' || srcTile.type === 'river' || srcTile.type === 'flooded') return
 
-    tile.type = 'food_patch'
-    tile.foodAmount = FOOD_PER_PATCH
+    // Clone only the affected row (O(n) vs full O(n²) deep-clone of the 240×240 grid)
+    const tiles = state.tiles.slice()
+    tiles[y] = state.tiles[y].slice()
+    tiles[y][x] = { ...srcTile, type: 'food_patch', foodAmount: FOOD_PER_PATCH }
 
     set({
       gameState: {
@@ -331,13 +423,12 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
   plantTree: (x, y) => {
     const state = get().gameState
     if (!state) return
-    const tiles = state.tiles.map(row => row.map(t => ({ ...t })))
-    const tile = tiles[y]?.[x]
-    if (!tile || tile.type === 'rock' || tile.type === 'river') return
+    const srcTile = state.tiles[y]?.[x]
+    if (!srcTile || srcTile.type === 'rock' || srcTile.type === 'river') return
 
-    tile.type = 'tree'
-    tile.treeAge = 0
-    tile.shelter = false
+    const tiles = state.tiles.slice()
+    tiles[y] = state.tiles[y].slice()
+    tiles[y][x] = { ...srcTile, type: 'tree', treeAge: 0, shelter: false }
 
     set({ gameState: { ...state, tiles, caretaker: { ...state.caretaker, ...applyCaretakerPresence(state.caretaker, x, y) } } })
   },
@@ -365,26 +456,31 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     if (thunderCharges <= 0) return
     if (now - ct.lastThunder < THUNDER_COOLDOWN_MS) return
 
-    const tiles = state.tiles.map(row => row.map(t => ({ ...t })))
     const creatures = { ...state.creatures }
     const messages = [...state.messages]
 
     // Burn/clear tiles in radius, set lightningFlash for visual bolt effect
     const R = THUNDER_DAMAGE_RADIUS
     const strikeNow = Date.now()
+
+    // Clone only the rows touched by the strike radius (O(R) vs O(n²) full clone)
+    const tiles = state.tiles.slice()
+    for (let dy = -R; dy <= R; dy++) {
+      const ty = y + dy
+      if (ty >= 0 && ty < tiles.length) tiles[ty] = state.tiles[ty].slice()
+    }
+
     for (let dy = -R; dy <= R; dy++) {
       for (let dx = -R; dx <= R; dx++) {
         const tx = x + dx, ty = y + dy
         if (tx < 0 || tx >= tiles[0].length || ty < 0 || ty >= tiles.length) continue
         const t = tiles[ty][tx]
-        t.lightningFlash = strikeNow
         if (t.type === 'tree' || t.type === 'shelter') {
-          t.burning = FIRE_DURATION_TICKS
-          t.type = 'barren'
-          t.treeAge = -1
-          t.shelter = false
+          tiles[ty][tx] = { ...t, lightningFlash: strikeNow, burning: FIRE_DURATION_TICKS, type: 'barren', treeAge: -1, shelter: false }
         } else if (t.type === 'food_patch') {
-          t.foodAmount = 0
+          tiles[ty][tx] = { ...t, lightningFlash: strikeNow, foodAmount: 0 }
+        } else {
+          tiles[ty][tx] = { ...t, lightningFlash: strikeNow }
         }
       }
     }
@@ -458,8 +554,9 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     if (!tile) return
     if (tile.type !== 'tree' && tile.type !== 'shelter' && tile.type !== 'food_patch' && tile.type !== 'grass') return
 
-    const tiles = state.tiles.map(row => row.map(t => ({ ...t })))
-    tiles[y][x].burning = FIRE_DURATION_TICKS
+    const tiles = state.tiles.slice()
+    tiles[y] = state.tiles[y].slice()
+    tiles[y][x] = { ...tile, burning: FIRE_DURATION_TICKS }
 
     const messages = [...state.messages, {
       id: crypto.randomUUID?.() ?? `m-${now}`,
@@ -585,17 +682,36 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     set({ gameState: { ...state, creatures, events } })
   },
 
+  placeWater: (x, y) => {
+    const state = get().gameState
+    if (!state) return
+    const tile = state.tiles[y]?.[x]
+    if (!tile) return
+    if (tile.type === 'rock' || tile.type === 'mountain' || tile.type === 'cliff') return
+
+    const tiles = state.tiles.slice()
+    tiles[y] = state.tiles[y].slice()
+    tiles[y][x] = { ...tile, type: 'river', waterLevel: 100 }
+
+    set({
+      gameState: {
+        ...state,
+        tiles,
+        caretaker: { ...state.caretaker, ...applyCaretakerPresence(state.caretaker, x, y) },
+      }
+    })
+  },
+
   redirectRiver: (fromX, fromY, toX, toY) => {
     const state = get().gameState
     if (!state) return
     if (state.caretaker.riverRedirectUsed) return
 
-    const tiles = state.tiles.map(row => row.map(t => ({ ...t })))
-    if (tiles[fromY]?.[fromX]) tiles[fromY][fromX].type = 'mud'
-    if (tiles[toY]?.[toX]) {
-      tiles[toY][toX].type = 'river'
-      tiles[toY][toX].waterLevel = 100
-    }
+    const tiles = state.tiles.slice()
+    const rowsToCopy = new Set([fromY, toY].filter(r => r >= 0 && r < tiles.length))
+    for (const row of rowsToCopy) tiles[row] = state.tiles[row].slice()
+    if (state.tiles[fromY]?.[fromX]) tiles[fromY][fromX] = { ...state.tiles[fromY][fromX], type: 'mud' }
+    if (state.tiles[toY]?.[toX]) tiles[toY][toX] = { ...state.tiles[toY][toX], type: 'river', waterLevel: 100 }
 
     set({
       gameState: {

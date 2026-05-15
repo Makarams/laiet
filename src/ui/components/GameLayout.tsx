@@ -9,9 +9,7 @@ import { EventPopupLayer } from './EventPopup'
 import { Toolbar, Tool } from './Toolbar'
 import { updateMusicContext, computeMusicKey, setMuted, isMuted, unlockAudio } from '@/audio/chiptune'
 import { EnrichmentType } from '@/types'
-import { tickSimulation, computePassiveTicks, computeAbsenceHours } from '@/engine/tick'
-import { generateAbsenceMessage } from '@/engine/messages'
-import { startAutoSave, stopAutoSave as stopAS, saveToCloud } from '@/db/persistence'
+import { saveToCloud } from '@/db/persistence'
 import { THEME } from '@/ui/theme'
 
 // ─── Global Field Guide styles ────────────────────────────────────────────────
@@ -177,40 +175,16 @@ export function GameLayout() {
   const musicKey = useLaietStore(s => s.gameState ? computeMusicKey(s.gameState) : '')
   useEffect(()=>{if(muted)return;updateMusicContext(musicKey)},[musicKey,muted])
 
-  const suspendedByVisibility = useRef(false)
   useEffect(()=>{
     const handleVisibility = () => {
-      const store = useLaietStore.getState()
+      // Simulation keeps running in background — browsers throttle setTimeout to ~1Hz
+      // but the time-delta loop in startTicking catches up correctly on any callback.
+      // We only save to cloud when the tab hides so progress is preserved if the
+      // browser later terminates the tab entirely.
       if (document.hidden) {
-        if (store.tickInterval) {
-          suspendedByVisibility.current = true
-          store.stopTicking(); stopAS()
-          const state = store.gameState
-          if (state) {
-            const stamped = {...state, lastSessionEnd:Date.now()}
-            useLaietStore.setState({gameState:stamped})
-            saveToCloud(stamped).catch(()=>{})
-          }
-        }
-      } else {
-        if (!suspendedByVisibility.current) return
-        suspendedByVisibility.current = false
         const state = useLaietStore.getState().gameState
-        if (!state || state.endgame) return
-        const passiveTicks = computePassiveTicks(state.lastSessionEnd)
-        const hoursAway    = computeAbsenceHours(state.lastSessionEnd)
-        let advanced = state
-        for (let i=0;i<passiveTicks;i++){if(advanced.endgame)break;advanced=tickSimulation(advanced)}
-        if (hoursAway >= 0.5 && !advanced.endgame){
-          const msg=generateAbsenceMessage(hoursAway,advanced.awarenessStage)
-          msg.day=advanced.time.day
-          advanced={...advanced,messages:[...advanced.messages,msg].slice(-200)}
-        }
-        const unread=advanced.messages.filter(m=>!m.read).length
-        useLaietStore.setState({gameState:advanced,unreadMessageCount:unread})
-        if (!advanced.endgame){
-          useLaietStore.getState().startTicking()
-          startAutoSave(()=>useLaietStore.getState().gameState!,30_000)
+        if (state && !state.endgame) {
+          saveToCloud(state).catch(()=>{})
         }
       }
     }
@@ -234,7 +208,7 @@ export function GameLayout() {
       if(e.key==='1')setActiveTool('select')
       if(e.key==='2')setActiveTool('food')
       if(e.key==='3')setActiveTool('tree')
-      if(e.key==='4')setActiveTool('river')
+      if(e.key==='4')setActiveTool('water')
       if(e.key==='5')setActiveTool('thunder')
       if(e.key==='6')setActiveTool('fire')
       if(e.key==='7')setActiveTool('enrich')

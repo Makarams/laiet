@@ -21,7 +21,7 @@ export const DAY_PHASE_THRESHOLDS = {
 // ─── World ────────────────────────────────────────────────────────────────────
 export const WORLD_SIZE = 240                     // 240×240 for biome diversity, exploration, natural dispersion
 export const MUTATION_CHANCE = 0.15               // 15% per gene slot
-export const DEATH_SITE_DECAY_DAYS = 22           // death sites fade back to barren after this many game days
+export const DEATH_SITE_DECAY_DAYS = 10           // ~2 Spore generations; death sites clear quickly so the map stays readable
 
 // ─── Creature stats ───────────────────────────────────────────────────────────
 // Max age in ticks (1 tick = 1 second real time)
@@ -120,9 +120,17 @@ export const FIRE_TICK_DAMAGE      = 12           // health damage per tick stan
 export const CANNIBAL_HUNGER_THRESHOLD = 78       // must be desperately hungry
 export const CANNIBAL_HUNGER_RELIEF    = 38       // hunger drop from consuming a corpse
 export const CANNIBAL_STRESS_PENALTY   = 25       // long-term cost to the cannibal
-export const CANNIBAL_WITNESS_STRESS   = 10       // stress added to nearby observers
+export const CANNIBAL_WITNESS_STRESS   = 10       // stress added to nearby observers on the tick of witnessing
+export const CANNIBAL_TRAUMA_DURATION_DAYS  = 4   // game-days the elevated stress persists in witnesses
+export const CANNIBAL_TRAUMA_STRESS_PER_TICK = 0.25 // stress added per tick during trauma window
 
-export const DISEASE_POP_THRESHOLD     = 25       // overcrowding kicks in
+export const HUDDLE_WARMTH_BONUS = 0.03 // warmth per adjacent bonded creature in winter (max 3)
+export const WEATHER_BREED_MULT: Record<string, number> = {
+  clear: 1.00, rain: 1.10, storm: 0.90, drought: 0.65,
+}
+
+export const DISEASE_POP_THRESHOLD     = 50       // overcrowding kicks in (calibrated for 240×240)
+export const DISEASE_POP_SLOPE_RANGE   = 95       // denominator for popFactor slope; minimum (0.20) reached at threshold + this value
 export const DISEASE_CONTACT_CHANCE    = 0.0018   // per tick when crowded
 export const DISEASE_HEALTH_DRAIN      = 0.3      // extra health loss per tick when sick
 
@@ -345,6 +353,26 @@ export const ISO_TILE_HEIGHT = 9
 export const CANVAS_PADDING_X = 50
 export const CANVAS_PADDING_Y = 55
 
+// ─── Vegetation caps ──────────────────────────────────────────────────────────
+// Prevent runaway tree/bush stacking. New growth only occurs when the world
+// is below these counts, so older plants must die before new ones can take root.
+export const VEG_TREE_CAP  = 250   // max (tree + shelter) tiles world-wide
+export const VEG_BUSH_CAP  = 400   // max bush tiles world-wide
+
+// ─── River erosion ────────────────────────────────────────────────────────────
+// Very slow terrain shift over long play sessions. During storms, rivers
+// occasionally widen into adjacent grass. During drought, isolated shallow
+// rivers can dry to mud. Both effects compound over many seasons.
+export const RIVER_EROSION_CHANCE = 0.00003  // storm: adjacent grass → river per tick
+export const RIVER_DRYING_CHANCE  = 0.00008  // drought: low-water isolated river → mud per tick
+
+// ─── Early-generation cohesion ────────────────────────────────────────────────
+// Gen 0-2 creatures have a homing bias toward the nearest living creature.
+// This keeps the founding colony together long enough to bond and reproduce,
+// preventing early dispersal that prevents first-generation breeding.
+export const EARLY_GEN_MAX            = 2    // apply cohesion up to and including this generation
+export const EARLY_GEN_COHESION_RADIUS = 28  // tile radius to search for nearest creature
+
 // ─── Vegetation lifecycle ─────────────────────────────────────────────────────
 // Trees have a finite productive lifespan. After TREE_PEAK_AGE ticks they enter
 // a declining phase, dropping fruit less often. At TREE_WITHER_AGE they stop
@@ -374,12 +402,22 @@ export const PUDDLE_FORM_THRESHOLD = 0.65   // water accumulation 0–1 on a gra
 export const PUDDLE_ACCUMULATE_RATE = 0.008 // per tick during rain/storm
 export const PUDDLE_EVAPORATE_RATE  = 0.012 // per tick in clear/drought
 export const PUDDLE_FLOW_CHANCE     = 0.008 // chance a puddle tile flows to adjacent lower tile
-export const PUDDLE_RIVER_THRESHOLD = 0.90  // water level at which puddle becomes a river tile
+
 export const RIVER_OVERFLOW_CHANCE  = 0.003 // rain causes rivers to overflow to adjacent grass
 
 // Creature behaviour near puddles
 export const PUDDLE_THIRST_RELIEF   = 8.0   // thirst reduced per tick when drinking from puddle
 export const PUDDLE_MOVE_MODIFIER   = 0.75  // movement speed on puddle tile (slippery)
+
+// ─── Solar warmth recovery ────────────────────────────────────────────────────
+// Warmth restored per tick when on temperate or arid biome during clear daytime.
+// Partially offsets the baseline warmth drain without fully negating it.
+export const SOLAR_WARMTH_BONUS = 0.010
+
+// ─── Bond grief decay ────────────────────────────────────────────────────────
+// Bonds toward dead creatures fade at this rate per tick, reaching 0 in ~5 game-days.
+// Models a grief arc: survivors mourn then gradually detach and re-bond with the living.
+export const DEAD_BOND_FADE_PER_TICK = 0.35
 
 // ─── Snow ─────────────────────────────────────────────────────────────────────
 // Snow only occurs during winter in cold biomes (rocky, temperate) or anywhere
@@ -395,3 +433,9 @@ export const SNOW_FOOD_COVER_FACTOR = 0.0   // food invisible to creatures when 
 export const SNOW_VISIBILITY_REDUCE = 0.50  // renderer alpha on snow-covered food tiles
 // Biomes that can accumulate snow (wetland stays wetter, arid rarely gets snow)
 export const SNOW_BIOMES = ['temperate','rocky','lush'] as const
+
+// ─── Race lineage & latent ancestry ──────────────────────────────────────────
+export const LATENT_REVIVAL_BASE    = 0.025  // 2.5% base revival chance per latent race
+export const LATENT_DEPTH_BONUS     = 0.003  // +0.3% per extra generation dormant
+export const LATENT_MAX_DEPTH       = 25     // prune ancestry beyond this depth
+export const LATENT_DOMINANT_WEIGHT = 0.70   // probability offspring expresses dominant parent's race

@@ -1,5 +1,5 @@
 import {
-  Creature, Tile, ThoughtSymbol, Season, EnrichmentItem
+  Creature, Tile, ThoughtSymbol, Season, WeatherState, EnrichmentItem
 } from '@/types'
 import {
   HUNGER_DECAY, THIRST_DECAY, WARMTH_DECAY_BASE, WARMTH_DECAY_WINTER,
@@ -13,6 +13,8 @@ import {
   PLAY_TRIGGER_SATISFACTION, PLAY_PARTNER_RADIUS,
   ENRICHMENT_USE_RADIUS, ENRICHMENT_EFFECTS, ENRICHMENT_COOLDOWN_TICKS,
   HEALROOT_SEEK_HEALTH, HEALROOT_HEAL_PER_USE, HEALROOT_CONSUME_AMOUNT,
+  EARLY_GEN_MAX, EARLY_GEN_COHESION_RADIUS,
+  WEATHER_BREED_MULT,
 } from '@/engine/constants'
 import { findNearestTileOfType, findNearestInIndex, getTile, isTilePassable, TileTypeIndex } from '@/world/worldGen'
 import { tickSentience } from './factory'
@@ -31,7 +33,12 @@ export function tickNeeds(creature: Creature, season: Season, biome?: string): C
   c.sentience = tickSentience(c)
 
   c.needSatisfaction = computeNeedSatisfaction(c)
-  c.stress = Math.min(100, c.stress + (c.needSatisfaction < 30 ? 0.5 : -STRESS_DECAY_BASE))
+  let stressDelta = c.needSatisfaction < 30 ? 0.5 : -STRESS_DECAY_BASE
+  // Stoic halves stress accumulation; they stay calm under pressure
+  if (c.genome.personality === 'Stoic') stressDelta = Math.min(0, stressDelta) * 0.5 + Math.max(0, stressDelta) * 0.5
+  // Ash race is adapted to harsh terrain; slight passive stress bleed
+  if (c.genome.race === 'Ash') stressDelta = Math.min(stressDelta, stressDelta - 0.06)
+  c.stress = Math.min(100, c.stress + stressDelta)
 
   // Health damage from critical stats
   let healthDamage = 0
@@ -86,6 +93,24 @@ function computeNeedSatisfaction(c: Creature): number {
       break
     case 'Recluse':
       traitPenalty = c.stress > 45 ? 20 : 0  // crowding stress cascades to satisfaction
+      break
+    case 'Hoarder':
+      traitPenalty = c.hunger > 20 ? 18 : 0  // never satisfied unless well-stocked
+      break
+    case 'Empath':
+      traitPenalty = c.stress > 40 ? 12 : 0  // mirrors nearby stress; hard to ignore
+      break
+    case 'Furtive':
+      traitPenalty = c.stress > 35 ? 15 : 0  // open exposure is inherently stressful
+      break
+    case 'Territorial':
+      traitPenalty = c.territoryClaim === null ? 18 : 0  // must hold ground to feel settled
+      break
+    case 'Social':
+      traitPenalty = c.bonds.length < 2 ? 20 : 0  // low-bond state feels deeply wrong
+      break
+    case 'Stoic':
+      traitPenalty = 0  // need satisfaction is never penalised by personality
       break
   }
 
@@ -302,7 +327,7 @@ export function tickBehavior(
     case 'Curious':
       // Explores within a bounded range; curious, not migrating across the world
       if (!targetSet && (c.targetX === null || Math.random() < 0.025)) {
-        const range = 30
+        const range = c.generation <= EARLY_GEN_MAX ? 12 : 30
         for (let attempt = 0; attempt < 6; attempt++) {
           const tx = Math.max(0, Math.min(WORLD_SIZE - 1, c.x + Math.floor(Math.random() * (range * 2 + 1)) - range))
           const ty = Math.max(0, Math.min(WORLD_SIZE - 1, c.y + Math.floor(Math.random() * (range * 2 + 1)) - range))
@@ -475,6 +500,130 @@ export function tickBehavior(
         }
       }
       break
+
+    case 'Hoarder':
+      // Pre-emptively seek food at all times; stays near the richest patches
+      if (!targetSet && c.hunger > 15 && Math.random() < 0.09) {
+        const foodTile = findNearest(['food_patch', 'bush'], 12)
+        if (foodTile && foodTile.foodAmount > 15) {
+          changes.state = 'seeking_food'
+          changes.targetX = foodTile.x
+          changes.targetY = foodTile.y
+          targetSet = true
+        }
+      }
+      // Wanders within a close range; reluctant to leave their stash area
+      if (!targetSet && c.targetX === null && Math.random() < 0.05) {
+        const range = 6
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const tx = Math.max(0, Math.min(WORLD_SIZE - 1, c.x + Math.floor(Math.random() * (range * 2 + 1)) - range))
+          const ty = Math.max(0, Math.min(WORLD_SIZE - 1, c.y + Math.floor(Math.random() * (range * 2 + 1)) - range))
+          if (tiles[ty]?.[tx] && isTilePassable(tiles[ty][tx])) {
+            changes.state = 'wandering'
+            changes.targetX = tx
+            changes.targetY = ty
+            targetSet = true
+            break
+          }
+        }
+      }
+      break
+
+    case 'Empath': {
+      // Seeks out stressed or sick creatures and moves toward them
+      const stressedPeer = aliveCreatures.find(
+        o => o.id !== c.id && (o.stress > 60 || o.state === 'sick')
+          && Math.abs(o.x - c.x) <= 14 && Math.abs(o.y - c.y) <= 14
+      )
+      if (!targetSet && stressedPeer && Math.random() < 0.07) {
+        changes.state = 'bonding'
+        changes.targetX = stressedPeer.x
+        changes.targetY = stressedPeer.y
+        targetSet = true
+      }
+      break
+    }
+
+    case 'Furtive':
+      // Avoids open ground; seeks concealment tiles (bush, tree, cave)
+      if (!targetSet && Math.random() < 0.10) {
+        const hideTile = findNearest(['bush', 'tree', 'shelter', 'cave'], 10)
+        if (hideTile) {
+          changes.state = 'wandering'
+          changes.targetX = hideTile.x
+          changes.targetY = hideTile.y
+          targetSet = true
+        }
+      }
+      break
+
+    case 'Territorial':
+      // Claim food or resource tiles; defend with aggression like Aggressive but narrower
+      if (!c.territoryClaim && Math.random() < 0.010) {
+        const here = tiles[c.y]?.[c.x]
+        if (here && (here.type === 'food_patch' || here.type === 'bush' || here.type === 'river')) {
+          changes.territoryClaim = { x: c.x, y: c.y }
+        }
+      }
+      // Patrol their claimed tile; chase off intruders from any lineage
+      if (!targetSet && c.territoryClaim && Math.random() < 0.08) {
+        const intruder = aliveCreatures.find(
+          o => o.id !== c.id
+            && Math.abs(o.x - c.territoryClaim!.x) <= 4
+            && Math.abs(o.y - c.territoryClaim!.y) <= 4
+        )
+        if (intruder) {
+          changes.state = 'fighting'
+          changes.targetX = intruder.x
+          changes.targetY = intruder.y
+          targetSet = true
+        }
+      }
+      // Return to claim zone when drifting away
+      if (!targetSet && c.territoryClaim) {
+        const dx = Math.abs(c.x - c.territoryClaim.x)
+        const dy = Math.abs(c.y - c.territoryClaim.y)
+        if (dx + dy > 6 && Math.random() < 0.06) {
+          changes.state = 'wandering'
+          changes.targetX = c.territoryClaim.x
+          changes.targetY = c.territoryClaim.y
+          targetSet = true
+        }
+      }
+      break
+
+    case 'Social': {
+      // Maximises bonds; actively seeks any creature to be near
+      const anyPeer = aliveCreatures.find(
+        o => o.id !== c.id
+          && Math.abs(o.x - c.x) <= 14 && Math.abs(o.y - c.y) <= 14
+      )
+      if (!targetSet && anyPeer && Math.random() < 0.09) {
+        changes.state = 'bonding'
+        changes.targetX = anyPeer.x
+        changes.targetY = anyPeer.y
+        targetSet = true
+      }
+      break
+    }
+
+    case 'Stoic':
+      // Low displacement; steady moderate wander with no panic or rush
+      if (!targetSet && c.targetX === null && Math.random() < 0.05) {
+        const range = 10
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const tx = Math.max(0, Math.min(WORLD_SIZE - 1, c.x + Math.floor(Math.random() * (range * 2 + 1)) - range))
+          const ty = Math.max(0, Math.min(WORLD_SIZE - 1, c.y + Math.floor(Math.random() * (range * 2 + 1)) - range))
+          if (tiles[ty]?.[tx] && isTilePassable(tiles[ty][tx])) {
+            changes.state = 'wandering'
+            changes.targetX = tx
+            changes.targetY = ty
+            targetSet = true
+            break
+          }
+        }
+      }
+      break
   }
 
   // ── 5.5. Terrain affinity; body type draws creatures toward their preferred environment ──
@@ -492,6 +641,24 @@ export function tickBehavior(
       if (t) { changes.state = 'wandering'; changes.targetX = t.x; changes.targetY = t.y; targetSet = true }
     } else if (c.genome.body === 'Spike') {
       const t = findNearest(['food_patch', 'barren'], 20)
+      if (t) { changes.state = 'wandering'; changes.targetX = t.x; changes.targetY = t.y; targetSet = true }
+    }
+  }
+
+  // ── 5.6. Race terrain affinity; ancestral lineage shapes habitat preference ──
+  if (!targetSet && c.genome.race && Math.random() < 0.05) {
+    const race = c.genome.race
+    if (race === 'Burrow' || race === 'Pale') {
+      const t = findNearest(['cave'], 20)
+      if (t) { changes.state = 'wandering'; changes.targetX = t.x; changes.targetY = t.y; targetSet = true }
+    } else if (race === 'Tide') {
+      const t = findNearest(['river', 'mud'], 20)
+      if (t) { changes.state = 'wandering'; changes.targetX = t.x; changes.targetY = t.y; targetSet = true }
+    } else if (race === 'Ash') {
+      const t = findNearest(['barren'], 20)
+      if (t) { changes.state = 'wandering'; changes.targetX = t.x; changes.targetY = t.y; targetSet = true }
+    } else if (race === 'Bloom') {
+      const t = findNearest(['food_patch', 'bush'], 20)
       if (t) { changes.state = 'wandering'; changes.targetX = t.x; changes.targetY = t.y; targetSet = true }
     }
   }
@@ -531,14 +698,48 @@ export function tickBehavior(
     }
   }
 
+  // ── 6.5. Early-generation cohesion; gen 0-2 colonies stay together to bond ──
+  // Without this, founders disperse before forming the bonds needed for reproduction.
+  // This homing bias fades once they reach generation 3+.
+  if (!targetSet && c.generation <= EARLY_GEN_MAX && Math.random() < 0.15) {
+    const cohesionTarget = aliveCreatures.find(
+      o => o.id !== c.id
+        && Math.abs(o.x - c.x) <= EARLY_GEN_COHESION_RADIUS
+        && Math.abs(o.y - c.y) <= EARLY_GEN_COHESION_RADIUS
+    )
+    if (cohesionTarget) {
+      const jitter = 4
+      const tx = Math.max(0, Math.min(WORLD_SIZE - 1,
+        cohesionTarget.x + Math.floor(Math.random() * (jitter * 2 + 1)) - jitter))
+      const ty = Math.max(0, Math.min(WORLD_SIZE - 1,
+        cohesionTarget.y + Math.floor(Math.random() * (jitter * 2 + 1)) - jitter))
+      if (tiles[ty]?.[tx] && isTilePassable(tiles[ty][tx])) {
+        changes.state = 'wandering'
+        changes.targetX = tx
+        changes.targetY = ty
+        targetSet = true
+      }
+    }
+  }
+
   // ── 7. Default idle wander — high chance so creatures are almost always moving ──
   if (!targetSet && c.targetX === null && Math.random() < 0.68) {
-    const range = c.genome.personality === 'Lazy' ? 5
+    const baseRange = c.genome.personality === 'Lazy' ? 5
       : c.genome.personality === 'Timid' ? 7
       : c.genome.personality === 'Curious' ? 30
       : c.genome.personality === 'Wanderer' ? 35
       : c.genome.personality === 'Recluse' ? 16
+      : c.genome.personality === 'Furtive' ? 5
+      : c.genome.personality === 'Stoic' ? 10
+      : c.genome.personality === 'Social' ? 10
+      : c.genome.personality === 'Hoarder' ? 6
+      : c.genome.personality === 'Empath' ? 12
+      : c.genome.personality === 'Territorial' ? 8
       : 16
+    // Drift race roams farther; built for wide-range dispersal
+    const raceMult = c.genome.race === 'Drift' ? 1.5 : 1.0
+    // Early-gen creatures stay closer to the group while bonding is still forming
+    const range = Math.round((c.generation <= EARLY_GEN_MAX ? Math.min(baseRange, 12) : baseRange) * raceMult)
     for (let attempt = 0; attempt < 6; attempt++) {
       const tx = Math.max(0, Math.min(WORLD_SIZE - 1,
         c.x + Math.floor(Math.random() * (range * 2 + 1)) - range))
@@ -670,18 +871,21 @@ export function tickBehavior(
   // ── 8. Bond-seeking; mature non-Aggressive creatures without bonds seek partners ──
   // Recluses never actively seek bonds (solitude is their nature).
   // Wanderers seek bonds only rarely (too mobile to commit).
+  // Social creatures seek bonds much more aggressively (0.14 base chance).
   if (!targetSet
     && c.genome.personality !== 'Aggressive'
     && c.genome.personality !== 'Recluse'
+    && c.genome.personality !== 'Territorial'
     && c.bonds.filter(b => b.strength >= REPRODUCE_BOND_MIN_STRENGTH).length === 0
     && c.age >= CREATURE_MATURITY_TICKS
     && c.hunger < 55
-    && Math.random() < (c.genome.personality === 'Wanderer' ? 0.02 : 0.07)) {
+    && Math.random() < (c.genome.personality === 'Social' ? 0.14 : c.genome.personality === 'Wanderer' ? 0.02 : 0.07)) {
+    const bondRadius = aliveCreatures.length < 6 ? 40 : 18
     const potential = aliveCreatures.find(
       other => other.id !== c.id
         && other.genome.personality !== 'Aggressive'
         && other.genome.personality !== 'Recluse'
-        && Math.abs(other.x - c.x) <= 18 && Math.abs(other.y - c.y) <= 18
+        && Math.abs(other.x - c.x) <= bondRadius && Math.abs(other.y - c.y) <= bondRadius
     )
     if (potential) {
       changes.state = 'bonding'
@@ -700,7 +904,8 @@ export function tickBehavior(
 
   if (nearby.length > 0 && Math.random() < 0.015
       && c.genome.personality !== 'Aggressive'
-      && c.genome.personality !== 'Recluse') {
+      && c.genome.personality !== 'Recluse'
+      && c.genome.personality !== 'Territorial') {
     changes.state = 'bonding'
   }
 
@@ -720,7 +925,7 @@ export function tickMovement(creature: Creature, tiles: Tile[][]): Partial<Creat
   // Tile type modulates movement: forests slow, open ground speeds, impassable = 0
   const currentTileType = tiles[c.y]?.[c.x]?.type ?? 'grass'
   const tileMod = TILE_MOVE_MODIFIER[currentTileType] ?? 1.0
-  const moveChance = Math.min(0.96, (0.32 + speed * 0.32) * tileMod)
+  const moveChance = Math.min(0.85, speed * 0.32 * tileMod)
   if (Math.random() > moveChance) return {}
 
   const dx = Math.sign(c.targetX - c.x)
@@ -798,7 +1003,7 @@ export function drinkFromTile(creature: Creature, tile: Tile): Creature {
 //
 // Population pressure: pass in `populationFactor` (1.0 = healthy, scales down
 // toward 0 as the colony overshoots carrying capacity). Caller computes it.
-export function canReproduce(c: Creature, season: Season, populationFactor = 1.0): boolean {
+export function canReproduce(c: Creature, season: Season, populationFactor = 1.0, weather: WeatherState = 'clear'): boolean {
   if (c.age < CREATURE_MATURITY_TICKS) return false
   if (c.hunger > 55) return false
   if (c.health < 55) return false
@@ -806,8 +1011,9 @@ export function canReproduce(c: Creature, season: Season, populationFactor = 1.0
   if (!c.bonds.some(b => b.strength >= REPRODUCE_BOND_MIN_STRENGTH)) return false
 
   const seasonBonus = SEASON_MODIFIERS[season].breedBonus
+  const weatherMult = WEATHER_BREED_MULT[weather] ?? 1.0
   const baseRate = REPRODUCE_RATE_BY_BODY[c.genome.body]
-  return Math.random() < baseRate * seasonBonus * populationFactor
+  return Math.random() < baseRate * seasonBonus * populationFactor * weatherMult
 }
 
 export function canAsexuallyReproduce(c: Creature, season: Season, populationFactor = 1.0): boolean {
@@ -853,19 +1059,45 @@ export function resolveFight(
   attacker: Creature,
   defender: Creature
 ): { attacker: Creature; defender: Creature; attackerWon: boolean } {
-  const aPower = FIGHT_POWER_BY_BODY[attacker.genome.body] + Math.random() * 0.5
-  const dPower = FIGHT_POWER_BY_BODY[defender.genome.body] + Math.random() * 0.5
+  const apexBonus = (c: Creature) => c.genome.race === 'Apex' ? 0.5 : 0
 
+  // Deterministic base powers drive the decisiveness calculation;
+  // random jitter is added separately so outcome still has uncertainty.
+  const baseA = FIGHT_POWER_BY_BODY[attacker.genome.body] + apexBonus(attacker)
+  const baseD = FIGHT_POWER_BY_BODY[defender.genome.body] + apexBonus(defender)
+  const aPower = baseA + Math.random() * 0.5
+  const dPower = baseD + Math.random() * 0.5
   const attackerWon = aPower > dPower
-  const damage = Math.floor(Math.random() * 30 + 10)
+
+  // Decisiveness: how lopsided is the power gap?
+  // 0 = equal-strength fight; 1 = maximum mismatch (e.g. Spike vs Spore).
+  // Decisive fights end quickly with less total harm to both sides.
+  // Contested fights are attritional and costly to both parties.
+  const winBase  = Math.max(baseA, baseD)
+  const loseBase = Math.min(baseA, baseD)
+  const ratio        = winBase / Math.max(0.1, loseBase)
+  const decisiveness = Math.min(1, (ratio - 1) / 4)   // 0..1
+
+  // Loser damage range: equal fight 10–35, decisive fight 5–15
+  const loserMin    = Math.round(10 - decisiveness * 5)
+  const loserMax    = Math.round(35 - decisiveness * 20)
+  const loserDamage = loserMin + Math.floor(Math.random() * (loserMax - loserMin + 1))
+
+  // Winner damage range: equal fight 0–15, decisive fight 0–3
+  const winnerMax    = Math.round(15 - decisiveness * 12)
+  const winnerDamage = Math.floor(Math.random() * (winnerMax + 1))
 
   return {
     attackerWon,
     attacker: attackerWon
-      ? { ...attacker, killCount: attacker.killCount + 1 }
-      : { ...attacker, health: Math.max(0, attacker.health - damage), stress: Math.min(100, attacker.stress + 20) },
+      ? { ...attacker, killCount: attacker.killCount + 1,
+          health: Math.max(0, attacker.health - winnerDamage) }
+      : { ...attacker, health: Math.max(0, attacker.health - loserDamage),
+          stress: Math.min(100, attacker.stress + 20) },
     defender: attackerWon
-      ? { ...defender, health: Math.max(0, defender.health - damage), stress: Math.min(100, defender.stress + 20) }
-      : { ...defender, killCount: defender.killCount + 1 },
+      ? { ...defender, health: Math.max(0, defender.health - loserDamage),
+          stress: Math.min(100, defender.stress + 20) }
+      : { ...defender, killCount: defender.killCount + 1,
+          health: Math.max(0, defender.health - winnerDamage) },
   }
 }

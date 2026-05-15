@@ -1,8 +1,14 @@
 // ─── Genetics ────────────────────────────────────────────────────────────────
 
-export type PersonalityTrait = 'Curious' | 'Timid' | 'Aggressive' | 'Lazy' | 'Greedy' | 'Nurturing' | 'Wanderer' | 'Recluse'
+export type PersonalityTrait =
+  | 'Curious' | 'Timid' | 'Aggressive' | 'Lazy' | 'Greedy' | 'Nurturing' | 'Wanderer' | 'Recluse'
+  | 'Hoarder' | 'Empath' | 'Furtive' | 'Territorial' | 'Social' | 'Stoic'
 export type BodyTrait = 'Spore' | 'Shell' | 'Spike' | 'Wisp'
 export type MindTrait = 'Feral' | 'Aware' | 'Dreaming' | 'Sentinel'
+
+// Ancestral racial lineage; persists across generations and can re-emerge
+// from latent ancestry even after a race has been absent for many generations.
+export type RaceTrait = 'Kin' | 'Drift' | 'Burrow' | 'Apex' | 'Pale' | 'Tide' | 'Bloom' | 'Ash'
 
 // Heritable accumulated evolutionary traits; small per-generation drift lets
 // each lineage develop a visually distinct morphological profile over time.
@@ -21,6 +27,8 @@ export interface Genome {
   mind: MindTrait
   morphSeed: number          // 0..1; per-lineage shape asymmetry seed (blob shape, asym offsets)
   morphology: MorphologyTraits // heritable accumulated evolutionary traits; drifts each generation
+  race?: RaceTrait                                    // ancestral lineage; optional for backward compat
+  latentAncestry?: Partial<Record<RaceTrait, number>> // dormant race → generations-dormant counter
 }
 
 // ─── Creature ─────────────────────────────────────────────────────────────────
@@ -114,6 +122,9 @@ export interface Creature {
   // enrichment state
   enrichmentTarget?: string   // id of enrichment item being used
   lastEnrichmentTick?: number // sim tick when creature last used enrichment (cooldown)
+
+  // cannibal trauma; game-day until which witness stress persists above baseline
+  traumaUntil?: number
 
   // community & speech
   role?: CommunityRole        // assigned when tribe forms or colony grows
@@ -331,7 +342,7 @@ export type EventAction =
 export interface ExtinctionRecord {
   id: string
   extinctionDay: number
-  extinctionCause: 'neglect' | 'war' | 'drought' | 'flood'
+  extinctionCause: 'neglect' | 'war' | 'drought' | 'flood' | 'winter' | 'starvation'
   peakPopulation: number
   generationsReached: number
   finalMessage: string | null
@@ -438,6 +449,10 @@ export interface GameState {
   weather: WeatherState
   weatherTimer: number  // game days remaining in this weather phase
   snowAccumulation: number  // 0-100; global snow coverage percent (derived from tile depths)
+
+  // race population tracking; optional for backward compat with pre-race saves
+  racePopulations?: Partial<Record<RaceTrait, number>>  // alive count per race (updated each tick)
+  extinctRaces?: RaceTrait[]                            // races seen alive but now at 0
 
   // stats
   totalCreaturesEver: number

@@ -75,8 +75,8 @@ const TraitBadge = styled.span<{ $color: string }>`
 
 const StatRow = styled.div`display:flex;align-items:center;gap:7px;margin-bottom:5px;`
 const StatLabel = styled.span`
-  font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.15em;
-  color:${THEME.textTertiary};width:52px;flex-shrink:0;
+  font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;
+  color:${THEME.textTertiary};width:66px;flex-shrink:0;
 `
 const BarTrack = styled.div`flex:1;height:4px;background:${THEME.bgDeep};border-radius:2px;overflow:hidden;`
 const BarFill = styled.div<{ $w: number; $color: string }>`
@@ -187,6 +187,7 @@ export function DossierPanel() {
   const creature  = selectedId ? gameState?.creatures[selectedId] : null
   const caretaker = gameState?.caretaker
 
+  // ── Empty / dead state ────────────────────────────────────────────────────
   if (!creature || creature.diedOnDay !== null) {
     const alive = gameState ? Object.values(gameState.creatures).filter(c => c.diedOnDay === null) : []
     const maxGen = alive.length > 0 ? Math.max(...alive.map(c => c.generation)) : 0
@@ -199,7 +200,10 @@ export function DossierPanel() {
           <PanelTitle><ActiveDot />Field Record</PanelTitle>
           <PanelTag>SBJ ···</PanelTag>
         </PanelHeader>
-        <Empty>{selectedId ? 'Subject deceased ; record closed' : 'No subject selected'}<br />click a specimen to open record</Empty>
+        <Empty>
+          {selectedId ? 'Subject deceased · record closed' : 'No subject selected'}
+          <br />click a specimen to open record
+        </Empty>
         {alive.length > 0 && (
           <Section style={{ marginTop:'1.5rem' }}>
             <SectionTitle>Colony</SectionTitle>
@@ -216,73 +220,138 @@ export function DossierPanel() {
     )
   }
 
+  // ── Derived values ────────────────────────────────────────────────────────
   const color = creatureColor(creature.genome.body)
-  const topBonds = [...creature.bonds]
-    .filter(b => gameState?.creatures[b.targetId]?.diedOnDay === null)
-    .sort((a,b) => b.strength - a.strength)
-    .slice(0, 4)
+
+  const parentA = creature.parentIds[0] ? (gameState?.creatures[creature.parentIds[0]] ?? null) : null
+  const parentB = creature.parentIds[1] ? (gameState?.creatures[creature.parentIds[1]] ?? null) : null
+  const isProgenitor = !creature.parentIds[0] && !creature.parentIds[1]
+
+  const aliveBonds = creature.bonds.filter(b => gameState?.creatures[b.targetId]?.diedOnDay === null)
+  const topBonds   = [...aliveBonds].sort((a, b) => b.strength - a.strength).slice(0, 4)
 
   return (
     <Panel>
+
+      {/* ── Header ──────────────────────────────────────────────────────── */}
       <PanelHeader>
         <PanelTitle><ActiveDot />Field Record</PanelTitle>
         <PanelTag>SBJ-{creature.id.slice(0,4).toUpperCase()}</PanelTag>
       </PanelHeader>
 
+      {/* ── Identity ────────────────────────────────────────────────────── */}
       <CreatureName $color={color}>{creature.name} {creature.familyName}</CreatureName>
-      <IdLine>Gen {creature.generation} · Age {creature.age}d / {creature.maxAge}d · ({creature.x},{creature.y})</IdLine>
+      <IdLine>
+        Gen {creature.generation}
+        {' · '}
+        {creature.lineageId.slice(0,4).toUpperCase()} line
+        {' · '}
+        age {creature.age}d / {creature.maxAge}d
+      </IdLine>
       <StateLine>
         <StateLabel>Activity</StateLabel>
         <StateValue>{STATE_LABELS[creature.state] ?? creature.state}</StateValue>
       </StateLine>
 
+      {/* ── Lineage ─────────────────────────────────────────────────────── */}
+      <Section>
+        <SectionTitle>Lineage</SectionTitle>
+        {isProgenitor ? (
+          <div style={{ fontSize:11, color:THEME.textTertiary, fontStyle:'italic', padding:'3px 0' }}>
+            progenitor · world seed
+          </div>
+        ) : (
+          <>
+            {([parentA, parentB] as const).map((parent, idx) => {
+              if (!parent) return null
+              const pColor = creatureColor(parent.genome.body)
+              const dead   = parent.diedOnDay !== null
+              return (
+                <Row key={idx}>
+                  <Label>{idx === 0 ? 'Parent A' : 'Parent B'}</Label>
+                  <div style={{ display:'flex', alignItems:'baseline', gap:5 }}>
+                    <Value $color={dead ? THEME.textTertiary : pColor}>
+                      {parent.name} {parent.familyName}
+                    </Value>
+                    <span style={{ fontSize:9, color:THEME.textTertiary, letterSpacing:'0.05em' }}>
+                      g{parent.generation}{dead ? ' †' : ''}
+                    </span>
+                  </div>
+                </Row>
+              )
+            })}
+            {/* Asexual offspring: only one parent */}
+            {parentA && !parentB && (
+              <div style={{ fontSize:10, color:THEME.textTertiary, fontStyle:'italic', padding:'2px 0' }}>
+                single-parent division
+              </div>
+            )}
+          </>
+        )}
+      </Section>
+
+      {/* ── Biology ─────────────────────────────────────────────────────── */}
       <Section>
         <SectionTitle>Biology</SectionTitle>
         <TraitRow>
           <TraitBadge $color={color}>{creature.genome.personality}</TraitBadge>
           <TraitBadge $color={THEME.shell}>{creature.genome.body}</TraitBadge>
           <TraitBadge $color="#c878f0">{creature.genome.mind}</TraitBadge>
+          {creature.genome.race && (
+            <TraitBadge $color="#8060c0">{creature.genome.race}</TraitBadge>
+          )}
         </TraitRow>
-        {creature.recentMutation !== undefined && creature.mutatedTraits && creature.mutatedTraits.length > 0 && (
+        {creature.genome.race
+          && creature.genome.latentAncestry
+          && Object.keys(creature.genome.latentAncestry).length > 0 && (
+          <div style={{ color:'#604890', fontSize:9, marginTop:2, letterSpacing:'0.08em' }}>
+            latent: {Object.entries(creature.genome.latentAncestry).map(([r, d]) => `${r}(${d})`).join(' · ')}
+          </div>
+        )}
+        {creature.recentMutation !== undefined
+          && creature.mutatedTraits
+          && creature.mutatedTraits.length > 0 && (
           <div style={{ marginTop:5, padding:'3px 8px',
             background:'rgba(100,181,246,0.08)', border:`1px solid ${THEME.water}44`,
             borderRadius:4, fontSize:10, color:THEME.water, letterSpacing:'0.1em', fontWeight:600 }}>
             ⚡ mutated: {creature.mutatedTraits.join(', ')}
           </div>
         )}
-        <div style={{ color:THEME.textTertiary, fontSize:10, lineHeight:1.6, marginTop:4 }}>
+        <div style={{ color:THEME.textTertiary, fontSize:10, lineHeight:1.6, marginTop:5 }}>
           {describeGenome(creature.genome)}
         </div>
       </Section>
 
+      {/* ── Vitals ──────────────────────────────────────────────────────── */}
       <Section>
         <SectionTitle>Vitals</SectionTitle>
-        {caretaker && caretaker.healCharges > 0 && creature.health < 80 && (
+        {caretaker && caretaker.healCharges > 0 && creature.health < 50 && (
           <HealBtn onClick={() => healCreature(creature.id)}>
-            Heal ; {caretaker.healCharges} charge{caretaker.healCharges !== 1 ? 's' : ''} left
+            Heal · {caretaker.healCharges} charge{caretaker.healCharges !== 1 ? 's' : ''} left
           </HealBtn>
         )}
-        <StatBarRow label="Health"   value={creature.health}
+        <StatBarRow label="Health"    value={creature.health}
           barColor={creature.health < 30 ? THEME.threat : creature.health < 60 ? THEME.amber : THEME.alive}
           accent={creature.health < 30 ? THEME.threat : undefined} />
-        <StatBarRow label="Hunger"   value={creature.hunger}
+        <StatBarRow label="Hunger"    value={creature.hunger}
           barColor={creature.hunger > 70 ? THEME.threat : THEME.amber}
           accent={creature.hunger > 70 ? THEME.threat : undefined} />
-        <StatBarRow label="Thirst"   value={creature.thirst}
+        <StatBarRow label="Thirst"    value={creature.thirst}
           barColor={creature.thirst > 70 ? THEME.water : `${THEME.water}66`}
           accent={creature.thirst > 70 ? THEME.water : undefined} />
-        <StatBarRow label="Warmth"   value={creature.warmth}
+        <StatBarRow label="Warmth"    value={creature.warmth}
           barColor={creature.warmth < 25 ? THEME.water : '#c49840'}
           accent={creature.warmth < 25 ? THEME.water : undefined} />
-        <StatBarRow label="Stress"   value={creature.stress}
+        <StatBarRow label="Stress"    value={creature.stress}
           barColor={creature.stress > 70 ? THEME.death : THEME.borderMid}
           accent={creature.stress > 70 ? THEME.death : undefined} />
         <StatBarRow label="Sentience" value={creature.sentience}
           barColor="#c878f044" accent="#c878f0" />
       </Section>
 
+      {/* ── Bonds ───────────────────────────────────────────────────────── */}
       <Section>
-        <SectionTitle>Bonds · {creature.bonds.length}</SectionTitle>
+        <SectionTitle>Bonds · {aliveBonds.length}</SectionTitle>
         {topBonds.length === 0
           ? <div style={{ fontSize:11, color:THEME.textTertiary, fontStyle:'italic', padding:'3px 0' }}>no recorded bonds</div>
           : (
@@ -298,18 +367,11 @@ export function DossierPanel() {
                 )
               })}
             </BondList>
-          )}
+          )
+        }
       </Section>
 
-      <Section>
-        <SectionTitle>Descent</SectionTitle>
-        <Row><Label>Offspring</Label><Value $color={THEME.alive}>{creature.offspringIds.length}</Value></Row>
-        <Row><Label>Transmissions</Label><Value>{creature.messagesSent}</Value></Row>
-        <Row><Label>Kills</Label>
-          <Value $color={creature.killCount > 0 ? THEME.death : undefined}>{creature.killCount}</Value>
-        </Row>
-      </Section>
-
+      {/* ── Form ────────────────────────────────────────────────────────── */}
       <Section>
         <SectionTitle>Form</SectionTitle>
         {(() => {
@@ -325,7 +387,24 @@ export function DossierPanel() {
         })()}
       </Section>
 
+      {/* ── Record ──────────────────────────────────────────────────────── */}
+      <Section>
+        <SectionTitle>Record</SectionTitle>
+        <Row><Label>Offspring</Label><Value $color={THEME.alive}>{creature.offspringIds.length}</Value></Row>
+        <Row><Label>Transmissions</Label><Value>{creature.messagesSent}</Value></Row>
+        <Row>
+          <Label>Kills</Label>
+          <Value $color={creature.killCount > 0 ? THEME.death : undefined}>{creature.killCount}</Value>
+        </Row>
+        <Row>
+          <Label>Born day</Label>
+          <Value $color={THEME.textSecondary}>{creature.bornOnDay}</Value>
+        </Row>
+      </Section>
+
+      {/* ── Monologue ───────────────────────────────────────────────────── */}
       <Monologue>{generateMonologue(creature)}</Monologue>
+
     </Panel>
   )
 }

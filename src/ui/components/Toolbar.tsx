@@ -116,7 +116,7 @@ const WEATHER_COLOR: Record<string, string> = { clear: THEME.amber, rain: THEME.
 const SEASON_COLOR: Record<string, string> = { spring: THEME.spring, summer: THEME.summer, autumn: THEME.autumn, winter: THEME.winter }
 const PHASE_COLOR: Record<string, string> = { dawn:'#ffc070', day: THEME.textPrimary, dusk: THEME.threat, night: THEME.water }
 
-export type Tool = 'select' | 'food' | 'tree' | 'river' | 'thunder' | 'fire' | 'enrich'
+export type Tool = 'select' | 'food' | 'tree' | 'water' | 'thunder' | 'fire' | 'enrich'
 
 const ENRICHMENT_OPTIONS: { type: EnrichmentType; label: string; hint: string }[] = [
   { type: 'resting_spot',    label: 'Rest site',     hint: 'stress↓ warmth↑' },
@@ -167,7 +167,7 @@ export function Toolbar({
     { key: 'select',  label: 'Observe',  hotkey: '1' },
     { key: 'food',    label: 'Feed',     hotkey: '2' },
     { key: 'tree',    label: 'Plant',    hotkey: '3' },
-    { key: 'river',   label: 'Divert',   hotkey: '4' },
+    { key: 'water',   label: 'Water',    hotkey: '4' },
     { key: 'thunder', label: 'Strike',   hotkey: '5', charge: { used: thunderCharges, max: THUNDER_CHARGES_PER_DAY } },
     { key: 'fire',    label: 'Ignite',   hotkey: '6', charge: { used: fireCharges,    max: FIRE_CHARGES_PER_DAY } },
   ]

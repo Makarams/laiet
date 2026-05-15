@@ -43,7 +43,7 @@ export function resetCanvasState(ctx: CanvasRenderingContext2D): void {
 // Colors are warm and saturated enough to be readable on a dark background.
 
 const TILE_COLORS: Record<TileType, { top: string; left: string; right: string }> = {
-  grass:      { top: '#2e6018', left: '#1e4010', right: '#16300c' },
+  grass:      { top: '#3c7820', left: '#264e14', right: '#1c3a10' },
   tree:       { top: '#1e5222', left: '#143818', right: '#0d2812' },
   shelter:    { top: '#265c2c', left: '#1a3e1e', right: '#132e16' },
   river:      { top: '#1e4e74', left: '#103252', right: '#082238' },
@@ -55,7 +55,7 @@ const TILE_COLORS: Record<TileType, { top: string; left: string; right: string }
   death_site: { top: '#4e1c24', left: '#36121a', right: '#280c12' },
   mountain:   { top: '#5e5c72', left: '#44425a', right: '#323046' },
   cave:       { top: '#201e2c', left: '#16141e', right: '#0e0c16' },
-  cliff:      { top: '#3e3c52', left: '#2c2a3e', right: '#201e2c' },
+  cliff:      { top: '#524e68', left: '#3c3850', right: '#2c2a3e' },
   bush:       { top: '#1a4016', left: '#112a0e', right: '#0c1e0a' },
   healroot:   { top: '#2c3c1a', left: '#1e2c12', right: '#162008' },
 }
@@ -200,6 +200,21 @@ function drawTileDecoration(
       const withering = age >= TREE_PEAK_AGE && age < TREE_DECAY_AGE
       const decaying  = age >= TREE_DECAY_AGE
 
+      // Sapling (age < 30): thin stick with tiny leaf buds, clearly pre-juvenile
+      if (age < 30 && !tile.shelter) {
+        ctx.fillStyle = '#5a4020'
+        ctx.fillRect(cx - 0.8 * s, cy - 4 * s, 1.4 * s, 4 * s)
+        const budColor = season === 'winter' ? '#2a3e30' : '#4a8830'
+        const buds: [number, number][] = [[0, -4.5 * s], [-1.8 * s, -3 * s], [1.8 * s, -3.2 * s]]
+        for (const [bx, by] of buds) {
+          ctx.fillStyle = budColor
+          ctx.beginPath()
+          ctx.arc(cx + bx, cy + by, 1.2 * s, 0, Math.PI * 2)
+          ctx.fill()
+        }
+        break
+      }
+
       // Decayed trees render as a mossy stump, not a full tree
       if (decaying) {
         ctx.fillStyle = '#2a1a0a'
@@ -324,36 +339,31 @@ function drawTileDecoration(
       ctx.ellipse(cx, cy + s, 7 * s, 3 * s, 0, 0, Math.PI * 2)
       ctx.fill()
 
-      // Apple dots ; colour shifts brownish as fruit ages/decays
+      // Fallen fruit dots — warm amber/gold tones that decay to brown;
+      // generic rather than apple-specific (no stems, rounder, yellower)
       const freshness  = Math.max(0, 1 - decayTint)
-      const appleR     = Math.round(204 - decayTint * 80)
-      const appleG     = Math.round(40  + decayTint * 60)
-      const appleB     = Math.round(40  - decayTint * 30)
-      const appleColor = `rgb(${appleR},${appleG},${appleB})`
-      const hlR        = Math.round(255 - decayTint * 100)
-      const hlG        = Math.round(80  + decayTint * 80)
+      const fruitR     = Math.round(210 - decayTint * 70)
+      const fruitG     = Math.round(130 - decayTint * 60)
+      const fruitB     = Math.round(30  - decayTint * 20)
+      const fruitColor = `rgb(${fruitR},${fruitG},${fruitB})`
+      const hlR        = Math.round(255 - decayTint * 80)
+      const hlG        = Math.round(200 - decayTint * 100)
       const hlB        = Math.round(80)
-      const appleHighlight = `rgb(${hlR},${hlG},${hlB})`
+      const fruitHighlight = `rgb(${hlR},${hlG},${hlB})`
 
       const offsets: [number, number][] = [[-5*s, 0], [0, -2*s], [5*s, s], [-2*s, 3*s], [4*s, -1.5*s]]
       for (const [ox, oy] of offsets) {
         if (Math.abs(ox) + Math.abs(oy) < fullness * 12 * s + 3 * s) {
-          ctx.fillStyle = appleColor
+          ctx.fillStyle = fruitColor
           ctx.beginPath()
-          ctx.arc(cx + ox, cy + oy, 2.2 * s, 0, Math.PI * 2)
+          ctx.arc(cx + ox, cy + oy, 2.0 * s, 0, Math.PI * 2)
           ctx.fill()
           if (freshness > 0.3) {
-            ctx.fillStyle = appleHighlight
+            ctx.fillStyle = fruitHighlight
             ctx.beginPath()
-            ctx.arc(cx + ox - 0.5 * s, cy + oy - 0.5 * s, 0.7 * s, 0, Math.PI * 2)
+            ctx.arc(cx + ox - 0.45 * s, cy + oy - 0.45 * s, 0.65 * s, 0, Math.PI * 2)
             ctx.fill()
           }
-          ctx.strokeStyle = '#5a3a10'
-          ctx.lineWidth = 0.5
-          ctx.beginPath()
-          ctx.moveTo(cx + ox, cy + oy - 2.2 * s)
-          ctx.lineTo(cx + ox, cy + oy - 3.0 * s)
-          ctx.stroke()
         }
       }
 
@@ -473,6 +483,12 @@ function drawTileDecoration(
       const glowPhase = (Date.now() / 2200) % (Math.PI * 2)
       const innerGlow = 0.28 + Math.sin(glowPhase) * 0.08
 
+      // Stone collar: visible lighter ring marking the cave entrance clearly
+      ctx.fillStyle = '#3e3860'
+      ctx.beginPath()
+      ctx.ellipse(cx, cy - 2 * s, 7.2 * s, 5.5 * s, 0, 0, Math.PI * 2)
+      ctx.fill()
+
       // Outer rocky rim
       ctx.fillStyle = '#22203a'
       ctx.beginPath()
@@ -554,15 +570,41 @@ function drawTileDecoration(
       const dropH = (6 + (elev - 0.4) * 12) * s
       const w2 = 7 * s
 
+      // Shadow face (right/east — away from isometric light source)
       ctx.fillStyle = '#181526'
       ctx.beginPath()
-      ctx.moveTo(cx - w2, cy + 1 * s)
+      ctx.moveTo(cx, cy + 1 * s)
       ctx.lineTo(cx + w2, cy + 1 * s)
       ctx.lineTo(cx + w2 * 0.6, cy - dropH)
+      ctx.lineTo(cx, cy - dropH)
+      ctx.closePath()
+      ctx.fill()
+
+      // Lit face (left/west — toward isometric light source)
+      ctx.fillStyle = '#3a3658'
+      ctx.beginPath()
+      ctx.moveTo(cx - w2, cy + 1 * s)
+      ctx.lineTo(cx, cy + 1 * s)
+      ctx.lineTo(cx, cy - dropH)
       ctx.lineTo(cx - w2 * 0.6, cy - dropH)
       ctx.closePath()
       ctx.fill()
 
+      // Bright top-ledge highlight (catches the most light)
+      ctx.strokeStyle = 'rgba(160, 155, 210, 0.88)'
+      ctx.lineWidth = 1.2
+      ctx.beginPath()
+      ctx.moveTo(cx - w2 * 0.6, cy - dropH)
+      ctx.lineTo(cx + w2 * 0.6, cy - dropH)
+      ctx.stroke()
+
+      // Base ground shadow
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.28)'
+      ctx.beginPath()
+      ctx.ellipse(cx, cy + 2.5 * s, w2 * 0.7, 1.5 * s, 0, 0, Math.PI * 2)
+      ctx.fill()
+
+      // Strata lines
       ctx.strokeStyle = 'rgba(90, 80, 130, 0.55)'
       ctx.lineWidth = 0.6
       for (let i = 1; i <= 3; i++) {
@@ -574,6 +616,7 @@ function drawTileDecoration(
         ctx.stroke()
       }
 
+      // Base edge line
       ctx.strokeStyle = 'rgba(140, 130, 170, 0.70)'
       ctx.lineWidth = 0.8
       ctx.beginPath()
@@ -642,85 +685,175 @@ function drawTileDecoration(
     case 'bush': {
       // bs ensures foliage is visible at all zoom levels; at default zoom (s=0.5), bs=1.0
       const bs = Math.max(1.0, s * 2)
-      const foodLevel = Math.max(0, Math.min(1, tile.foodAmount / 35))
+      const foodLevel = Math.max(0, Math.min(1, (tile.foodAmount ?? 0) / 35))
+      // foodAmount proxies maturity: depleted/winter = sparse/juvenile, full = dense/mature
+      const maturity = foodLevel
       const isWinter = season === 'winter'
       const isAutumn = season === 'autumn'
 
-      // Ground shadow
+      // Ground shadow scales with current size
       ctx.fillStyle = 'rgba(0, 0, 0, 0.22)'
       ctx.beginPath()
-      ctx.ellipse(cx, cy + 0.5 * bs, 6 * bs, 2.2 * bs, 0, 0, Math.PI * 2)
+      ctx.ellipse(cx, cy + 0.5 * bs, (3 + maturity * 3) * bs, (1.2 + maturity) * bs, 0, 0, Math.PI * 2)
       ctx.fill()
 
       if (isWinter) {
-        // Bare winter skeleton ; sparse crossing branches
-        ctx.strokeStyle = 'rgba(45, 55, 38, 0.75)'
-        ctx.lineWidth = Math.max(0.9, bs * 0.7)
+        if (maturity < 0.22) {
+          // Juvenile winter: barely-visible 1-2 sticks
+          ctx.strokeStyle = 'rgba(35, 45, 28, 0.45)'
+          ctx.lineWidth = Math.max(0.4, bs * 0.35)
+          ctx.beginPath()
+          ctx.moveTo(cx, cy + 0.5 * bs)
+          ctx.lineTo(cx, cy - 2 * bs)
+          ctx.moveTo(cx - 1.5 * bs, cy + 0.3 * bs)
+          ctx.lineTo(cx + 0.5 * bs, cy - 1.5 * bs)
+          ctx.stroke()
+        } else {
+          // Mature winter skeleton: sparse crossing branches
+          ctx.strokeStyle = 'rgba(45, 55, 38, 0.75)'
+          ctx.lineWidth = Math.max(0.9, bs * 0.7)
+          ctx.beginPath()
+          ctx.moveTo(cx - 4 * bs, cy + 0.5 * bs)
+          ctx.lineTo(cx + 0.5 * bs, cy - 3 * bs)
+          ctx.moveTo(cx, cy + 0.5 * bs)
+          ctx.lineTo(cx, cy - 3.5 * bs)
+          ctx.moveTo(cx + 3.5 * bs, cy + 0.5 * bs)
+          ctx.lineTo(cx - 2 * bs, cy - 3 * bs)
+          ctx.stroke()
+          ctx.strokeStyle = 'rgba(35, 45, 28, 0.55)'
+          ctx.lineWidth = Math.max(0.5, bs * 0.4)
+          ctx.beginPath()
+          ctx.moveTo(cx + 0.5 * bs, cy - 3 * bs)
+          ctx.lineTo(cx + 2.5 * bs, cy - 4.5 * bs)
+          ctx.moveTo(cx + 0.5 * bs, cy - 3 * bs)
+          ctx.lineTo(cx - 0.5 * bs, cy - 4.5 * bs)
+          ctx.moveTo(cx, cy - 3.5 * bs)
+          ctx.lineTo(cx + 2 * bs, cy - 5 * bs)
+          ctx.stroke()
+        }
+      } else if (maturity < 0.22) {
+        // Juvenile: thin stem + 2-3 tiny bud circles
+        ctx.fillStyle = '#4a3818'
+        ctx.fillRect(cx - 0.35 * bs, cy - 1.8 * bs, 0.7 * bs, 1.8 * bs)
+        const budColor = isAutumn ? '#4a5020' : '#2e7018'
+        const buds: [number, number][] = [[0, -2 * bs], [-1.3 * bs, -1.1 * bs], [1.2 * bs, -1.3 * bs]]
+        for (const [bx, by] of buds) {
+          ctx.fillStyle = budColor
+          ctx.beginPath()
+          ctx.arc(cx + bx, cy + by, 0.95 * bs, 0, Math.PI * 2)
+          ctx.fill()
+        }
+      } else if (maturity < 0.60) {
+        // Growing: 2-3 medium overlapping ellipses sized proportionally to maturity
+        const g = 0.55 + maturity * 0.75
+        const bushColor = isAutumn ? '#4a5020' : '#1e5a1a'
+        ctx.fillStyle = bushColor
         ctx.beginPath()
-        ctx.moveTo(cx - 4 * bs, cy + 0.5 * bs)
-        ctx.lineTo(cx + 0.5 * bs, cy - 3 * bs)
-        ctx.moveTo(cx, cy + 0.5 * bs)
-        ctx.lineTo(cx, cy - 3.5 * bs)
-        ctx.moveTo(cx + 3.5 * bs, cy + 0.5 * bs)
-        ctx.lineTo(cx - 2 * bs, cy - 3 * bs)
-        ctx.stroke()
-        // Thin branch tips
-        ctx.strokeStyle = 'rgba(35, 45, 28, 0.55)'
-        ctx.lineWidth = Math.max(0.5, bs * 0.4)
+        ctx.ellipse(cx, cy - 1.5 * bs * g, 3.5 * bs * g, 2.5 * bs * g, 0, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.fillStyle = isAutumn ? '#333a12' : '#175212'
         ctx.beginPath()
-        ctx.moveTo(cx + 0.5 * bs, cy - 3 * bs)
-        ctx.lineTo(cx + 2.5 * bs, cy - 4.5 * bs)
-        ctx.moveTo(cx + 0.5 * bs, cy - 3 * bs)
-        ctx.lineTo(cx - 0.5 * bs, cy - 4.5 * bs)
-        ctx.moveTo(cx, cy - 3.5 * bs)
-        ctx.lineTo(cx + 2 * bs, cy - 5 * bs)
-        ctx.stroke()
+        ctx.ellipse(cx + 1.8 * bs * g, cy - 0.8 * bs * g, 2.4 * bs * g, 1.8 * bs * g, 0.35, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.fillStyle = 'rgba(100, 190, 80, 0.10)'
+        ctx.beginPath()
+        ctx.ellipse(cx - 0.5 * bs, cy - 2.5 * bs * g, 1.5 * bs * g, bs * g, -0.3, 0, Math.PI * 2)
+        ctx.fill()
       } else {
-        // Main foliage mass ; center is above tile surface so it reads as vegetation
+        // Mature: full dense design
         const bushColor = isAutumn ? '#4a5020' : '#1e5a1a'
         ctx.fillStyle = bushColor
         ctx.beginPath()
         ctx.ellipse(cx, cy - 2 * bs, 5 * bs, 3.5 * bs, 0, 0, Math.PI * 2)
         ctx.fill()
-
-        // Secondary leaf cluster (creates depth and asymmetry)
         ctx.fillStyle = isAutumn ? '#333a12' : '#175212'
         ctx.beginPath()
         ctx.ellipse(cx + 2.5 * bs, cy - 1 * bs, 3.5 * bs, 2.6 * bs, 0.35, 0, Math.PI * 2)
         ctx.fill()
-
-        // Third micro cluster
         ctx.fillStyle = isAutumn ? '#585e28' : '#226618'
         ctx.beginPath()
         ctx.ellipse(cx - 2.2 * bs, cy - 2.5 * bs, 2.4 * bs, 1.8 * bs, -0.2, 0, Math.PI * 2)
         ctx.fill()
-
-        // Canopy highlight ; catches light from upper-left
         ctx.fillStyle = 'rgba(100, 190, 80, 0.13)'
         ctx.beginPath()
         ctx.ellipse(cx - 1 * bs, cy - 3.5 * bs, 2.5 * bs, 1.5 * bs, -0.3, 0, Math.PI * 2)
         ctx.fill()
+        if (!isAutumn && foodLevel > 0.2) {
+          ctx.fillStyle = `rgba(200, 60, 80, ${0.28 * foodLevel})`
+          ctx.beginPath()
+          ctx.ellipse(cx + 0.5 * bs, cy - 1.8 * bs, 2 * bs * foodLevel, 1.4 * bs * foodLevel, 0.1, 0, Math.PI * 2)
+          ctx.fill()
+        }
+      }
+      break
+    }
 
-        // Berries ; spring/summer/autumn when food level > 0.1
-        if (foodLevel > 0.1) {
-          const berryColor = isAutumn ? '#cc6030' : '#cc2828'
-          const berryGlow  = isAutumn ? '#ff9060' : '#ff5050'
-          const berryPos: [number, number][] = [
-            [-3.5 * bs, -0.5 * bs], [0.5 * bs, -2.5 * bs], [3 * bs, 0.5 * bs],
-            [-1 * bs,    bs],        [3.5 * bs, -2 * bs],
-          ]
-          for (const [bx, by] of berryPos) {
-            if (Math.abs(bx) + Math.abs(by) < foodLevel * 10 * bs + 2.5 * bs) {
-              ctx.fillStyle = berryColor
-              ctx.beginPath()
-              ctx.arc(cx + bx, cy + by, 1.6 * bs, 0, Math.PI * 2)
-              ctx.fill()
-              ctx.fillStyle = berryGlow
-              ctx.beginPath()
-              ctx.arc(cx + bx - 0.4 * bs, cy + by - 0.4 * bs, 0.55 * bs, 0, Math.PI * 2)
-              ctx.fill()
-            }
-          }
+    case 'healroot': {
+      // Distinct medicinal herb patch — teal-green with small star-shaped rosette fronds.
+      // Potency (0-100) controls how lush the patch looks.
+      const potency = Math.max(0, Math.min(1, (tile.healrootAmount ?? 0) / 100))
+      if (potency < 0.05) break  // fully depleted; nothing to show
+
+      const hs = Math.max(0.8, s * 1.6)
+
+      // Soft ground glow — teal-tinted earth
+      ctx.fillStyle = `rgba(20, 80, 70, ${0.30 * potency})`
+      ctx.beginPath()
+      ctx.ellipse(cx, cy + hs, 5.5 * hs, 2 * hs, 0, 0, Math.PI * 2)
+      ctx.fill()
+
+      // Draw 3-5 rosette fronds radiating from center
+      const frondCount = Math.round(3 + potency * 2)
+      const frondColor = season === 'winter'
+        ? `rgba(40, 90, 80, ${0.6 * potency})`
+        : `rgba(30, 160, 130, ${0.85 * potency})`
+      const tipColor = season === 'winter'
+        ? `rgba(60, 110, 95, ${0.5 * potency})`
+        : `rgba(90, 220, 180, ${0.75 * potency})`
+
+      const frondPositions: [number, number, number][] = [
+        [0,        -3 * hs,  0.0],
+        [-2.5*hs,  -1.5*hs, -0.6],
+        [ 2.5*hs,  -1.5*hs,  0.6],
+        [-1.5*hs,   1.5*hs, -0.3],
+        [ 1.5*hs,   1.5*hs,  0.3],
+      ]
+      for (let i = 0; i < frondCount; i++) {
+        const [fx, fy, tilt] = frondPositions[i]
+        // Stem
+        ctx.strokeStyle = frondColor
+        ctx.lineWidth = Math.max(0.6, hs * 0.55)
+        ctx.beginPath()
+        ctx.moveTo(cx, cy)
+        ctx.lineTo(cx + fx, cy + fy)
+        ctx.stroke()
+        // Leaf blade — small filled teardrop
+        ctx.save()
+        ctx.translate(cx + fx, cy + fy)
+        ctx.rotate(tilt)
+        ctx.fillStyle = frondColor
+        ctx.beginPath()
+        ctx.ellipse(0, 0, hs * 0.9, hs * 1.6, 0, 0, Math.PI * 2)
+        ctx.fill()
+        // Vein highlight
+        ctx.strokeStyle = tipColor
+        ctx.lineWidth = Math.max(0.4, hs * 0.35)
+        ctx.beginPath()
+        ctx.moveTo(0, hs * 1.4)
+        ctx.lineTo(0, -hs * 1.4)
+        ctx.stroke()
+        ctx.restore()
+      }
+
+      // Tiny healing-glow dots when potency is high
+      if (potency > 0.5 && season !== 'winter') {
+        const glowAlpha = (potency - 0.5) * 0.9
+        ctx.fillStyle = `rgba(120, 255, 200, ${glowAlpha})`
+        const glowPos: [number,number][] = [[-2*hs,-2.5*hs],[2.5*hs,-1*hs],[-0.5*hs,1.5*hs]]
+        for (const [gx, gy] of glowPos) {
+          ctx.beginPath()
+          ctx.arc(cx + gx, cy + gy, 0.55 * hs, 0, Math.PI * 2)
+          ctx.fill()
         }
       }
       break

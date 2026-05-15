@@ -1,5 +1,5 @@
 import { v4 as uuid } from 'uuid'
-import { Creature, ColonyMessage, MessageStage, MindTrait } from '@/types'
+import { Creature, ColonyMessage, MessageStage, MindTrait, RaceTrait } from '@/types'
 import { MIN_GAME_DAYS_BETWEEN_MESSAGES } from '@/engine/constants'
 
 // ─── Message pools ────────────────────────────────────────────────────────────
@@ -18,6 +18,19 @@ const STAGE_1_MESSAGES = [
   'extended stillness across the colony. no threat identified',
   'a member entered the water and remained for an unusual duration',
   'the light shifted. all members paused simultaneously',
+  'weather changed direction mid-cycle. movement patterns adjusted',
+  'two members held proximity for an extended period. no apparent need driving it',
+  'the river level is lower than it was at this time last season',
+  'a section of ground near the eastern edge was avoided by all members today',
+  'one member remained at the boundary for longer than feeding or water behaviour would explain',
+  'the oldest member of the colony has not moved from the rock formation in two cycles',
+  'offspring count increased faster than resource pressure would normally allow',
+  'a location that previously held food no longer does. no cause identified',
+  'three members converged on a single point simultaneously from different directions',
+  'the cave entrance has seen more activity than usual this cycle. temperature drop expected',
+  'something moved at the northern edge at night. no member confirmed to be missing',
+  'territorial markers are overlapping at the river bend. dispute probability elevated',
+  'the youngest members are ranging further than previous generations at this age',
 ]
 
 const STAGE_2_MESSAGES = [
@@ -219,4 +232,65 @@ export function extinctionMessage(finalCreature: Creature | null): string {
 
 export function ascensionMessage(): string {
   return 'cohort has breached containment threshold. forty-two generations. the observation is complete.'
+}
+
+// ─── Race revival messages ────────────────────────────────────────────────────
+// Emitted when a race transitions from 0 alive back to ≥ 1. Stage-gated.
+
+const RACE_REVIVAL_STAGE1: Partial<Record<RaceTrait, string[]>> = {
+  Kin:   ['a cluster of kin-lineage markings reappeared. dormant for many generations.'],
+  Drift: ['a subject displaying drift-lineage dispersal behaviour was recorded. previously absent.'],
+  Burrow:['a subject returned to subterranean passages. the burrow line was believed gone.'],
+  Apex:  ['apex-lineage combat pattern detected. the lineage was recorded as extinct.'],
+  Pale:  ['pale colouration noted in a new subject. this line had not appeared for many generations.'],
+  Tide:  ['tide-lineage river affinity re-emerged. the pattern was absent for several generations.'],
+  Bloom: ['bloom-lineage reproduction rate spike recorded. the lineage has resurfaced.'],
+  Ash:   ['barren-zone ranging observed in a new subject. ash lineage re-recorded.'],
+}
+
+const RACE_REVIVAL_STAGE2: Partial<Record<RaceTrait, string[]>> = {
+  Kin:   ['{name} carries markings we recognise. a line we thought ended has not.'],
+  Drift: ['something in {name} moves like the ones who used to leave and not return. the drift line is back.'],
+  Burrow:['{name} went underground. the burrow line returned before we understood it had gone.'],
+  Apex:  ['{name} fights with a precision we had not seen in some time. the apex line remembered.'],
+  Pale:  ['{name} is pale in a way we know. we counted this line gone. we were wrong.'],
+  Tide:  ['{name} will not leave the river. the tide line has come back.'],
+  Bloom: ['{name} produced offspring at a rate the colony had not seen. the bloom line persists.'],
+  Ash:   ['{name} walks into the barren. the ash line has returned.'],
+}
+
+const RACE_REVIVAL_STAGE3: Partial<Record<RaceTrait, string[]>> = {
+  Kin:   ['the kin line was gone for a long time. now it is here. we are reconsidering our count.'],
+  Drift: ['the drift line did not disappear. it was waiting in the latency. {name} proved it.'],
+  Burrow:['the burrow line is back. it was never fully absent. it was encoded, waiting.'],
+  Apex:  ['the apex line resurfaced in {name}. this is not coincidence. this is the genome remembering.'],
+  Pale:  ['we told ourselves the pale line was extinct. {name} has corrected the record.'],
+  Tide:  ['the tide line came back through {name}. we are revising what we thought extinction meant.'],
+  Bloom: ['bloom resurfaced. the genome held it for {name} across the gap. we have no other explanation.'],
+  Ash:   ['the ash line is not extinct. it was latent. {name} ended the dormancy.'],
+}
+
+export function generateRaceRevivalMessage(
+  race: RaceTrait,
+  awarenessStage: MessageStage,
+  currentDay: number,
+  creatureName?: string,
+): ColonyMessage {
+  const pool =
+    awarenessStage === 3 ? (RACE_REVIVAL_STAGE3[race] ?? RACE_REVIVAL_STAGE2[race] ?? RACE_REVIVAL_STAGE1[race]) :
+    awarenessStage === 2 ? (RACE_REVIVAL_STAGE2[race] ?? RACE_REVIVAL_STAGE1[race]) :
+    RACE_REVIVAL_STAGE1[race]
+
+  const raw = pool ? pool[Math.floor(Math.random() * pool.length)] : `${race.toLowerCase()} lineage re-recorded.`
+  const text = creatureName ? raw.replace('{name}', creatureName) : raw
+
+  return {
+    id: uuid(),
+    text,
+    stage: awarenessStage,
+    creatureId: null,
+    day: currentDay,
+    timestamp: Date.now(),
+    read: false,
+  }
 }

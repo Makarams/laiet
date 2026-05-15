@@ -17,7 +17,7 @@ export function drawAtmosphere(
   height: number,
   weather: WeatherState,
   phase: DayPhase,
-  _season: Season
+  season: Season
 ): void {
   const now = Date.now()
 
@@ -103,17 +103,25 @@ export function drawAtmosphere(
 
   // ── Drought ──────────────────────────────────────────────────────────────────
   } else if (weather === 'drought') {
-    const baseAlpha = phase === 'night' ? 0.020 : phase === 'day' ? 0.055 : 0.035
-    const shimmer = Math.sin(now / 900) * 0.012
-    ctx.fillStyle = `rgba(220, 160, 40, ${baseAlpha + shimmer})`
-    ctx.fillRect(0, 0, width, height)
-
-    // Ground shimmer bands ; only legible during day and dusk
-    if (phase === 'day' || phase === 'dusk') {
-      ctx.fillStyle = 'rgba(255, 180, 60, 0.022)'
-      for (let i = 0; i < 4; i++) {
-        const bandY = height * (0.55 + i * 0.12) + Math.sin(now / 700 + i) * 4
-        ctx.fillRect(0, bandY, width, 6)
+    if (season === 'winter') {
+      // Frost-drought: cold dry air with no warmth; suppress the amber haze entirely.
+      // Renders as a faint grey-blue chill layer consistent with frozen winter skies.
+      const baseAlpha = phase === 'night' ? 0.010 : 0.024
+      ctx.fillStyle = `rgba(160, 185, 210, ${baseAlpha})`
+      ctx.fillRect(0, 0, width, height)
+    } else {
+      // Warm drought: amber shimmer and heat-band distortion
+      const baseAlpha = phase === 'night' ? 0.020 : phase === 'day' ? 0.055 : 0.035
+      const shimmer = Math.sin(now / 900) * 0.012
+      ctx.fillStyle = `rgba(220, 160, 40, ${baseAlpha + shimmer})`
+      ctx.fillRect(0, 0, width, height)
+      // Ground shimmer bands; only legible during day and dusk
+      if (phase === 'day' || phase === 'dusk') {
+        ctx.fillStyle = 'rgba(255, 180, 60, 0.022)'
+        for (let i = 0; i < 4; i++) {
+          const bandY = height * (0.55 + i * 0.12) + Math.sin(now / 700 + i) * 4
+          ctx.fillRect(0, bandY, width, 6)
+        }
       }
     }
   }
@@ -133,7 +141,10 @@ export function drawAtmosphere(
     if (weather === 'rain' || weather === 'storm') {
       ctx.fillStyle = 'rgba(120, 140, 180, 0.06)'
     } else if (weather === 'drought') {
-      ctx.fillStyle = 'rgba(240, 155, 55, 0.11)'
+      // Frost-drought in winter uses a cold pale dawn; no amber haze
+      ctx.fillStyle = season === 'winter'
+        ? 'rgba(180, 205, 225, 0.07)'
+        : 'rgba(240, 155, 55, 0.11)'
     } else if (weather === 'snow') {
       ctx.fillStyle = 'rgba(180, 210, 245, 0.08)'  // cool blue-white dawn through snow
     } else {
@@ -144,7 +155,10 @@ export function drawAtmosphere(
     if (weather === 'rain' || weather === 'storm') {
       ctx.fillStyle = 'rgba(100, 80, 120, 0.07)'
     } else if (weather === 'drought') {
-      ctx.fillStyle = 'rgba(210, 90, 60, 0.12)'
+      // Frost-drought in winter: cold steel dusk, not orange
+      ctx.fillStyle = season === 'winter'
+        ? 'rgba(140, 165, 200, 0.09)'
+        : 'rgba(210, 90, 60, 0.12)'
     } else if (weather === 'snow') {
       ctx.fillStyle = 'rgba(140, 170, 210, 0.07)'  // cold purple dusk in snow
     } else {

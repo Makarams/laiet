@@ -455,20 +455,25 @@ export function drawCreature(
     }
   }
 
+  // ── Thought symbol ────────────────────────────────────────────────────────
+  // Drawn first so it sits closest to the body; the speech bubble floats
+  // above it without covering the state indicator.
+  if (creature.currentThought && creature.thoughtTimer > 5 && creature.currentThought !== 'content') {
+    drawThoughtSymbol(ctx, creature.currentThought, cx, cy - r - 4)
+  }
+
   // ── Speech bubble ; overhead emoji dialogue ───────────────────────────────
-  // Shown above the thought symbol; fades out over 3.5s
+  // Centered at cy−r−30 so the pill and its tail clear the thought symbol
+  // (~6 px gap at default zoom). Fixed offset regardless of whether a thought
+  // is visible to avoid vertical jump when the thought state clears.
+  // Fades out over 3.5s. Drawn last so it renders on top of all body layers.
   if (creature.currentSpeech && creature.currentSpeech.sentence.length > 0) {
     const elapsed = Date.now() - creature.currentSpeech.tick
     const fadeWindow = 3500
     if (elapsed < fadeWindow) {
       const fade = Math.max(0, 1 - elapsed / fadeWindow)
-      drawSpeechBubble(ctx, creature.currentSpeech.sentence, cx, cy - r - 18, fade)
+      drawSpeechBubble(ctx, creature.currentSpeech.sentence, cx, cy - r - 30, fade)
     }
-  }
-
-  // ── Thought symbol ────────────────────────────────────────────────────────
-  if (creature.currentThought && creature.thoughtTimer > 5 && creature.currentThought !== 'content') {
-    drawThoughtSymbol(ctx, creature.currentThought, cx, cy - r - 4)
   }
 
   // ── Mutation spark ; newly born mutated creatures emit a colored pulse ────
@@ -539,9 +544,43 @@ function drawThoughtSymbol(
   ctx.fillText(symbol, cx, cy)
 }
 
+// ─── Speech bubble / thought symbol layout — design decisions ─────────────────
+//
+// Q1. Which layer is rendered on top when both speech bubble and thought symbol
+//     are active simultaneously?
+//   a) Speech bubble    b) Thought symbol    c) Last one drawn wins
+//   → (a/c) Speech bubble. It is drawn last in drawCreature, so it paints over
+//     any overlap. The position fix (~6 px gap) ensures they don't visually clash.
+//
+// Q2. Does the speech bubble Y position change depending on whether a thought
+//     symbol is currently visible?
+//   a) Yes — snaps down when no thought is showing
+//   b) No — fixed offset of cy−r−30 at all times
+//   → (b) Fixed. Removing the conditional keeps the bubble stable and avoids a
+//     jarring vertical jump when the thought state clears mid-display.
+//
+// Q3. Which element persists longer when both appear at the same time?
+//   a) Speech bubble (hard 3.5 s fade)
+//   b) Thought symbol (driven by thoughtTimer, no fixed cap)
+//   → (b) Thought symbol. It stays visible as long as thoughtTimer > 5 ticks.
+//     The bubble is time-limited; the thought can outlive it by many ticks.
+//
+// Q4. What is the minimum vertical gap between the speech bubble tail and the
+//     top edge of the thought symbol at default zoom (ISO_TILE_WIDTH = 18)?
+//   a) 0 px (they touch)    b) ~6 px    c) 20 px+
+//   → (b) ~6 px. Thought symbol top ≈ cy−r−14; bubble tail bottom ≈ cy−r−20.
+//     The gap scales naturally with zoom since all offsets are pixel-space.
+//
+// Q5. What happens to both elements at very small zoom levels?
+//   a) They collapse into each other unreadably
+//   b) Font size floors keep both legible (thought: 9 px min, bubble: 7 px min)
+//   c) They are hidden below a zoom threshold
+//   → (b) Both drawThoughtSymbol and drawSpeechBubble use Math.max() font floors
+//     so glyphs never shrink below their minimums regardless of canvas zoom.
+//
 // ─── Speech bubble ─────────────────────────────────────────────────────────────
 // Renders a small pill-shaped bubble with 1-3 emoji as a sentence.
-// Fades in 200ms, holds, fades out toward the end of the 3.5s window.
+// Fades out over 3.5s. cy parameter is the vertical center of the pill.
 
 function drawSpeechBubble(
   ctx: CanvasRenderingContext2D,
@@ -555,17 +594,17 @@ function drawSpeechBubble(
   ctx.save()
   ctx.globalAlpha = alpha
 
-  const fontSize = Math.max(10, Math.round(ISO_TILE_WIDTH * 0.62))
+  const fontSize = Math.max(7, Math.round(ISO_TILE_WIDTH * 0.32))
   ctx.font = `${fontSize}px serif`  // serif renders emoji more reliably
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
 
   // Measure total width
-  const gap = 2
+  const gap = 1
   const charWidths = sentence.map(e => ctx.measureText(e).width)
   const totalW = charWidths.reduce((a, b) => a + b, 0) + gap * (sentence.length - 1)
-  const padX = 5
-  const padY = 3
+  const padX = 3
+  const padY = 2
   const bubbleW = totalW + padX * 2
   const bubbleH = fontSize + padY * 2
 

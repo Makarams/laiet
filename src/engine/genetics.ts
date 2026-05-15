@@ -1,9 +1,16 @@
-import { Genome, PersonalityTrait, BodyTrait, MindTrait, MorphologyTraits } from '@/types'
-import { MUTATION_CHANCE } from './constants'
+import { Genome, PersonalityTrait, BodyTrait, MindTrait, MorphologyTraits, RaceTrait } from '@/types'
+import {
+  MUTATION_CHANCE,
+  LATENT_REVIVAL_BASE, LATENT_DEPTH_BONUS, LATENT_MAX_DEPTH, LATENT_DOMINANT_WEIGHT,
+} from './constants'
 
-export const PERSONALITIES: PersonalityTrait[] = ['Curious', 'Timid', 'Aggressive', 'Lazy', 'Greedy', 'Nurturing', 'Wanderer', 'Recluse']
+export const PERSONALITIES: PersonalityTrait[] = [
+  'Curious', 'Timid', 'Aggressive', 'Lazy', 'Greedy', 'Nurturing', 'Wanderer', 'Recluse',
+  'Hoarder', 'Empath', 'Furtive', 'Territorial', 'Social', 'Stoic',
+]
 export const BODIES: BodyTrait[] = ['Spore', 'Shell', 'Spike', 'Wisp']
 export const MINDS: MindTrait[] = ['Feral', 'Aware', 'Dreaming', 'Sentinel']
+export const RACES: RaceTrait[] = ['Kin', 'Drift', 'Burrow', 'Apex', 'Pale', 'Tide', 'Bloom', 'Ash']
 
 // ─── Morphology helpers ───────────────────────────────────────────────────────
 
@@ -51,7 +58,70 @@ export function randomGenome(rng: () => number): Genome {
     mind: MINDS[Math.floor(rng() * MINDS.length)],
     morphSeed: rng(),
     morphology: initMorphology(),
+    race: RACES[Math.floor(rng() * RACES.length)],
+    latentAncestry: {},
   }
+}
+
+// ─── Race inheritance with latent ancestry ────────────────────────────────────
+
+// Merges two parents' latent ancestry maps, incrementing depth for each dormant
+// race. Prunes entries that have exceeded LATENT_MAX_DEPTH.
+function mergeLatentAncestry(
+  a: Partial<Record<RaceTrait, number>>,
+  b: Partial<Record<RaceTrait, number>>,
+  expressed: RaceTrait | undefined,
+): Partial<Record<RaceTrait, number>> {
+  const merged: Partial<Record<RaceTrait, number>> = {}
+  const all = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<RaceTrait>
+  for (const race of all) {
+    if (race === expressed) continue   // expressed race is not latent
+    const depth = Math.max(a[race] ?? 0, b[race] ?? 0) + 1
+    if (depth <= LATENT_MAX_DEPTH) merged[race] = depth
+  }
+  return merged
+}
+
+// Returns the race for a new offspring, checking for latent revival before
+// applying dominant/recessive inheritance.
+export function inheritRace(
+  parentA: Genome,
+  parentB: Genome,
+  rng: () => number,
+): { race: RaceTrait; latentAncestry: Partial<Record<RaceTrait, number>> } {
+  const raceA = parentA.race
+  const raceB = parentB.race
+  const latA = parentA.latentAncestry ?? {}
+  const latB = parentB.latentAncestry ?? {}
+
+  // Check every latent race from both parents for revival
+  const allLatent = new Set([...Object.keys(latA), ...Object.keys(latB)]) as Set<RaceTrait>
+  for (const dormant of allLatent) {
+    const depth = Math.max(latA[dormant] ?? 0, latB[dormant] ?? 0)
+    const revivalChance = LATENT_REVIVAL_BASE + depth * LATENT_DEPTH_BONUS
+    if (rng() < revivalChance) {
+      // Dormant race resurfaces; its former latent peers become the new ancestry
+      const latency = mergeLatentAncestry(latA, latB, dormant)
+      // Add both parents' expressed races as newly dormant
+      if (raceA && raceA !== dormant) latency[raceA] = (latency[raceA] ?? 0) + 1
+      if (raceB && raceB !== dormant) latency[raceB] = (latency[raceB] ?? 0) + 1
+      return { race: dormant, latentAncestry: latency }
+    }
+  }
+
+  // Normal dominant/recessive inheritance
+  const expressed = raceA && raceB
+    ? (rng() < LATENT_DOMINANT_WEIGHT ? raceA : raceB)
+    : raceA ?? raceB ?? RACES[Math.floor(rng() * RACES.length)]
+
+  const latency = mergeLatentAncestry(latA, latB, expressed)
+  // The non-expressed parent race becomes latent
+  const recessive = expressed === raceA ? raceB : raceA
+  if (recessive && recessive !== expressed) {
+    latency[recessive] = (latency[recessive] ?? 0) + 1
+  }
+
+  return { race: expressed, latentAncestry: latency }
 }
 
 // Sexual inheritance; mix from two parents with mutation chance per slot.
@@ -69,6 +139,8 @@ export function inheritGenome(parentA: Genome, parentB: Genome, rng: () => numbe
   const seedDrift = (rng() - 0.5) * 0.18
   const morphSeed = clamp01(inheritedSeed + seedDrift)
 
+  const { race, latentAncestry } = inheritRace(parentA, parentB, rng)
+
   return {
     personality: pick(parentA.personality, parentB.personality, PERSONALITIES),
     body: pick(parentA.body, parentB.body, BODIES),
@@ -79,6 +151,8 @@ export function inheritGenome(parentA: Genome, parentB: Genome, rng: () => numbe
       parentB.morphology ?? initMorphology(),
       rng,
     ),
+    race,
+    latentAncestry,
   }
 }
 
@@ -90,12 +164,30 @@ export function mutateGenomeAsexual(parent: Genome, rng: () => number, mutationC
   const seedDrift = (rng() - 0.5) * 0.32
   const morphSeed = clamp01(parent.morphSeed + seedDrift)
 
+  // Asexual: age all latent races by 1 generation; rare race mutation (~half of mutationChance)
+  const oldLatent = parent.latentAncestry ?? {}
+  const newLatent: Partial<Record<RaceTrait, number>> = {}
+  for (const r in oldLatent) {
+    const depth = (oldLatent[r as RaceTrait] ?? 0) + 1
+    if (depth <= LATENT_MAX_DEPTH) newLatent[r as RaceTrait] = depth
+  }
+  let race = parent.race
+  if (rng() < mutationChance * 0.5) {
+    const newRace = RACES[Math.floor(rng() * RACES.length)]
+    if (newRace !== race) {
+      if (race) newLatent[race] = (newLatent[race] ?? 0) + 1  // old race becomes latent
+      race = newRace
+    }
+  }
+
   return {
     personality: mut(parent.personality, PERSONALITIES),
     body: mut(parent.body, BODIES),
     mind: mut(parent.mind, MINDS),
     morphSeed,
     morphology: mutateMorphologyAsexual(parent.morphology ?? initMorphology(), rng),
+    race,
+    latentAncestry: newLatent,
   }
 }
 
@@ -159,6 +251,12 @@ export function describeGenome(genome: Genome): string {
     Nurturing:  'high-attachment, caregiving tendency',
     Wanderer:   'long-range dispersal, habitat pioneer',
     Recluse:    'solitary preference, crowd-averse',
+    Hoarder:    'cache-building, surplus-driven',
+    Empath:     'stress-mirroring, flock-dependent',
+    Furtive:    'low-visibility, avoidance-primary',
+    Territorial:'zone-dominant, boundary-enforcing',
+    Social:     'bond-maximising, crowd-seeking',
+    Stoic:      'stress-resistant, low-affect baseline',
   }
   const bDesc: Record<BodyTrait, string> = {
     Spore: 'rapid reproduction, short lifespan',
@@ -172,21 +270,38 @@ export function describeGenome(genome: Genome): string {
     Dreaming: 'memory-recursive, high-ambiguity signal',
     Sentinel: 'boundary surveillance, operator-aware',
   }
-  return `${pDesc[genome.personality]} · ${bDesc[genome.body]} · ${mDesc[genome.mind]}`
+  const rDesc: Partial<Record<RaceTrait, string>> = {
+    Kin:   'kin-selective, bond-accelerated',
+    Drift: 'wide-range disperser, habitat generalist',
+    Burrow:'subterranean affinity, dark-adapted',
+    Apex:  'apex-lineage, combat-enhanced',
+    Pale:  'cave-primary, low-light specialist',
+    Tide:  'riparian specialist, water-dependent',
+    Bloom: 'reproduction-amplified, season-sensitive',
+    Ash:   'barren-adapted, stress-resilient',
+  }
+  const rPart = genome.race ? ` · ${rDesc[genome.race] ?? genome.race.toLowerCase()}` : ''
+  return `${pDesc[genome.personality]} · ${bDesc[genome.body]} · ${mDesc[genome.mind]}${rPart}`
 }
 
 // ─── Genome color (unique per personality × body × mind combination) ──────────
 
 export function genomeColor(genome: Genome): string {
   const baseHSL: Record<PersonalityTrait, [number, number, number]> = {
-    Curious:   [155, 82, 72],
-    Timid:     [205, 74, 78],
-    Aggressive:[ 4,  95, 70],
-    Lazy:      [230, 35, 70],
-    Greedy:    [ 32, 92, 72],
-    Nurturing: [338, 84, 82],
-    Wanderer:  [ 38, 88, 70],  // amber-gold; the traveling lantern
-    Recluse:   [222, 28, 62],  // muted steel-blue; the hermit
+    Curious:    [155, 82, 72],
+    Timid:      [205, 74, 78],
+    Aggressive: [  4, 95, 70],
+    Lazy:       [230, 35, 70],
+    Greedy:     [ 32, 92, 72],
+    Nurturing:  [338, 84, 82],
+    Wanderer:   [ 38, 88, 70],  // amber-gold; the traveling lantern
+    Recluse:    [222, 28, 62],  // muted steel-blue; the hermit
+    Hoarder:    [ 48, 78, 68],  // deep amber; the collector
+    Empath:     [300, 55, 78],  // soft violet; the mirror
+    Furtive:    [150, 22, 56],  // dim sage-grey; the shadow
+    Territorial:[ 18, 90, 68],  // burnt sienna; the border-marker
+    Social:     [320, 70, 82],  // bright rose; the cluster-seeker
+    Stoic:      [200, 18, 60],  // cool slate; the unmoved
   }
 
   const bodyMod: Record<BodyTrait, [number, number]> = {
@@ -203,17 +318,32 @@ export function genomeColor(genome: Genome): string {
     Sentinel: +52,
   }
 
+  // Race applies a secondary hue/sat/light modifier on top of the personality base.
+  // Chosen to be subtle (~10-20° shift) so race is perceptible but not dominant.
+  const raceHSLMod: Partial<Record<RaceTrait, [number, number, number]>> = {
+    Kin:   [  0, +6,  +4],   // warmer, slightly brighter social tones
+    Drift: [+18, -4,  +2],   // slight golden drift; wandering light
+    Burrow:[-20, +8,  -8],   // deeper, cooler underground hue
+    Apex:  [+30, +10, -4],   // more saturated, slightly darker; predator intensity
+    Pale:  [  0, -18, +10],  // washed out, cave-bleached lightness
+    Tide:  [-30, +10, +4],   // blue-shifted, richer; river-cold
+    Bloom: [+10, +12, +6],   // warmer and brighter; reproductive vigour
+    Ash:   [  0, -20, -8],   // desaturated, darker; the barren-adapted
+  }
+
   const [h, s, l] = baseHSL[genome.personality]
   const [dS, dL] = bodyMod[genome.body]
   const dH = mindHueShift[genome.mind]
+
+  const [rH, rS, rL] = (genome.race && raceHSLMod[genome.race]) ? raceHSLMod[genome.race]! : [0, 0, 0]
 
   // morphSeed drives per-creature asymmetry; morphology.colorDrift accumulates
   // across generations so each lineage develops its own distinct hue signature.
   const morphHue = (genome.morphSeed - 0.5) * 22 + (genome.morphology?.colorDrift ?? 0) * 45
 
-  const fH = ((h + dH + morphHue) % 360 + 360) % 360
-  const fS = Math.max(18, Math.min(100, s + dS))
-  const fL = Math.max(50, Math.min(90, l + dL))
+  const fH = ((h + dH + rH + morphHue) % 360 + 360) % 360
+  const fS = Math.max(18, Math.min(100, s + dS + rS))
+  const fL = Math.max(50, Math.min(90, l + dL + rL))
 
   return hslToHex(fH, fS, fL)
 }

@@ -1,22 +1,22 @@
 import { v4 as uuid } from 'uuid'
 import {
   GameState, Creature, GameEvent, EventType, Season, WeatherState,
-  ExtinctionRecord, ColonyMessage, SimModifiers,
+  ExtinctionRecord, ColonyMessage, SimModifiers, RaceTrait,
 } from '@/types'
 import {
   DAY_FRACTION_PER_TICK, DAYS_PER_SEASON, FOOD_REGROW_RATE_BASE,
   FOOD_REGROW_MULTIPLIER, TREE_GROW_DAYS, WATER_REPLENISH_RATE,
-  WORLD_SIZE, HEAL_CHARGES_PER_DAY, BOND_STRENGTH_PER_TICK, DEBUG,
+  WORLD_SIZE, BOND_STRENGTH_PER_TICK, DEBUG,
   DEATH_SITE_DECAY_DAYS,
   CANNIBAL_HUNGER_THRESHOLD, CANNIBAL_HUNGER_RELIEF,
   CANNIBAL_STRESS_PENALTY, CANNIBAL_WITNESS_STRESS,
-  DISEASE_POP_THRESHOLD, DISEASE_CONTACT_CHANCE, DISEASE_HEALTH_DRAIN,
+  DISEASE_POP_THRESHOLD, DISEASE_POP_SLOPE_RANGE, DISEASE_CONTACT_CHANCE, DISEASE_HEALTH_DRAIN,
   FIRE_DURATION_TICKS, FIRE_SPREAD_CHANCE, FIRE_TICK_DAMAGE,
   ASEXUAL_BASE_CHANCE, REPRODUCE_BOND_MIN_STRENGTH,
   AUTO_LIGHTNING_CHANCE, AUTO_LIGHTNING_DAMAGE, CAVE_WARMTH_BONUS,
   WEATHER_DURATION, RAIN_WATER_BONUS, RAIN_THIRST_REDUCTION, RAIN_FOOD_BONUS,
   STORM_LIGHTNING_CHANCE, DROUGHT_WATER_DRAIN, DROUGHT_THIRST_PENALTY,
-  DROUGHT_FOOD_FACTOR, THIRST_DECAY,
+  DROUGHT_FOOD_FACTOR, THIRST_DECAY, HUNGER_DECAY,
   WARMTH_DECAY_BASE, WARMTH_DECAY_WINTER,
   CARETAKER_PRESENCE_RADIUS, CARETAKER_PRESENCE_WINDOW_MS, CARETAKER_SENTIENCE_BOOST,
   BONE_MEMORY_CHANCE, BONE_MEMORY_RADIUS,
@@ -27,12 +27,14 @@ import {
   NATURAL_TREE_STRESS_REDUCTION, NATURAL_ROCKY_SENTINEL_BONUS,
   NATURAL_BUSH_STRESS_REDUCTION, BUSH_FOOD_MAX, BUSH_FOOD_REGROW_RATE,
   // vegetation lifecycle
-  TREE_PEAK_AGE, TREE_WITHER_AGE, TREE_DECAY_AGE, TREE_REGROW_FROM_DECAY,
+  TREE_PEAK_AGE, TREE_WITHER_AGE, TREE_DECAY_AGE,
   BUSH_WITHER_CHANCE, BUSH_REGROW_CHANCE,
-  FRUIT_DECAY_RATE, FRUIT_SEED_CHANCE, FRUIT_OVERPRODUCTION_CAP,
+  VEG_TREE_CAP, VEG_BUSH_CAP,
+  RIVER_EROSION_CHANCE, RIVER_DRYING_CHANCE,
+  FRUIT_DECAY_RATE, FRUIT_OVERPRODUCTION_CAP,
   // rain / puddles / snow
   PUDDLE_FORM_THRESHOLD, PUDDLE_ACCUMULATE_RATE, PUDDLE_EVAPORATE_RATE, PUDDLE_THIRST_RELIEF,
-  PUDDLE_FLOW_CHANCE, PUDDLE_RIVER_THRESHOLD, RIVER_OVERFLOW_CHANCE,
+  PUDDLE_FLOW_CHANCE, RIVER_OVERFLOW_CHANCE,
   SNOW_ENABLED, SNOW_ACCUMULATE_RATE, SNOW_MELT_RATE, SNOW_MAX_DEPTH,
   SNOW_MOVE_PENALTY, SNOW_WARMTH_DRAIN, SNOW_BIOMES,
   // healroot
@@ -40,6 +42,14 @@ import {
   HEALROOT_SEEK_HEALTH, HEALROOT_CARRY_HEAL, HEALROOT_DEATH_SITE_RADIUS, HEALROOT_DEATH_SPAWN_CHANCE,
   // micro-animations
   MICRO_ANIM_TRIGGER_CHANCE,
+  // bond grief
+  DEAD_BOND_FADE_PER_TICK,
+  // solar warmth
+  SOLAR_WARMTH_BONUS,
+  // winter huddling + weather breeding
+  HUDDLE_WARMTH_BONUS,
+  // cannibal trauma
+  CANNIBAL_TRAUMA_DURATION_DAYS, CANNIBAL_TRAUMA_STRESS_PER_TICK,
 } from './constants'
 import {
   tickNeeds, tickBehavior, tickMovement,
@@ -48,7 +58,7 @@ import {
 } from '@/creatures/behavior'
 import { DEFAULT_MODIFIERS } from '@/engine/profile'
 import { createOffspring, createAsexualOffspring, getColonyStage, computeAwarenessStage } from '@/creatures/factory'
-import { generateMessage, deathMessage, extinctionMessage, ascensionMessage, boneMemoryMessage } from './messages'
+import { generateMessage, deathMessage, extinctionMessage, ascensionMessage, boneMemoryMessage, generateRaceRevivalMessage } from './messages'
 import { createRng, getAdjacentTiles, buildTileIndex } from '@/world/worldGen'
 import { getSpeechContext, buildSentence, learnFromNearby, unlockTierEmoji, assignRole } from '@/engine/speech'
 
@@ -98,8 +108,10 @@ export function tickSimulation(state: GameState): GameState {
   // Compute population factor again (creatures may have died this tick).
   // Reproduction is suppressed under crowding & starvation pressure.
   const aliveNow = Object.values(next.creatures).filter(c => c.diedOnDay === null).length
+  // popFactor: 1.0 below threshold; slopes to 0.20 minimum at threshold + DISEASE_POP_SLOPE_RANGE (120).
+  // Widened from the old /55 slope so reproduction stays meaningful up to and past ascension (80).
   const popFactor = aliveNow > DISEASE_POP_THRESHOLD
-    ? Math.max(0.20, 1 - (aliveNow - DISEASE_POP_THRESHOLD) / 55)
+    ? Math.max(0.20, 1 - (aliveNow - DISEASE_POP_THRESHOLD) / DISEASE_POP_SLOPE_RANGE)
     : 1.0
 
   next = tickReproduction(next, _rng, popFactor)
@@ -108,10 +120,63 @@ export function tickSimulation(state: GameState): GameState {
 
   const liveCount = Object.values(next.creatures).filter(c => !c.diedOnDay).length
   next.colonyStage = getColonyStage(liveCount) as GameState['colonyStage']
-  next.awarenessStage = computeAwarenessStage(next)
 
-  next = tickCaretaker(next)
+  // Q5C: Stage may drop from 3→2 when conditions are no longer met, but never below 2.
+  // Once stage 2 is reached it is permanent; stage 3 can be lost if Sentinels/pop fall.
+  const computedStage = computeAwarenessStage(next)
+  next.awarenessStage = (computedStage >= state.awarenessStage
+    ? computedStage
+    : Math.max(computedStage, Math.min(state.awarenessStage, 2))) as 1 | 2 | 3
+
+  next = tickCaretaker(next, mods)
   next = checkEndgame(next, mods)
+
+  // ── Race population tracking & revival detection ──────────────────────────────
+  {
+    const alive = Object.values(next.creatures).filter(c => !c.diedOnDay)
+    const newRacePops: Partial<Record<RaceTrait, number>> = {}
+    for (const c of alive) {
+      const r = c.genome.race
+      if (r) newRacePops[r] = (newRacePops[r] ?? 0) + 1
+    }
+
+    // Revival: race was in extinctRaces (or was alive last tick but now gone) and now > 0
+    const prevExtinct = new Set<RaceTrait>(next.extinctRaces ?? [])
+    const prevPops = next.racePopulations ?? {}
+    const revivalMessages: ColonyMessage[] = []
+
+    // Detect newly extinct races (had living members, now zero)
+    const nowExtinct = new Set<RaceTrait>(prevExtinct)
+    for (const r in prevPops) {
+      const race = r as RaceTrait
+      if ((prevPops[race] ?? 0) > 0 && !(newRacePops[race])) {
+        nowExtinct.add(race)
+      }
+    }
+
+    // Detect revivals (was extinct/absent, now alive)
+    for (const r in newRacePops) {
+      const race = r as RaceTrait
+      if ((newRacePops[race] ?? 0) > 0 && prevExtinct.has(race)) {
+        nowExtinct.delete(race)
+        // Find a carrier to name in the message
+        const carrier = alive.find(c => c.genome.race === race)
+        revivalMessages.push(
+          generateRaceRevivalMessage(race, next.awarenessStage, next.time.day, carrier?.name)
+        )
+      }
+    }
+
+    next.racePopulations = newRacePops
+    next.extinctRaces = [...nowExtinct]
+    if (revivalMessages.length > 0) {
+      next.messages = [...next.messages, ...revivalMessages]
+    }
+  }
+
+  // Q8C: Soft cap — keep last 500 messages. Older messages are not archived here
+  // but survive in the IndexedDB snapshot from the last cloud save.
+  if (next.messages.length > 500) next.messages = next.messages.slice(-500)
 
   return next
 }
@@ -194,6 +259,18 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
       : 1.0)
     * mods.foodRegrowMult
 
+  // Pre-count vegetation so growth checks can enforce world-wide caps.
+  // This prevents trees and bushes from stacking endlessly; new growth only
+  // occurs when the count is below the cap, forcing natural turnover.
+  let treeCount = 0, bushCount = 0
+  for (let vy = 0; vy < WORLD_SIZE; vy++) {
+    for (let vx = 0; vx < WORLD_SIZE; vx++) {
+      const vt = state.tiles[vy][vx].type
+      if (vt === 'tree' || vt === 'shelter') treeCount++
+      else if (vt === 'bush') bushCount++
+    }
+  }
+
   // Copy-on-write: only clone rows/tiles that are actually mutated this tick.
   // Typical tick: ~200-400 writes vs 14,400 with the old full-clone map.
   const srcTiles = state.tiles
@@ -270,7 +347,10 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
         if (weather === 'rain' || weather === 'storm') {
           writeTile(y, x).waterLevel = Math.min(100, t.waterLevel + RAIN_WATER_BONUS)
         } else if (weather === 'drought') {
-          writeTile(y, x).waterLevel = Math.max(0, t.waterLevel - DROUGHT_WATER_DRAIN)
+          // Frost-drought in winter: frozen ground limits how fast rivers drain.
+          // Snow melt partially compensates; cap drain to 30% of normal.
+          const drainMult = season === 'winter' ? 0.3 : 1.0
+          writeTile(y, x).waterLevel = Math.max(0, t.waterLevel - DROUGHT_WATER_DRAIN * drainMult)
         }
       }
 
@@ -297,25 +377,29 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
       if (t.type === 'tree' || t.type === 'shelter') {
         const age = t.treeAge
 
-        // Wither phase: tree stops producing and begins dying
+        // Wither phase: age the tree each tick so it will eventually decay
         if (age >= TREE_WITHER_AGE && age < TREE_DECAY_AGE) {
-          // No fruit drops; tree is withering
+          writeTile(y, x).treeAge = age + 1
         }
-        // Decay: tile reverts to barren; small chance to self-seed
+        // Decay: tile reverts to barren immediately; seed system handles regrowth
         else if (age >= TREE_DECAY_AGE) {
-          if (Math.random() < 0.002) {
-            const wt = writeTile(y, x)
-            wt.type = 'barren'; wt.treeAge = -1; wt.shelter = false
-            // Natural seeding: may become a new sapling on adjacent grass
-            if (Math.random() < TREE_REGROW_FROM_DECAY) {
-              const dirs = [[0,1],[0,-1],[1,0],[-1,0]]
-              for (const [ddx, ddy] of dirs) {
-                const sx=x+ddx, sy=y+ddy
-                if (sx>=0&&sx<WORLD_SIZE&&sy>=0&&sy<WORLD_SIZE&&tiles[sy][sx].type==='grass') {
+          const wt = writeTile(y, x)
+          wt.type = 'barren'; wt.treeAge = -1; wt.shelter = false
+          treeCount--
+          // Seed system: only germinate if world is below the tree cap.
+          // This ensures new trees only grow when older ones have died, preventing
+          // endless accumulation. 1-in-3 seeds that DO land will sprout; the rest decay.
+          if (treeCount < VEG_TREE_CAP) {
+            const dirs = [[0,1],[0,-1],[1,0],[-1,0],[1,1],[-1,1],[1,-1],[-1,-1]]
+            for (const [ddx, ddy] of dirs) {
+              const sx=x+ddx, sy=y+ddy
+              if (sx>=0&&sx<WORLD_SIZE&&sy>=0&&sy<WORLD_SIZE&&tiles[sy][sx].type==='grass') {
+                if (Math.random() < 1/3) {
                   const sw = writeTile(sy, sx)
                   sw.type = 'tree'; sw.treeAge = 0; sw.shelter = false
-                  break
+                  treeCount++
                 }
+                break
               }
             }
           }
@@ -356,15 +440,18 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
         const isHarsh = weather === 'drought' || (season === 'winter' && Math.random() < 0.3)
         if (isHarsh && Math.random() < BUSH_WITHER_CHANCE) {
           const wt = writeTile(y, x)
-          wt.type = 'barren'; wt.foodAmount = 0
+          // Withered bush clears fully to grass — no lingering red/barren clutter
+          wt.type = 'grass'; wt.foodAmount = 0
+          bushCount--
         }
       }
-      // Bush regrowth on grass tiles in spring/lush
-      if (t.type === 'grass' && season === 'spring') {
+      // Bush regrowth on grass tiles in spring/lush; capped to prevent endless accumulation
+      if (t.type === 'grass' && season === 'spring' && bushCount < VEG_BUSH_CAP) {
         const biomeBias = t.biome === 'lush' ? 2.0 : t.biome === 'wetland' ? 1.2 : 1.0
         if (Math.random() < BUSH_REGROW_CHANCE * biomeBias) {
           const wt = writeTile(y, x)
           wt.type = 'bush'; wt.foodAmount = 0
+          bushCount++
         }
       }
 
@@ -385,9 +472,10 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
           const newAmount = t.foodAmount - FRUIT_DECAY_RATE
           if (newAmount <= 0) {
             const wt = writeTile(y, x)
-            // Chance to seed a new sapling from decayed fruit
-            if (Math.random() < FRUIT_SEED_CHANCE) {
+            // Seed system: germinate only when below the tree cap; otherwise decay to grass.
+            if (treeCount < VEG_TREE_CAP && Math.random() < 1/3) {
               wt.type = 'tree'; wt.treeAge = 0; wt.shelter = false; wt.foodAmount = 0
+              treeCount++
             } else {
               wt.type = t.biome==='arid' ? 'barren' : 'grass'; wt.foodAmount = 0
             }
@@ -432,12 +520,7 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
           if (newLevel >= PUDDLE_FORM_THRESHOLD && t.type !== 'mud') {
             wt.type = 'mud'
           }
-          // Very deep puddle; convert to river tile (permanent stream forms)
-          if (newLevel >= PUDDLE_RIVER_THRESHOLD) {
-            wt.type = 'river'
-            wt.waterLevel = 60
-            wt.puddleLevel = 0
-          }
+
         } else if (weather==='drought' || weather==='clear') {
           if (currentPuddle > 0) {
             const newLevel = Math.max(0, currentPuddle - PUDDLE_EVAPORATE_RATE)
@@ -488,8 +571,8 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
         }
       }
 
-      // Winter flooding adjacent to river
-      if (season === 'winter' && t.floodTimer > 0) {
+      // Flood timer drains in any season so tiles created near season-end don't freeze
+      if (t.floodTimer > 0) {
         const wt = writeTile(y, x)
         wt.floodTimer -= 1
         if (wt.floodTimer === 0) wt.type = t.biome === 'wetland' ? 'mud' : 'grass'
@@ -545,6 +628,54 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
           if ((adj.type === 'tree' || adj.type === 'shelter' || adj.type === 'bush') && Math.random() < FIRE_SPREAD_CHANCE) {
             writeTile(ny, nx).burning = FIRE_DURATION_TICKS
           }
+        }
+      }
+    }
+  }
+
+  // ── River erosion & drying ────────────────────────────────────────────────────
+  // Very slow terrain shift that compounds over many play sessions.
+  // During storms, rivers can slowly widen into adjacent grass (erosion).
+  // During drought, isolated shallow river tiles can slowly dry to mud.
+  if (weather === 'storm') {
+    // Erosion: each river tile has a tiny chance to spread into adjacent grass
+    for (let y = 1; y < WORLD_SIZE - 1; y++) {
+      for (let x = 1; x < WORLD_SIZE - 1; x++) {
+        if (tiles[y][x].type !== 'river') continue
+        if (Math.random() >= RIVER_EROSION_CHANCE) continue
+        const dirs = [[0,1],[0,-1],[1,0],[-1,0]]
+        for (const [dx,dy] of dirs) {
+          const nx=x+dx, ny=y+dy
+          if (nx<0||nx>=WORLD_SIZE||ny<0||ny>=WORLD_SIZE) continue
+          const adj = tiles[ny][nx]
+          if (adj.type==='grass'||adj.type==='barren') {
+            const wt=writeTile(ny,nx)
+            wt.type='river'; wt.waterLevel=60
+            break
+          }
+        }
+      }
+    }
+  } else if (weather === 'drought' || weather === 'clear') {
+    // Drying: isolated river tiles slowly revert to mud in calm or dry weather.
+    // Completely isolated tiles (0 river neighbours) are overflow residue and drain
+    // regardless of water level. Endpoint tiles drain only during drought.
+    for (let y = 0; y < WORLD_SIZE; y++) {
+      for (let x = 0; x < WORLD_SIZE; x++) {
+        const t = tiles[y][x]
+        if (t.type !== 'river') continue
+        const dirs = [[0,1],[0,-1],[1,0],[-1,0]]
+        let riverNeighbours = 0
+        for (const [dx,dy] of dirs) {
+          const nx=x+dx, ny=y+dy
+          if (nx>=0&&nx<WORLD_SIZE&&ny>=0&&ny<WORLD_SIZE&&tiles[ny][nx].type==='river') riverNeighbours++
+        }
+        if (riverNeighbours === 0 && Math.random() < RIVER_DRYING_CHANCE * 20) {
+          const wt=writeTile(y,x)
+          wt.type='mud'; wt.waterLevel=0; wt.puddleLevel=0.8
+        } else if (weather === 'drought' && riverNeighbours <= 1 && (t.waterLevel ?? 0) <= 15 && Math.random() < RIVER_DRYING_CHANCE) {
+          const wt=writeTile(y,x)
+          wt.type='mud'; wt.waterLevel=0
         }
       }
     }
@@ -755,11 +886,45 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
         }
       }
 
-      // Cave warmth; being inside a cave insulates against cold
+      // Cave warmth and food caching; shelter insulates and slows hunger
       if (currentTile.type === 'cave') {
         c.warmth = Math.min(100, c.warmth + CAVE_WARMTH_BONUS)
+        c.hunger = Math.max(0, c.hunger - HUNGER_DECAY * 0.35)
         // Natural enrichment: cave safety calms stress
         c.stress = Math.max(0, c.stress - NATURAL_CAVE_STRESS_REDUCTION)
+      }
+
+      // Solar warmth recovery; clear daytime on warm biomes slowly restores warmth.
+      // Partial offset to the constant baseline drain — warmth still bleeds in shade,
+      // at night, and during rain/storm, but sun-exposed temperate/arid ground sustains.
+      const isSunnyWeather = weather === 'clear' || weather === 'drought'
+      if (isSunnyWeather
+          && (state.time.phase === 'day' || state.time.phase === 'dawn')
+          && (currentTile.biome === 'temperate' || currentTile.biome === 'arid')) {
+        c.warmth = Math.min(100, c.warmth + SOLAR_WARMTH_BONUS)
+      }
+
+      // Winter huddling: bonded creatures that are adjacent share body heat.
+      // Each bonded neighbour within 1 tile grants a small warmth bonus (capped at 3).
+      if (state.time.season === 'winter') {
+        let bondedAdjacent = 0
+        for (const other of Object.values(creatures)) {
+          if (other.id === c.id || other.diedOnDay !== null) continue
+          if (Math.abs(other.x - c.x) <= 1 && Math.abs(other.y - c.y) <= 1) {
+            if (c.bonds.some(b => b.targetId === other.id && b.strength >= 20)) {
+              bondedAdjacent++
+            }
+          }
+        }
+        if (bondedAdjacent > 0) {
+          c.warmth = Math.min(100, c.warmth + HUDDLE_WARMTH_BONUS * Math.min(bondedAdjacent, 3))
+        }
+      }
+
+      // Cannibal trauma: persistent stress from witnessing cannibalism
+      if (c.traumaUntil !== undefined && c.traumaUntil > state.time.day) {
+        c.stress = Math.min(100, c.stress + CANNIBAL_TRAUMA_STRESS_PER_TICK)
+        if (!c.currentThought) c.currentThought = 'mourning'
       }
 
       // Natural enrichment; world terrain as passive enrichment
@@ -792,9 +957,13 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
       // warmth drain applied here each tick per depth) ─────────────────────
       const snowDepth = currentTile.snowDepth ?? 0
       if (snowDepth > 0.1) {
-        // Warmth drains faster proportional to how deep the snow is
-        const snowWarmthDrain = SNOW_WARMTH_DRAIN * snowDepth
-        c.warmth = Math.max(0, c.warmth - snowWarmthDrain)
+        // Snow warmth drain; skipped on winter nights to cap total drain at 2× winter rate.
+        // (tickNeeds + night bonus already hit 2× WARMTH_DECAY_WINTER in that condition.)
+        const isWinterNight = state.time.season === 'winter' && state.time.phase === 'night'
+        if (!isWinterNight) {
+          const snowWarmthDrain = SNOW_WARMTH_DRAIN * snowDepth
+          c.warmth = Math.max(0, c.warmth - snowWarmthDrain)
+        }
         // Deep snow also adds slight stress (cold, unfamiliar ground)
         if (snowDepth > 0.5) {
           c.stress = Math.min(100, c.stress + 0.08 * snowDepth)
@@ -854,13 +1023,14 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
         cannibalTile.deathSiteAge = 0
         if (c.state === 'seeking_food' || c.state === 'scavenging' || c.state === 'migrating') c.state = 'idle'
 
-        // Stress nearby witnesses
+        // Stress nearby witnesses and mark trauma window
         for (const witness of Object.values(creatures)) {
           if (witness.id === c.id || witness.diedOnDay !== null) continue
           if (Math.abs(witness.x - c.x) <= 3 && Math.abs(witness.y - c.y) <= 3) {
             creatures[witness.id] = {
               ...witness,
               stress: Math.min(100, witness.stress + CANNIBAL_WITNESS_STRESS),
+              traumaUntil: state.time.day + CANNIBAL_TRAUMA_DURATION_DAYS,
             }
           }
         }
@@ -884,9 +1054,20 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
         c.health = Math.max(0, c.health - FIRE_TICK_DAMAGE)
         c.stress = Math.min(100, c.stress + 12)
         if (c.state !== 'fleeing' && c.state !== 'dying') {
-          // Make them flee away from this tile
-          const dx = c.x > WORLD_SIZE / 2 ? -1 : 1
-          const dy = c.y > WORLD_SIZE / 2 ? -1 : 1
+          // Flee away from local heat concentration, not toward map center.
+          // Count burning tiles in each cardinal direction within radius 1
+          // to find the coolest escape route.
+          let heatE = 0, heatW = 0, heatS = 0, heatN = 0
+          for (const [ddx, ddy] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]] as [number,number][]) {
+            const nx = c.x + ddx, ny = c.y + ddy
+            if (nx >= 0 && nx < WORLD_SIZE && ny >= 0 && ny < WORLD_SIZE
+                && (tiles[ny]?.[nx]?.burning ?? 0) > 0) {
+              if (ddx > 0) heatE++; if (ddx < 0) heatW++
+              if (ddy > 0) heatS++; if (ddy < 0) heatN++
+            }
+          }
+          const dx = heatE > heatW ? -1 : heatW > heatE ? 1 : (Math.random() < 0.5 ? -1 : 1)
+          const dy = heatS > heatN ? -1 : heatN > heatS ? 1 : (Math.random() < 0.5 ? -1 : 1)
           c.state = 'fleeing'
           c.targetX = Math.max(0, Math.min(WORLD_SIZE - 1, c.x + dx * 6))
           c.targetY = Math.max(0, Math.min(WORLD_SIZE - 1, c.y + dy * 6))
@@ -991,6 +1172,14 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
         }
       }
     }
+
+    // Q7A: Grief — bonds toward dead creatures fade over ~5 game-days then dissolve.
+    c.bonds = c.bonds
+      .map(b => creatures[b.targetId]?.diedOnDay !== null
+        ? { ...b, strength: b.strength - DEAD_BOND_FADE_PER_TICK }
+        : b
+      )
+      .filter(b => b.strength > 0)
 
     // Bond formation with adjacent creatures + milestone emission.
     // Milestones (35, 70) only emit from the lower-id side of each pair to
@@ -1196,7 +1385,7 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
     ...state,
     creatures,
     tiles,
-    messages: messages.slice(-200),
+    messages,   // no cap here; tickSimulation applies the global slice(-500) once
     events,
     totalDeaths,
     caretaker: updatedCaretaker,
@@ -1220,7 +1409,7 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
     if (pairedThisTick.has(c.id)) continue
 
     // ── Sexual reproduction (bonded pair) ──
-    if (canReproduce(c, state.time.season, popFactor)) {
+    if (canReproduce(c, state.time.season, popFactor, state.weather)) {
       const bondedIds = c.bonds.filter(b => b.strength >= REPRODUCE_BOND_MIN_STRENGTH).map(b => b.targetId)
       const partner = bondedIds
         .map(id => creatures[id])
@@ -1301,7 +1490,7 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
     creatures[o.id] = o
   }
 
-  return { ...state, creatures, totalCreaturesEver, totalGenerations, messages: messages.slice(-200) }
+  return { ...state, creatures, totalCreaturesEver, totalGenerations, messages }
 }
 
 function checkBoneMemory(
@@ -1411,13 +1600,15 @@ function tickTribes(state: GameState): GameState {
 
 // ─── Caretaker ────────────────────────────────────────────────────────────────
 
-function tickCaretaker(state: GameState): GameState {
+function tickCaretaker(state: GameState, mods: SimModifiers): GameState {
   const now = Date.now()
   const caretaker = { ...state.caretaker }
   const msPerDay = 86_400_000
 
   if (now - caretaker.lastHealReset > msPerDay) {
-    caretaker.healCharges = HEAL_CHARGES_PER_DAY
+    // Use the profile-derived charge count, not the bare constant.
+    // Interventionist profile sets mods.healCharges = 4; base is 3.
+    caretaker.healCharges = mods.healCharges
     caretaker.lastHealReset = now
   }
 
@@ -1438,7 +1629,12 @@ function checkEndgame(state: GameState, mods: SimModifiers): GameState {
     const fossils: ExtinctionRecord = {
       id: uuid(),
       extinctionDay: state.time.day,
-      extinctionCause: state.totalDeaths > 10 && state.time.season === 'winter' ? 'drought' : 'neglect',
+      extinctionCause: (
+        state.weather === 'drought'                                       ? 'drought'
+        : (state.time.season === 'winter' || state.weather === 'snow')    ? 'winter'
+        : state.totalDeaths > 20                                           ? 'starvation'
+        : 'neglect'
+      ),
       peakPopulation: state.totalCreaturesEver,
       generationsReached: state.totalGenerations,
       finalMessage: extinctionMessage(null),
@@ -1534,7 +1730,7 @@ function defaultOptions(type: EventType): GameEvent['options'] {
       { label: 'Observe', action: 'observe' },
     ]
     case 'flood_warning': return [
-      { label: 'Redirect river', action: 'redirect_river' },
+      { label: 'Place water', action: 'redirect_river' },
       { label: 'Let it flood', action: 'ignore' },
     ]
     default: return [
@@ -1550,7 +1746,7 @@ function defaultOptions(type: EventType): GameEvent['options'] {
 // idle is no longer a concern. The cap here is intentionally small; just
 // enough to advance weather and day/night by a couple of minutes on genuine
 // tab-close/reopen, without endangering the colony through a long drought.
-const MAX_PASSIVE_TICKS = 120   // 2 real minutes of catch-up maximum
+const MAX_PASSIVE_TICKS = 240   // 4 real minutes of catch-up maximum
 
 export function computePassiveTicks(lastSessionEnd: number | null): number {
   if (!lastSessionEnd) return 0
