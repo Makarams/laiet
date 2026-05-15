@@ -7,7 +7,7 @@ import { MessageLogPanel } from '../panels/MessageLogPanel'
 import { ColonyStatsPanel } from '../panels/ColonyStatsPanel'
 import { EventPopupLayer } from './EventPopup'
 import { Toolbar, Tool } from './Toolbar'
-import { updateMusicContext, computeMusicKey, setMuted, isMuted, unlockAudio } from '@/audio/chiptune'
+import { updateMusicContext, computeMusicKey, updateWeatherAudio, setMuted, isMuted, unlockAudio } from '@/audio/chiptune'
 import { EnrichmentType } from '@/types'
 import { saveToCloud } from '@/db/persistence'
 import { THEME } from '@/ui/theme'
@@ -173,7 +173,9 @@ export function GameLayout() {
   const handleRestartConfirm = useCallback(()=>{setShowRestartConfirm(false);resetWorld()},[resetWorld])
 
   const musicKey = useLaietStore(s => s.gameState ? computeMusicKey(s.gameState) : '')
+  const weather  = useLaietStore(s => s.gameState?.weather ?? 'clear')
   useEffect(()=>{if(muted)return;updateMusicContext(musicKey)},[musicKey,muted])
+  useEffect(()=>{if(muted)return;updateWeatherAudio(weather)},[weather,muted])
 
   useEffect(()=>{
     const handleVisibility = () => {
