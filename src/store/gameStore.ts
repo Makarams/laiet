@@ -206,8 +206,15 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     try {
       const state = await loadBestAvailable(userId)
       if (state) {
+        // Legacy saves may have endgame:'ascension' or 'fracture' from before those
+        // endings were removed. Clear them so the simulation resumes rather than
+        // freezing with no escape route. Only 'extinction' is a valid terminal state.
+        if (state.endgame && state.endgame !== 'extinction') {
+          state.endgame = null
+        }
+
         // If already extinct, restore for viewing only; no tick loop, no autosave
-        if (state.endgame) {
+        if (state.endgame === 'extinction') {
           set({ gameState: state })
           return
         }

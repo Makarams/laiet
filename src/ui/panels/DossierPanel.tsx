@@ -1,8 +1,7 @@
 import styled from 'styled-components'
 import { useLaietStore } from '@/store/gameStore'
-import { describeGenome } from '@/engine/genetics'
 import { ROLE_LABELS } from '@/engine/speech'
-import { Creature, CreatureState } from '@/types'
+import { CreatureState } from '@/types'
 import { THEME, creatureColor } from '@/ui/theme'
 
 const STATE_LABELS: Record<CreatureState, string> = {
@@ -18,7 +17,7 @@ const STATE_LABELS: Record<CreatureState, string> = {
 
 const Panel = styled.div`
   background: ${THEME.bgPanel}; border: 2px solid ${THEME.border}; border-radius: 6px;
-  padding: 12px 14px; font-family: ${THEME.font}; font-size: 13px; color: ${THEME.textPrimary};
+  padding: 14px 16px; font-family: ${THEME.font}; font-size: 13px; color: ${THEME.textPrimary};
   flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column;
   box-sizing:border-box;
   &::-webkit-scrollbar { width:4px; }
@@ -26,7 +25,7 @@ const Panel = styled.div`
 `
 const PanelHeader = styled.div`
   display:flex; justify-content:space-between; align-items:baseline;
-  padding-bottom:8px; margin-bottom:10px; border-bottom:2px solid ${THEME.border};
+  padding-bottom:8px; margin-bottom:12px; border-bottom:2px solid ${THEME.border};
 `
 const PanelTitle = styled.div`
   font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.2em;
@@ -34,10 +33,10 @@ const PanelTitle = styled.div`
 `
 const ActiveDot = styled.span`width:6px;height:6px;border-radius:50%;background:${THEME.amber};display:inline-block;`
 const PanelTag = styled.div`font-size:10px;font-weight:600;color:${THEME.textTertiary};letter-spacing:0.1em;`
-const Section = styled.div`margin-top:10px;`
+const Section = styled.div`margin-top:14px;`
 const SectionTitle = styled.div`
   font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:0.22em;
-  color:${THEME.textTertiary}; margin-bottom:7px; display:flex; align-items:center; gap:6px;
+  color:${THEME.textTertiary}; margin-bottom:8px; display:flex; align-items:center; gap:6px;
   &::after { content:''; flex:1; height:1px; background:${THEME.border}; }
 `
 const Row = styled.div`
@@ -51,14 +50,15 @@ const Value = styled.span<{ $color?: string }>`
 // ─── Creature name & identity ─────────────────────────────────────────────────
 
 const CreatureName = styled.div<{ $color: string }>`
-  font-size:18px; font-weight:700; color:${p => p.$color};
-  margin-bottom:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  font-size:22px; font-weight:700; color:${p => p.$color};
+  margin-bottom:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 `
 const IdLine = styled.div`
-  font-size:11px; font-weight:500; color:${THEME.textTertiary}; letter-spacing:0.05em; margin-bottom:4px;
+  font-size:11px; font-weight:500; color:${THEME.textTertiary}; letter-spacing:0.05em;
 `
 const StateLine = styled.div`
-  display:flex; align-items:center; justify-content:space-between; margin-top:3px;
+  display:flex; align-items:center; justify-content:space-between;
+  margin-top:6px; margin-bottom:4px;
 `
 const StateLabel = styled.span`font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.2em;color:${THEME.textTertiary};`
 const StateValue = styled.span`font-size:11px;font-weight:600;color:${THEME.alive};`
@@ -71,7 +71,6 @@ const TraitBadge = styled.span<{ $color: string }>`
   background:${p => p.$color}18; border:1px solid ${p => p.$color}44; color:${p => p.$color};
   text-transform:uppercase; letter-spacing:0.06em;
 `
-
 const RoleBadge = styled.span`
   font-size:10px; font-weight:700; padding:3px 9px; border-radius:4px;
   background:${THEME.amber}15; border:1px solid ${THEME.amber}55; color:${THEME.amber};
@@ -120,16 +119,6 @@ const MorphFill = styled.div<{ $w: number }>`
 `
 const MorphValue = styled.span`font-size:10px;color:${THEME.textTertiary};width:28px;text-align:right;`
 
-// ─── Monologue ────────────────────────────────────────────────────────────────
-
-const Monologue = styled.div`
-  margin-top:12px; padding:10px 14px 10px 16px;
-  background:rgba(100,181,246,0.05);
-  border-left:2px solid ${THEME.water}44;
-  font-style:italic; color:${THEME.textSecondary};
-  font-size:12px; line-height:1.7; border-radius:0 4px 4px 0;
-`
-
 // ─── Heal button ──────────────────────────────────────────────────────────────
 
 const HealBtn = styled.button`
@@ -144,32 +133,6 @@ const Empty = styled.div`
   color:${THEME.textTertiary}; font-size:12px; text-align:center;
   margin-top:1.5rem; line-height:2; font-style:italic;
 `
-
-// ─── Monologue text generator ─────────────────────────────────────────────────
-
-function generateMonologue(c: Creature): string {
-  if (c.state === 'mourning')   return `${c.name} is stationary. social group recently reduced.`
-  if (c.state === 'sick')       return `${c.name} showing reduced mobility. temperature regulation failing.`
-  if (c.state === 'fighting')   return `${c.name} in resource conflict. outcome undetermined.`
-  if (c.state === 'dreaming')   return `${c.name} has returned to a prior location. standing still.`
-  if (c.state === 'observing')  return `${c.name} at boundary edge. repeated passes. no apparent need.`
-  if (c.genome.mind === 'Sentinel' && c.sentience > 50)
-    return `${c.name} has logged more boundary passes than any other subject this cycle.`
-  if (c.genome.mind === 'Dreaming')
-    return `${c.name} moves toward sites the colony has already used. pattern unclear.`
-  if (c.hunger > 70)  return `${c.name} at hunger threshold. no food source located within range.`
-  if (c.thirst > 75)  return `${c.name} at thirst threshold. moving toward water.`
-  if (c.warmth < 25)  return `${c.name} below warmth threshold. seeking shelter.`
-  if (c.stress > 70)  return `${c.name} elevated stress. no external threat identified.`
-  if (c.bonds.length > 2) return `${c.name} remaining proximate to known social contacts.`
-  const idle = [
-    `${c.name} is stationary. no active drive.`,
-    `${c.name} moving without apparent objective.`,
-    `${c.name} at rest. all thresholds within normal range.`,
-    `no notable activity from ${c.name} this cycle.`,
-  ]
-  return idle[Math.floor(Math.random() * idle.length)]
-}
 
 // ─── Stat bar helper ──────────────────────────────────────────────────────────
 
@@ -248,13 +211,7 @@ export function DossierPanel() {
 
       {/* ── Identity ────────────────────────────────────────────────────── */}
       <CreatureName $color={color}>{creature.name} {creature.familyName}</CreatureName>
-      <IdLine>
-        Gen {creature.generation}
-        {' · '}
-        {creature.lineageId.slice(0,4).toUpperCase()} line
-        {' · '}
-        age {creature.age}d / {creature.maxAge}d
-      </IdLine>
+      <IdLine>Gen {creature.generation} · age {creature.age}d / {creature.maxAge}d</IdLine>
       <StateLine>
         <StateLabel>Activity</StateLabel>
         <StateValue>{STATE_LABELS[creature.state] ?? creature.state}</StateValue>
@@ -287,7 +244,6 @@ export function DossierPanel() {
                 </Row>
               )
             })}
-            {/* Asexual offspring: only one parent */}
             {parentA && !parentB && (
               <div style={{ fontSize:10, color:THEME.textTertiary, fontStyle:'italic', padding:'2px 0' }}>
                 single-parent division
@@ -309,30 +265,20 @@ export function DossierPanel() {
           )}
         </TraitRow>
         {creature.role && (
-          <div style={{ display:'flex', alignItems:'center', gap:6, margin:'4px 0 2px' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:6, margin:'5px 0 2px' }}>
             <span style={{ fontSize:9, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.2em', color:THEME.textTertiary, flexShrink:0 }}>Role</span>
             <RoleBadge>{ROLE_LABELS[creature.role]}</RoleBadge>
-          </div>
-        )}
-        {creature.genome.race
-          && creature.genome.latentAncestry
-          && Object.keys(creature.genome.latentAncestry).length > 0 && (
-          <div style={{ color:'#604890', fontSize:9, marginTop:2, letterSpacing:'0.08em' }}>
-            latent: {Object.entries(creature.genome.latentAncestry).map(([r, d]) => `${r}(${d})`).join(' · ')}
           </div>
         )}
         {creature.recentMutation !== undefined
           && creature.mutatedTraits
           && creature.mutatedTraits.length > 0 && (
-          <div style={{ marginTop:5, padding:'3px 8px',
+          <div style={{ marginTop:6, padding:'3px 8px',
             background:'rgba(100,181,246,0.08)', border:`1px solid ${THEME.water}44`,
             borderRadius:4, fontSize:10, color:THEME.water, letterSpacing:'0.1em', fontWeight:600 }}>
             ⚡ mutated: {creature.mutatedTraits.join(', ')}
           </div>
         )}
-        <div style={{ color:THEME.textTertiary, fontSize:10, lineHeight:1.6, marginTop:5 }}>
-          {describeGenome(creature.genome)}
-        </div>
       </Section>
 
       {/* ── Vitals ──────────────────────────────────────────────────────── */}
@@ -404,19 +350,12 @@ export function DossierPanel() {
       <Section>
         <SectionTitle>Record</SectionTitle>
         <Row><Label>Offspring</Label><Value $color={THEME.alive}>{creature.offspringIds.length}</Value></Row>
-        <Row><Label>Transmissions</Label><Value>{creature.messagesSent}</Value></Row>
         <Row>
           <Label>Kills</Label>
           <Value $color={creature.killCount > 0 ? THEME.death : undefined}>{creature.killCount}</Value>
         </Row>
-        <Row>
-          <Label>Born day</Label>
-          <Value $color={THEME.textSecondary}>{creature.bornOnDay}</Value>
-        </Row>
+        <Row><Label>Transmissions</Label><Value>{creature.messagesSent}</Value></Row>
       </Section>
-
-      {/* ── Monologue ───────────────────────────────────────────────────── */}
-      <Monologue>{generateMonologue(creature)}</Monologue>
 
     </Panel>
   )

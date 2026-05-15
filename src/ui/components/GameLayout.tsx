@@ -258,9 +258,7 @@ export function GameLayout() {
             <EndgameGlyph $type={gameState.endgame}>{ENDGAME_GLYPH[gameState.endgame]}</EndgameGlyph>
             <EndgameTitle $type={gameState.endgame}>{ENDGAME_TITLE[gameState.endgame]}</EndgameTitle>
             <EndgameBody>{gameState.messages[gameState.messages.length-1]?.text}</EndgameBody>
-            {gameState.endgame==='extinction' && (
-              <EndgameBtn onClick={()=>setShowRestartConfirm(true)}>Begin Again</EndgameBtn>
-            )}
+            <EndgameBtn onClick={()=>setShowRestartConfirm(true)}>Begin Again</EndgameBtn>
           </EndgameOverlay>
         )}
 
