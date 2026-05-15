@@ -108,17 +108,6 @@ const BondStrength = styled.span<{ $strength: number }>`
   width:24px;text-align:right;
 `
 
-// ─── Morphology ───────────────────────────────────────────────────────────────
-
-const MorphRow = styled.div`display:flex;align-items:center;gap:7px;margin:3px 0;`
-const MorphLabel = styled.span`font-size:10px;font-weight:600;color:${THEME.textTertiary};width:50px;flex-shrink:0;text-transform:uppercase;letter-spacing:0.1em;`
-const MorphTrack = styled.div`flex:1;height:4px;background:${THEME.bgDeep};border-radius:2px;overflow:hidden;`
-const MorphFill = styled.div<{ $w: number }>`
-  width:${p => Math.max(1,Math.min(100,p.$w))}%;height:100%;
-  background:linear-gradient(90deg,${THEME.water}88,${THEME.water});
-`
-const MorphValue = styled.span`font-size:10px;color:${THEME.textTertiary};width:28px;text-align:right;`
-
 // ─── Heal button ──────────────────────────────────────────────────────────────
 
 const HealBtn = styled.button`
@@ -328,22 +317,6 @@ export function DossierPanel() {
             </BondList>
           )
         }
-      </Section>
-
-      {/* ── Form ────────────────────────────────────────────────────────── */}
-      <Section>
-        <SectionTitle>Form</SectionTitle>
-        {(() => {
-          const m = creature.genome.morphology ?? { sizeScale:1.0, limbLength:0, spinalLength:0, colorDrift:0, eyeSize:1.0 }
-          return (
-            <>
-              <MorphRow><MorphLabel>Size</MorphLabel><MorphTrack><MorphFill $w={((m.sizeScale-0.7)/0.8)*100}/></MorphTrack><MorphValue>{m.sizeScale.toFixed(2)}</MorphValue></MorphRow>
-              <MorphRow><MorphLabel>Limbs</MorphLabel><MorphTrack><MorphFill $w={m.limbLength*100}/></MorphTrack><MorphValue>{m.limbLength.toFixed(2)}</MorphValue></MorphRow>
-              <MorphRow><MorphLabel>Spine</MorphLabel><MorphTrack><MorphFill $w={m.spinalLength*100}/></MorphTrack><MorphValue>{m.spinalLength.toFixed(2)}</MorphValue></MorphRow>
-              <MorphRow><MorphLabel>Eyes</MorphLabel><MorphTrack><MorphFill $w={((m.eyeSize-0.7)/0.8)*100}/></MorphTrack><MorphValue>{m.eyeSize.toFixed(2)}</MorphValue></MorphRow>
-            </>
-          )
-        })()}
       </Section>
 
       {/* ── Record ──────────────────────────────────────────────────────── */}
