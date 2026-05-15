@@ -1,6 +1,7 @@
 import styled from 'styled-components'
 import { useLaietStore } from '@/store/gameStore'
 import { describeGenome } from '@/engine/genetics'
+import { ROLE_LABELS } from '@/engine/speech'
 import { Creature, CreatureState } from '@/types'
 import { THEME, creatureColor } from '@/ui/theme'
 
@@ -69,6 +70,12 @@ const TraitBadge = styled.span<{ $color: string }>`
   font-size:10px; font-weight:700; padding:3px 9px; border-radius:4px;
   background:${p => p.$color}18; border:1px solid ${p => p.$color}44; color:${p => p.$color};
   text-transform:uppercase; letter-spacing:0.06em;
+`
+
+const RoleBadge = styled.span`
+  font-size:10px; font-weight:700; padding:3px 9px; border-radius:4px;
+  background:${THEME.amber}15; border:1px solid ${THEME.amber}55; color:${THEME.amber};
+  letter-spacing:0.04em;
 `
 
 // ─── Stat bars ────────────────────────────────────────────────────────────────
@@ -301,6 +308,12 @@ export function DossierPanel() {
             <TraitBadge $color="#8060c0">{creature.genome.race}</TraitBadge>
           )}
         </TraitRow>
+        {creature.role && (
+          <div style={{ display:'flex', alignItems:'center', gap:6, margin:'4px 0 2px' }}>
+            <span style={{ fontSize:9, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.2em', color:THEME.textTertiary, flexShrink:0 }}>Role</span>
+            <RoleBadge>{ROLE_LABELS[creature.role]}</RoleBadge>
+          </div>
+        )}
         {creature.genome.race
           && creature.genome.latentAncestry
           && Object.keys(creature.genome.latentAncestry).length > 0 && (

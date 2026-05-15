@@ -3,7 +3,7 @@ import {
 } from '@/types'
 import {
   HUNGER_DECAY, THIRST_DECAY, WARMTH_DECAY_BASE, WARMTH_DECAY_WINTER,
-  STRESS_DECAY_BASE, HUNGER_CRITICAL, THIRST_CRITICAL, WARMTH_CRITICAL,
+  STRESS_DECAY_BASE, HUNGER_CRITICAL, THIRST_CRITICAL, WARMTH_CRITICAL, STRESS_CRITICAL,
   HUNGER_SEEK_THRESHOLD, THIRST_SEEK_THRESHOLD, WARMTH_SEEK_THRESHOLD,
   FOOD_EAT_AMOUNT,
   MOVE_SPEED_BY_BODY, REPRODUCE_RATE_BY_BODY, FIGHT_POWER_BY_BODY,
@@ -45,7 +45,7 @@ export function tickNeeds(creature: Creature, season: Season, biome?: string): C
   if (c.hunger > HUNGER_CRITICAL) healthDamage += (c.hunger - HUNGER_CRITICAL) * 0.05
   if (c.thirst > THIRST_CRITICAL) healthDamage += (c.thirst - THIRST_CRITICAL) * 0.08
   if (c.warmth < WARMTH_CRITICAL) healthDamage += (WARMTH_CRITICAL - c.warmth) * 0.04
-  if (c.stress > 90) healthDamage += 0.02
+  if (c.stress > STRESS_CRITICAL) healthDamage += 0.02
 
   c.health = Math.max(0, c.health - healthDamage)
 
@@ -346,7 +346,7 @@ export function tickBehavior(
     case 'Aggressive':
       if (!c.territoryClaim && Math.random() < 0.008) {
         const claimTile = tiles[c.y]?.[c.x]
-        if (claimTile && (claimTile.type === 'rock' || claimTile.type === 'food_patch')) {
+        if (claimTile && (claimTile.type === 'food_patch' || claimTile.type === 'bush' || claimTile.type === 'river')) {
           changes.territoryClaim = { x: c.x, y: c.y }
         }
       }
@@ -565,12 +565,13 @@ export function tickBehavior(
           changes.territoryClaim = { x: c.x, y: c.y }
         }
       }
-      // Patrol their claimed tile; chase off intruders from any lineage
+      // Patrol their claimed tile; chase off non-bonded intruders
       if (!targetSet && c.territoryClaim && Math.random() < 0.08) {
         const intruder = aliveCreatures.find(
           o => o.id !== c.id
             && Math.abs(o.x - c.territoryClaim!.x) <= 4
             && Math.abs(o.y - c.territoryClaim!.y) <= 4
+            && !c.bonds.some(b => b.targetId === o.id && b.strength >= 20)
         )
         if (intruder) {
           changes.state = 'fighting'
@@ -761,7 +762,7 @@ export function tickBehavior(
   // Recluse avoids items if others are nearby. Cooldown prevents spam.
   if (!targetSet && enrichmentItems && c.health > 35) {
     const cooldownOk = !c.lastEnrichmentTick
-      || (c.stateTimer - (c.lastEnrichmentTick ?? 0)) > ENRICHMENT_COOLDOWN_TICKS
+      || (c.age - (c.lastEnrichmentTick ?? 0)) > ENRICHMENT_COOLDOWN_TICKS
     // Recluse avoids enrichment if others are within range; solitude first
     const recluseBlocked = c.genome.personality === 'Recluse'
       && aliveCreatures.some(o => o.id !== c.id && Math.abs(o.x - c.x) <= 4 && Math.abs(o.y - c.y) <= 4)
@@ -810,7 +811,7 @@ export function tickBehavior(
         if (atItem) {
           changes.state = 'using_enrichment'
           changes.enrichmentTarget = bestItem.id
-          changes.lastEnrichmentTick = c.stateTimer
+          changes.lastEnrichmentTick = c.age
           targetSet = true
         } else {
           changes.state = 'wandering'

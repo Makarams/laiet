@@ -4,7 +4,7 @@ export const DEFAULT_MODIFIERS: SimModifiers = {
   foodRegrowMult:              1.0,
   droughtDurationMult:         1.0,
   bondSpeedMult:               1.0,
-  mutationChance:              0.15,
+  mutationChance:              0.08,
   sentienceGrowthMult:         1.0,
   awarenessMessageMult:        1.0,
   healCharges:                 3,
@@ -44,10 +44,10 @@ export function computeSimModifiers(profile: CaretakerProfile): SimModifiers {
   // fast: higher mutation rate, faster sentience accumulation
   // slow: lower mutation rate, slower drift; lineages are more stable
   if (profile.evolution === 'fast') {
-    m.mutationChance     = 0.22
+    m.mutationChance     = 0.13
     m.sentienceGrowthMult *= 1.35
   } else {
-    m.mutationChance     = 0.10
+    m.mutationChance     = 0.05
     m.sentienceGrowthMult *= 0.70
   }
 
@@ -67,11 +67,11 @@ export function computeSimModifiers(profile: CaretakerProfile): SimModifiers {
   }
 
   // ── Expectation ───────────────────────────────────────────────────────────
-  // ascension:   ascension threshold lowered; easier to trigger the ending
+  // ascension:   colony tends toward cognition; sentience accumulates faster
   // persistence: no change
   // extinction:  harsher baseline; drought lingers, food thins
   if (profile.expectation === 'ascension') {
-    m.ascensionThresholdOffset = -10
+    m.sentienceGrowthMult *= 1.20
   } else if (profile.expectation === 'extinction') {
     m.droughtDurationMult  *= 1.20
     m.foodRegrowMult       *= 0.88

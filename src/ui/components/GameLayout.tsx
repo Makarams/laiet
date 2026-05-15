@@ -75,12 +75,12 @@ const EndgameOverlay = styled.div`
 `
 const EndgameGlyph = styled.div<{ $type:string }>`
   font-size:56px;font-weight:700;
-  color:${p => p.$type==='ascension' ? '#c878f0' : p.$type==='fracture' ? THEME.threat : THEME.death};
+  color:${p => p.$type==='fracture' ? THEME.threat : THEME.death};
   margin-bottom:1.6rem;
 `
 const EndgameTitle = styled.div<{ $type:string }>`
   font-size:22px;font-weight:700;letter-spacing:0.3em;text-transform:uppercase;
-  color:${p => p.$type==='ascension' ? '#c878f0' : p.$type==='fracture' ? THEME.threat : THEME.death};
+  color:${p => p.$type==='fracture' ? THEME.threat : THEME.death};
   margin-bottom:1.4rem;
 `
 const EndgameBody = styled.div`
@@ -138,8 +138,8 @@ const ConfirmBtn = styled.button<{ $danger?:boolean }>`
     color:${p => p.$danger ? THEME.threat : THEME.textPrimary};}
 `
 
-const ENDGAME_GLYPH: Record<string,string> = { extinction:'✝', fracture:'◇', ascension:'◈' }
-const ENDGAME_TITLE: Record<string,string> = { extinction:'Extinction', fracture:'Fracture', ascension:'Ascension' }
+const ENDGAME_GLYPH: Record<string,string> = { extinction:'✝', fracture:'◇' }
+const ENDGAME_TITLE: Record<string,string> = { extinction:'Extinction', fracture:'Fracture' }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 

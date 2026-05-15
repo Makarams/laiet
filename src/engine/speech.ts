@@ -314,20 +314,39 @@ export function buildSentence(c: Creature, context: SentenceContext): string[] {
 }
 
 // ─── Role assignment ──────────────────────────────────────────────────────────
-// Priority order matters — a Sentinel Curious is elder > shaman by lineage count.
+// Priority order matters. Roles are emergent — they reflect behavioral
+// contribution, not just genome. Generation, sentience, and offspring count
+// can elevate a creature into a deeper expression of their base type.
 export function assignRole(c: Creature, _tribeSize: number, lineageCount: number): CommunityRole | undefined {
   if (c.genome.personality === 'Recluse') return 'recluse'
 
   const { personality, body, mind } = c.genome
+  const seniorMind = mind === 'Sentinel' || mind === 'Dreaming'
 
-  if (mind === 'Sentinel' && lineageCount >= 4)                    return 'elder'
-  if ((mind === 'Dreaming' || mind === 'Sentinel') &&
-      (personality === 'Curious' || personality === 'Wanderer'))   return 'shaman'
-  if (personality === 'Nurturing' && mind === 'Dreaming')          return 'healer'
-  if (personality === 'Nurturing')                                  return 'nurturer'
-  if (personality === 'Aggressive' || body === 'Spike')            return 'guardian'
-  if (body === 'Wisp' && personality === 'Wanderer')               return 'scout'
-  if (personality === 'Wanderer' || personality === 'Greedy')      return 'forager'
+  // Elder — Sentinel with witnessed depth: many lineages or accumulated sentience with age
+  if (mind === 'Sentinel' && (lineageCount >= 4 || (c.sentience >= 60 && c.generation >= 3))) return 'elder'
+
+  // Shaman — senior mind with wandering or curious nature; pattern-reader and memory-keeper
+  if (seniorMind && (personality === 'Curious' || personality === 'Wanderer')) return 'shaman'
+
+  // Healer — nurturing drive elevated by dreaming depth or proven through many offspring
+  if (personality === 'Nurturing' && (mind === 'Dreaming' || c.offspringIds.length >= 4)) return 'healer'
+
+  // Nurturer — social caregiver without the depth or track record for healer
+  if (personality === 'Nurturing') return 'nurturer'
+
+  // Guardian — territorial by nature or physical build; kills deepen the role
+  if (personality === 'Aggressive' || body === 'Spike') return 'guardian'
+
+  // Scout — Wisp body is built for ranging; Wanderer/Curious Wisps are the archetype,
+  // but any Wisp that has survived to gen 2+ develops the role through lived experience
+  if (body === 'Wisp' && (personality === 'Wanderer' || personality === 'Curious' || c.generation >= 2)) return 'scout'
+
+  // Forager — resource specialist through wandering drive or acquisitive personality
+  if (personality === 'Wanderer' || personality === 'Greedy') return 'forager'
+
+  // Senior minds without a better-fitting role drift toward shaman
+  if (seniorMind) return 'shaman'
 
   return undefined
 }

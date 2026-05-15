@@ -111,7 +111,7 @@ const VISIBILITY_HINTS: Record<Visibility, string> = {
   hidden:    'your presence is subtle; awareness grows slowly, more autonomy',
 }
 const EXPECTATION_HINTS: Record<Expectation, string> = {
-  ascension:   'the colony will transcend; easier path to ending',
+  ascension:   'the colony tends toward cognition; awareness accumulates more readily',
   persistence: 'no bias ; the colony persists according to its own nature',
   extinction:  'the world presses harder; harsher baseline conditions',
 }

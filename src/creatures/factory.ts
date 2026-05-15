@@ -241,10 +241,9 @@ export function createStarterCreatures(
     }, rng)
   })
 
-  // Pre-seed weak bonds between every pair of starters.
-  // STARTER_BOND_STRENGTH (18) is below the >20 threshold that disables
-  // bond-seeking, so starters still actively seek each other; they just
-  // reach the reproduction threshold ~2× faster than starting from 0.
+  // Pre-seed bonds between every pair of starters.
+  // STARTER_BOND_STRENGTH (25) is below REPRODUCE_BOND_MIN_STRENGTH (35), so
+  // bond-seeking stays active; ~20 adjacency ticks at 0.5/tick bridge the gap.
   const ids = creatures.map(c => c.id)
   return creatures.map(c => ({
     ...c,
@@ -290,7 +289,7 @@ export function computeAwarenessStage(state: GameState): 1 | 2 | 3 {
   const hasDreamingFallback = alive.some(c => c.genome.mind === 'Dreaming' && c.sentience >= 80)
   const sentientEnough = hasSentinel || hasDreamingFallback
 
-  if (alive.length >= 50 && maxGen >= 4 && hasSentinel) return 3
-  if (maxGen >= 3 && sentientEnough) return 2
+  if (alive.length >= 80 && maxGen >= 6 && hasSentinel) return 3
+  if (maxGen >= 5 && sentientEnough) return 2
   return 1
 }

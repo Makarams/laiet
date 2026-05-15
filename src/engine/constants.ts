@@ -20,7 +20,7 @@ export const DAY_PHASE_THRESHOLDS = {
 
 // ─── World ────────────────────────────────────────────────────────────────────
 export const WORLD_SIZE = 240                     // 240×240 for biome diversity, exploration, natural dispersion
-export const MUTATION_CHANCE = 0.15               // 15% per gene slot
+export const MUTATION_CHANCE = 0.08               // 8% per gene slot; slower genetic drift preserves intermediate stages
 export const DEATH_SITE_DECAY_DAYS = 10           // ~2 Spore generations; death sites clear quickly so the map stays readable
 
 // ─── Creature stats ───────────────────────────────────────────────────────────
@@ -129,6 +129,7 @@ export const WEATHER_BREED_MULT: Record<string, number> = {
   clear: 1.00, rain: 1.10, storm: 0.90, drought: 0.65,
 }
 
+export const DISEASE_RECOVERY_HEALTH   = 40       // health level at which sick state auto-clears
 export const DISEASE_POP_THRESHOLD     = 50       // overcrowding kicks in (calibrated for 240×240)
 export const DISEASE_POP_SLOPE_RANGE   = 95       // denominator for popFactor slope; minimum (0.20) reached at threshold + this value
 export const DISEASE_CONTACT_CHANCE    = 0.0018   // per tick when crowded
@@ -137,7 +138,7 @@ export const DISEASE_HEALTH_DRAIN      = 0.3      // extra health loss per tick 
 export const ASEXUAL_HEALTH_MIN        = 78       // must be very healthy to divide
 export const ASEXUAL_HUNGER_MAX        = 30       // and well-fed
 export const ASEXUAL_BASE_CHANCE       = 0.0008   // rare; Spore body only
-export const ASEXUAL_MUTATION_CHANCE   = 0.28     // higher than sexual (single-parent)
+export const ASEXUAL_MUTATION_CHANCE   = 0.15     // higher than sexual (single-parent)
 
 // Minimum bond strength for sexual reproduction partnership
 export const REPRODUCE_BOND_MIN_STRENGTH = 35    // achievable in ~20 adjacency ticks from starter bond
@@ -153,18 +154,16 @@ export const COLONY_STAGE_THRESHOLDS = {
 } as const
 
 // ─── Awareness ────────────────────────────────────────────────────────────────
-export const AWARENESS_STAGE_2_GENERATION = 3
-export const AWARENESS_STAGE_3_POPULATION = 50
-export const ASCENSION_POPULATION = 80
-export const ASCENSION_SENTINEL_GENERATIONS = 4
-export const ASCENSION_NO_NEGLECT_DEATHS = true
+export const AWARENESS_STAGE_2_GENERATION = 5
+export const AWARENESS_STAGE_3_POPULATION = 80
+export const AWARENESS_STAGE_3_GENERATION = 6
 
 // ─── Sentience growth ────────────────────────────────────────────────────────
 export const SENTIENCE_GROWTH_BY_MIND: Record<string, number> = {
-  Feral:    0.001,
-  Aware:    0.005,
-  Dreaming: 0.008,
-  Sentinel: 0.015,
+  Feral:    0.0004,
+  Aware:    0.002,
+  Dreaming: 0.003,
+  Sentinel: 0.006,
 }
 
 // ─── Season modifiers ────────────────────────────────────────────────────────
@@ -246,7 +245,7 @@ export const RECLUSE_CROWD_THRESHOLD = 3   // more than this many nearby = overc
 // ─── Caretaker presence ──────────────────────────────────────────────────────
 export const CARETAKER_PRESENCE_RADIUS = 6   // tiles around last action for awareness boost
 export const CARETAKER_PRESENCE_WINDOW_MS = 30_000  // 30 real seconds
-export const CARETAKER_SENTIENCE_BOOST = 0.006  // per tick while in presence radius
+export const CARETAKER_SENTIENCE_BOOST = 0.003  // per tick while in presence radius
 
 // ─── Bone memory ─────────────────────────────────────────────────────────────
 export const BONE_MEMORY_CHANCE = 0.30  // chance a birth near a death_site triggers a memory message
@@ -256,7 +255,7 @@ export const BONE_MEMORY_RADIUS = 4     // tiles from birth to death_site to tri
 export const QUESTION_RESPONSE_WINDOW_MS = 30_000  // 30 real seconds to respond to a question
 
 // ─── Message cooldowns ────────────────────────────────────────────────────────
-export const MIN_GAME_DAYS_BETWEEN_MESSAGES = 3
+export const MIN_GAME_DAYS_BETWEEN_MESSAGES = 7
 export const MESSAGE_POOL_SIZE = 60
 
 // ─── Mutation display ─────────────────────────────────────────────────────────
@@ -301,7 +300,7 @@ export const ENRICHMENT_EFFECTS: Record<string, {
 export const NATURAL_CAVE_STRESS_REDUCTION   = 1.5   // per tick on cave tile
 export const NATURAL_RIVER_STRESS_REDUCTION  = 0.5   // per tick on river/mud tile
 export const NATURAL_TREE_STRESS_REDUCTION   = 0.25  // per tick on tree/shelter tile
-export const NATURAL_ROCKY_SENTINEL_BONUS    = 0.012 // sentience per tick (Sentinel on rocky biome)
+export const NATURAL_ROCKY_SENTINEL_BONUS    = 0.005 // sentience per tick (Sentinel on rocky biome)
 export const NATURAL_BUSH_STRESS_REDUCTION   = 0.18  // per tick on bush tile (concealment calms Timid)
 
 // ─── Bush tiles ───────────────────────────────────────────────────────────────
@@ -365,6 +364,9 @@ export const VEG_BUSH_CAP  = 400   // max bush tiles world-wide
 // rivers can dry to mud. Both effects compound over many seasons.
 export const RIVER_EROSION_CHANCE = 0.00003  // storm: adjacent grass → river per tick
 export const RIVER_DRYING_CHANCE  = 0.00008  // drought: low-water isolated river → mud per tick
+// Winter: per river tile per tick, adjacent grass may briefly flood.
+// At ~200 river tiles × 60 ticks/min this averages a few flooding events per minute.
+export const RIVER_WINTER_FLOOD_CHANCE = 0.00015
 
 // ─── Early-generation cohesion ────────────────────────────────────────────────
 // Gen 0-2 creatures have a homing bias toward the nearest living creature.
@@ -382,6 +384,7 @@ export const TREE_PEAK_AGE        = TREE_GROW_DAYS * 4   // ~480 ticks
 export const TREE_WITHER_AGE      = TREE_GROW_DAYS * 7   // ~840 ticks
 export const TREE_DECAY_AGE       = TREE_GROW_DAYS * 10  // ~1200 ticks
 export const TREE_REGROW_FROM_DECAY = 0.006               // chance per tick at decay age
+export const TREE_SEED_CHANCE       = 1 / 3               // germination rate for a seed landing on grass
 
 // Shrubs (bush) wither seasonally and may regenerate or die.
 export const BUSH_WITHER_CHANCE   = 0.0002  // per tick in drought or late autumn/winter

@@ -230,10 +230,6 @@ export function extinctionMessage(finalCreature: Creature | null): string {
   return `${finalCreature.name} was the final recorded subject. age: ${finalCreature.age} days. record closed.`
 }
 
-export function ascensionMessage(): string {
-  return 'cohort has breached containment threshold. forty-two generations. the observation is complete.'
-}
-
 // ─── Race revival messages ────────────────────────────────────────────────────
 // Emitted when a race transitions from 0 alive back to ≥ 1. Stage-gated.
 

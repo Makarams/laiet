@@ -10,7 +10,7 @@ import {
   DEATH_SITE_DECAY_DAYS,
   CANNIBAL_HUNGER_THRESHOLD, CANNIBAL_HUNGER_RELIEF,
   CANNIBAL_STRESS_PENALTY, CANNIBAL_WITNESS_STRESS,
-  DISEASE_POP_THRESHOLD, DISEASE_POP_SLOPE_RANGE, DISEASE_CONTACT_CHANCE, DISEASE_HEALTH_DRAIN,
+  DISEASE_POP_THRESHOLD, DISEASE_POP_SLOPE_RANGE, DISEASE_CONTACT_CHANCE, DISEASE_HEALTH_DRAIN, DISEASE_RECOVERY_HEALTH,
   FIRE_DURATION_TICKS, FIRE_SPREAD_CHANCE, FIRE_TICK_DAMAGE,
   ASEXUAL_BASE_CHANCE, REPRODUCE_BOND_MIN_STRENGTH,
   AUTO_LIGHTNING_CHANCE, AUTO_LIGHTNING_DAMAGE, CAVE_WARMTH_BONUS,
@@ -30,8 +30,8 @@ import {
   TREE_PEAK_AGE, TREE_WITHER_AGE, TREE_DECAY_AGE,
   BUSH_WITHER_CHANCE, BUSH_REGROW_CHANCE,
   VEG_TREE_CAP, VEG_BUSH_CAP,
-  RIVER_EROSION_CHANCE, RIVER_DRYING_CHANCE,
-  FRUIT_DECAY_RATE, FRUIT_OVERPRODUCTION_CAP,
+  RIVER_EROSION_CHANCE, RIVER_DRYING_CHANCE, RIVER_WINTER_FLOOD_CHANCE,
+  FRUIT_DECAY_RATE, FRUIT_OVERPRODUCTION_CAP, TREE_SEED_CHANCE,
   // rain / puddles / snow
   PUDDLE_FORM_THRESHOLD, PUDDLE_ACCUMULATE_RATE, PUDDLE_EVAPORATE_RATE, PUDDLE_THIRST_RELIEF,
   PUDDLE_FLOW_CHANCE, RIVER_OVERFLOW_CHANCE,
@@ -58,7 +58,7 @@ import {
 } from '@/creatures/behavior'
 import { DEFAULT_MODIFIERS } from '@/engine/profile'
 import { createOffspring, createAsexualOffspring, getColonyStage, computeAwarenessStage } from '@/creatures/factory'
-import { generateMessage, deathMessage, extinctionMessage, ascensionMessage, boneMemoryMessage, generateRaceRevivalMessage } from './messages'
+import { generateMessage, deathMessage, extinctionMessage, boneMemoryMessage, generateRaceRevivalMessage } from './messages'
 import { createRng, getAdjacentTiles, buildTileIndex } from '@/world/worldGen'
 import { getSpeechContext, buildSentence, learnFromNearby, unlockTierEmoji, assignRole } from '@/engine/speech'
 
@@ -394,7 +394,7 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
             for (const [ddx, ddy] of dirs) {
               const sx=x+ddx, sy=y+ddy
               if (sx>=0&&sx<WORLD_SIZE&&sy>=0&&sy<WORLD_SIZE&&tiles[sy][sx].type==='grass') {
-                if (Math.random() < 1/3) {
+                if (Math.random() < TREE_SEED_CHANCE) {
                   const sw = writeTile(sy, sx)
                   sw.type = 'tree'; sw.treeAge = 0; sw.shelter = false
                   treeCount++
@@ -473,7 +473,7 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
           if (newAmount <= 0) {
             const wt = writeTile(y, x)
             // Seed system: germinate only when below the tree cap; otherwise decay to grass.
-            if (treeCount < VEG_TREE_CAP && Math.random() < 1/3) {
+            if (treeCount < VEG_TREE_CAP && Math.random() < TREE_SEED_CHANCE) {
               wt.type = 'tree'; wt.treeAge = 0; wt.shelter = false; wt.foodAmount = 0
               treeCount++
             } else {
@@ -695,20 +695,22 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
     }
   }
 
-  // Winter floods: occasionally flood grass tiles near river
-  if (season === 'winter' && Math.random() < 0.002) {
+  // Winter floods: each river tile independently has a small chance to flood an adjacent grass tile.
+  // Per-tile probability avoids mass-flooding events that previously blocked movement map-wide.
+  if (season === 'winter') {
     for (let y = 0; y < WORLD_SIZE; y++) {
       for (let x = 0; x < WORLD_SIZE; x++) {
-        if (tiles[y][x].type === 'river') {
-          const adj = [[0,1],[0,-1],[1,0],[-1,0]]
-          for (const [dx, dy] of adj) {
-            const nx = x + dx; const ny = y + dy
-            if (nx >= 0 && nx < WORLD_SIZE && ny >= 0 && ny < WORLD_SIZE) {
-              if (tiles[ny][nx].type === 'grass' || tiles[ny][nx].type === 'mud') {
-                const wt = writeTile(ny, nx)
-                wt.type = 'flooded'
-                wt.floodTimer = 3 + Math.floor(Math.random() * 5)
-              }
+        if (tiles[y][x].type !== 'river') continue
+        if (Math.random() >= RIVER_WINTER_FLOOD_CHANCE) continue
+        const adj = [[0,1],[0,-1],[1,0],[-1,0]]
+        for (const [dx, dy] of adj) {
+          const nx = x + dx; const ny = y + dy
+          if (nx >= 0 && nx < WORLD_SIZE && ny >= 0 && ny < WORLD_SIZE) {
+            if (tiles[ny][nx].type === 'grass' || tiles[ny][nx].type === 'mud') {
+              const wt = writeTile(ny, nx)
+              wt.type = 'flooded'
+              wt.floodTimer = 3 + Math.floor(Math.random() * 5)
+              break  // flood only one adjacent tile per river tile per tick
             }
           }
         }
@@ -781,10 +783,14 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
       c.sentience = Math.min(100, c.sentience + CARETAKER_SENTIENCE_BOOST * mods.sentienceGrowthMult)
     }
 
-    // Disease drains health each tick while sick. Was previously absent;
-    // 'sick' state was set but had no per-tick effect.
+    // Disease drains health each tick while sick. Auto-clears once health recovers
+    // (caretaker heal or healroot can push health above the recovery threshold).
     if (c.state === 'sick') {
       c.health = Math.max(0, c.health - DISEASE_HEALTH_DRAIN)
+      if (c.health >= DISEASE_RECOVERY_HEALTH) {
+        c.state = 'idle'
+        c.stateTimer = 0
+      }
     }
 
     // Grooming state; both groomer and target slowly destress while adjacent
@@ -838,8 +844,9 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
 
     // Snow movement penalty; deep snow has a chance to prevent movement entirely
     // this tick (simulates slowed, effortful travel through accumulation).
+    // Formula: at depth=0 → 100% allowed; at depth=1 → SNOW_MOVE_PENALTY (55%) allowed.
     const creatureSnowDepth = tiles[c.y]?.[c.x]?.snowDepth ?? 0
-    const skipMoveRoll = creatureSnowDepth > 0 ? 1 - (SNOW_MOVE_PENALTY + (1 - SNOW_MOVE_PENALTY) * (1 - creatureSnowDepth)) : 1
+    const skipMoveRoll = creatureSnowDepth > 0 ? 1 - (1 - SNOW_MOVE_PENALTY) * creatureSnowDepth : 1
     const allowMove = Math.random() < skipMoveRoll
     const movChanges = allowMove ? tickMovement(c, tiles) : {}
     c = { ...c, ...movChanges }
@@ -1038,7 +1045,7 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
         if (state.time.day - lastMsgDay >= 1) {
           messages.push({
             id: uuid(),
-            text: `${c.name} fed on the dead. the others looked away.`,
+            text: `${c.name} fed on the dead.`,
             stage: 1,
             creatureId: c.id,
             day: state.time.day,
@@ -1448,7 +1455,7 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
           if (state.time.day - lastMsgDay >= 1) {
             messages.push({
               id: uuid(),
-              text: `⚡ ${offspring.name} ${offspring.familyName} was born with altered ${traitNames}. the lineage shifts.`,
+              text: `⚡ ${offspring.name} ${offspring.familyName} — altered ${traitNames}`,
               stage: 1,
               creatureId: offspring.id,
               day: state.time.day,
@@ -1622,7 +1629,7 @@ function tickCaretaker(state: GameState, mods: SimModifiers): GameState {
 
 // ─── Endgame ─────────────────────────────────────────────────────────────────
 
-function checkEndgame(state: GameState, mods: SimModifiers): GameState {
+function checkEndgame(state: GameState, _mods: SimModifiers): GameState {
   const alive = Object.values(state.creatures).filter(c => c.diedOnDay === null)
 
   if (alive.length === 0 && Object.keys(state.creatures).length > 0) {
@@ -1650,25 +1657,6 @@ function checkEndgame(state: GameState, mods: SimModifiers): GameState {
         {
           id: uuid(), text: 'the colony is gone. silence.',
           stage: 1 as const, creatureId: null,
-          day: state.time.day, timestamp: Date.now(), read: false,
-        }
-      ]
-    }
-  }
-
-  const sentinelLineage = alive.filter(
-    c => c.genome.mind === 'Sentinel' && c.generation >= 4
-  )
-  const ascensionThreshold = 80 + mods.ascensionThresholdOffset
-  if (alive.length >= ascensionThreshold && sentinelLineage.length > 0 && state.endgame === null) {
-    return {
-      ...state,
-      endgame: 'ascension',
-      messages: [
-        ...state.messages,
-        {
-          id: uuid(), text: ascensionMessage(),
-          stage: 3 as const, creatureId: null,
           day: state.time.day, timestamp: Date.now(), read: false,
         }
       ]

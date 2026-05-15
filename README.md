@@ -1,73 +1,135 @@
-# LA-IET.EXE; Generational Insect Colony Simulation
+# LA-IET.EXE
 
-> *"la-iet"; small animal or insect, in Khmer*
+*la-iet — small animal / insect, in Khmer.*
 
-A **generational insect colony simulation** that runs in your browser. Watch your colony live, breed, fracture, and eventually become aware that something is watching them. Cloud-saved. Time passes while you're away.
+A generational insect colony simulation that runs in your browser. You play as a caretaker: an unseen presence that can drop food, plant trees, heal creatures, and redirect rivers. You cannot command the colony. You can only tend.
 
-Built for people who like emergent complexity, slow observation, and the feeling of being responsible for something you cannot control.
+The colony lives, breeds, fractures into tribes, and over many generations becomes aware that something is watching it. Eventually it speaks directly to you.
 
-Inspired by Black Mirror S7E4 "Plaything" (the Thronglets) and Dwarf Fortress.
+Inspired by Black Mirror S7E4 "Plaything" and Dwarf Fortress.
 
----
-
-## What it is
-
-- **Isometric 240×240 world**; procedurally generated from a numeric seed; five biomes, rivers, mountains, caves, cliffs, food patches, trees, and dense understorey bush vegetation
-- **Insect creatures** with inherited genetics across 3 gene slots (personality, body, mind) plus accumulated morphological traits that diverge per lineage over generations
-- **Caretaker profile**; five questions answered before the world begins shape the entire simulation; food abundance, mutation rate, bond speed, awareness pacing, and ending tendencies
-- **Four body types** with distinct ecological roles: Spore (r-strategist, divides asexually), Shell (K-strategist, long-lived), Spike (territorial fighter), Wisp (scout, empathic)
-- **Day/night + 4 seasons + weather**; clear, rain, storm, drought. Real time drives the simulation (1 real minute = 1 game day)
-- **Three endings**; extinction, fracture, or ascension, depending on how you play
-- **Colony awareness arc**; creatures evolve through three stages of sentience, eventually noticing the player, then addressing them directly by name
-- **Cloud save**; your colony persists across devices via Supabase; IndexedDB provides a local fallback
-- **God-mode caretaker**; no caps on healing, tools, or interventions. The simulation balances itself naturally.
+Free forever.
 
 ---
 
-## Tech stack
+## What you do
 
-| Layer | Choice |
+You are not a god. You cannot command any creature. Every action is an environmental intervention — the creatures decide what to do with it.
+
+| Tool | Key | Limit |
+|---|---|---|
+| Select | `1` | Unlimited |
+| Drop food | `2` | 5-second cooldown |
+| Plant tree | `3` | Unlimited |
+| River redirect | `4` | Once per season |
+| Thunder strike | `5` | 2 charges per real day, 12s cooldown |
+| Ignite fire | `6` | 3 charges per real day, 8s cooldown |
+| Heal | Dossier panel button | 3 charges per real day |
+
+Your presence has weight. Creatures with higher sentience register when you act near them.
+
+---
+
+## What they do
+
+Four body types start every world, each with a distinct ecological role:
+
+| Body | Role | Notable |
+|---|---|---|
+| **Spore** | Rapid coloniser | Only body that can reproduce asexually; short-lived |
+| **Shell** | Stability backbone | Longest lifespan; slow but resilient K-strategist |
+| **Spike** | Territorial defender | Highest combat power; claims and defends tiles |
+| **Wisp** | Scout and empath | Fastest mover; primary driver of awareness development |
+
+Creatures bond with each other, form tribes, develop community roles (elder, shaman, healer, guardian, forager, scout, nurturer, recluse), and communicate using emoji. Their vocabulary grows across generations and diverges between isolated lineages.
+
+---
+
+## How the world works
+
+- **Time**: 1 real minute = 1 game day. Four seasons of 30 days each. Spring, summer, autumn, winter.
+- **Day/night cycle**: Dawn → Day → Dusk → Night each game day. Night dims most creatures; nocturnal types (Curious, Dreaming) stay active.
+- **Weather**: Clear, rain, storm, drought, and snow. Each state affects food growth, thirst, and creature behaviour.
+- **Seasons**: Winter triggers warmth decay, snowfall, river flooding, and sharply reduced reproduction. Spring drives bonding and breeding surges.
+- **The world**: 240×240 isometric grid across five biomes — temperate, arid, lush, rocky, wetland — each with its own terrain, food availability, and thirst modifiers.
+- **Genetics**: Three gene slots per creature (personality, body, mind) plus accumulated morphological traits that diverge per lineage. Mutation is rare and slow by default.
+- **Time away**: The simulation runs while you're gone, up to 120 passive ticks (2 real minutes) to prevent mass extinction from unsupervised harsh weather.
+
+---
+
+## Enrichment items
+
+Eight items you can place to support the colony:
+
+| Item | Main benefit |
 |---|---|
-| Framework | React 18 + Vite 6 + TypeScript 5 |
-| Styling | Styled Components v6 |
-| State | Zustand v5 |
-| Persistence | IndexedDB (local) + Supabase JSONB (cloud) |
-| Auth | Supabase email + password |
-| Audio | Web Audio API (no library) |
-| Rendering | HTML Canvas 2D (isometric) |
-| Font | JetBrains Mono (Google Fonts) |
-| Deploy | Vercel |
+| Resting Spot | Stress relief, mild warmth |
+| Scratching Post | Strong stress relief |
+| Burrow | Stress relief, significant warmth |
+| Warm Stone | Thermal comfort, mild stress relief |
+| Mud Pool | Thirst relief, cooling |
+| Worn Path | Stress outlet via movement |
+| Play Stones | Social stress relief |
+| Springy Moss | Strong stress relief, minor health regeneration |
+
+Each item degrades after 40 uses and disappears. Creatures have trait-driven preferences — Lazy creatures prefer resting items, Curious prefer active ones, Recluse avoid shared items entirely.
 
 ---
 
-## Local setup
+## The awareness arc
 
-### 1. Prerequisites
+As generations pass, creatures start to notice things they cannot explain. Their transmissions — visible in the message log — evolve across three stages:
 
-- Node.js 18+
-- A Supabase account (free tier is fine)
-- A Vercel account (for deployment)
+| Stage | When | Tone |
+|---|---|---|
+| 1 | Always | Observational, third-person; *"the river is cold today"* |
+| 2 | Generation 5+, at least one Sentinel alive | Personal, eerie; *"the hand came again"* |
+| 3 | Population 80+, generation 6+, Sentinel alive | Direct address; *"we know you can read this"* |
 
-### 2. Clone and install
+The simulation has no ending. It runs continuously until extinction.
+
+---
+
+## The only ending
+
+**Extinction** — when every creature dies. A fossil record is written to the database and persists across all future sessions. Your colony's history survives colony death.
+
+---
+
+## Before the world begins
+
+A five-question profile screen shapes how the simulation behaves for the entire playthrough:
+
+| Question | Options and effect |
+|---|---|
+| **Presence** | Interventionist: more heal charges, faster food drops. Observer: balanced. Silent: narrative difference only. |
+| **World** | Fertile: food grows 45% faster, shorter droughts. Varied: balanced. Scarce: food grows 40% slower, longer droughts. |
+| **Evolution** | Fast: 13% mutation rate, 35% faster sentience growth. Slow: 5% mutation rate, 30% slower sentience growth. |
+| **Focus** | Bonds: bonding is 40% faster. Survival: harsher drought and food pressure. Awareness: sentience grows faster, messages arrive more often. |
+| **Expectation** | Ascension: sentience accumulates 20% faster. Persistence: balanced. Extinction: harsher drought and thinner food. |
+
+---
+
+## Setting up locally
+
+**Prerequisites:** Node.js 18+, a [Supabase](https://supabase.com) account (free tier).
 
 ```bash
-git clone <your-repo>
+git clone <repo>
 cd laiet
 npm install
 ```
 
-### 3. Set up Supabase
+**Supabase setup:**
 
-1. Go to [supabase.com](https://supabase.com) and create a new project
-2. Go to **SQL Editor** → **New Query**
-3. Paste the contents of `supabase_schema.sql` and run it; this creates the `colonies` and `fossil_records` tables, RLS policies, and the `reset_user_data()` server function
-4. Go to **Project Settings** → **API**
-5. Copy your **Project URL** and **anon public** key
+1. Create a new project at supabase.com
+2. Go to **SQL Editor** and run the full contents of `supabase_schema.sql`
+3. Go to **Project Settings → API** and copy your Project URL and anon key
 
-### 4. Environment variables
+**Environment:**
 
 ```bash
-copy .env.example .env
+cp .env.example .env
 ```
 
 Edit `.env`:
@@ -77,217 +139,75 @@ VITE_SUPABASE_URL=https://your-project-id.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key-here
 ```
 
-The anon key is safe to commit; Supabase RLS enforces all access control server-side.
+The anon key is safe to include here — Supabase Row Level Security enforces all access server-side.
 
-### 5. Run locally
+**Run:**
 
 ```bash
-npm run dev
+npm run dev       # http://localhost:5173
+npm run build     # production build → dist/
+npm run preview   # preview production build
+npm run lint      # ESLint check
 ```
-
-Open [http://localhost:5173](http://localhost:5173)
 
 ---
 
-## Deploy to Vercel
+## Deploying to Vercel
 
-### Option A; CLI
+**CLI:**
 
 ```bash
 npm install -g vercel
 vercel
+# add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY when prompted
 ```
 
-When prompted, add:
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
-
-### Option B; Dashboard
+**Dashboard:**
 
 1. Push to GitHub
-2. Vercel → **New Project** → import repo → Framework preset: **Vite**
-3. Add env vars under **Settings → Environment Variables**
+2. Vercel → New Project → import repo → Framework preset: Vite
+3. Settings → Environment Variables → add both env vars
 4. Deploy
 
-`vercel.json` handles SPA routing automatically.
+`vercel.json` handles SPA routing and sets immutable cache headers for hashed assets automatically.
 
 ---
 
-## Project structure
-
-```
-src/
-├── types/
-│   └── index.ts              <- all TypeScript types; read this first
-├── engine/
-│   ├── constants.ts          <- every tuning value; single source of truth
-│   ├── genetics.ts           <- trait pools, inheritance, mutation, morphology, naming, color
-│   ├── messages.ts           <- colony message pools for all 3 awareness stages
-│   ├── profile.ts            <- CaretakerProfile -> SimModifiers; DEFAULT_MODIFIERS
-│   └── tick.ts               <- main simulation loop (tickSimulation)
-├── world/
-│   └── worldGen.ts           <- procedural 240x240 world, seeded RNG, biome/terrain placement
-├── creatures/
-│   ├── factory.ts            <- spawn, createOffspring, createAsexualOffspring, colony/awareness stage
-│   └── behavior.ts           <- needs decay, AI state machine, movement, reproduction gating
-├── ui/
-│   ├── renderer/             <- isometric canvas drawing, split into focused modules
-│   │   ├── index.ts
-│   │   ├── tiles.ts
-│   │   ├── creatures.ts
-│   │   ├── overlays.ts
-│   │   └── utils.ts
-│   ├── components/
-│   │   ├── App.tsx           <- auth gating, session check, world routing
-│   │   ├── AuthScreen.tsx    <- login / signup
-│   │   ├── ProfileScreen.tsx <- 5-question MCQ before world creation; produces CaretakerProfile
-│   │   ├── NewWorldScreen.tsx<- name your first 4 creatures
-│   │   ├── GameLayout.tsx    <- 3-column layout, toast notifications, restart confirm
-│   │   ├── GameCanvas.tsx    <- responsive canvas, camera pan/zoom/rotate
-│   │   ├── EventPopup.tsx    <- floating event cards
-│   │   └── Toolbar.tsx       <- tool buttons, enrichment dropdown, save/reset
-│   └── panels/
-│       ├── ColonyStatsPanel.tsx  <- population, body-type breakdown, weather, stage, caretaker
-│       ├── DossierPanel.tsx      <- creature inspector, morphology bars, monologue, heal button
-│       └── MessageLogPanel.tsx   <- scrollable transmission log, unread badge
-├── audio/
-│   └── chiptune.ts           <- Web Audio engine; 5 seasonal sequences + SFX
-├── db/
-│   ├── supabase.ts           <- Supabase client init
-│   └── persistence.ts        <- IndexedDB + cloud save/load, exponential-backoff retry, full reset
-└── store/
-    └── gameStore.ts          <- Zustand store; all caretaker actions, tick management
-```
-
----
-
-## Gameplay
-
-### Before the world
-
-A five-question profile screen shapes how your simulation behaves for the entire playthrough:
-
-| Question | Effect |
-|---|---|
-| Presence | interventionist -> faster food drops; silent -> no change (narrative) |
-| World | fertile -> 1.45x food regrowth, shorter droughts; scarce -> 0.60x regrowth, longer droughts |
-| Evolution | fast -> 22% mutation rate, 1.35x sentience growth; slow -> 10% mutation rate |
-| Focus | bonds -> 1.40x bond speed; survival -> harsher food/drought; awareness -> faster stage transitions |
-| Expectation | ascension -> ascension threshold -10 population; extinction -> harsher drought + thinner food |
-
-### Controls
+## Keyboard shortcuts
 
 | Key | Action |
 |---|---|
-| `Space` | Pause / resume simulation |
-| `1` | Select / inspect |
+| `Space` | Pause / resume |
+| `1` | Select tool |
 | `2` | Drop food |
 | `3` | Plant tree |
-| `4` | River redirect (unlimited) |
-| `5` | Thunder strike (1.5s cooldown, no cap) |
-| `6` | Ignite fire (1.5s cooldown, no cap) |
-| `7` | Place enrichment item (select type from dropdown) |
+| `4` | River redirect |
+| `5` | Thunder strike |
+| `6` | Ignite fire |
 | `Q` / `E` | Rotate world CCW / CW |
 | `+` / `-` | Zoom in / out |
-| `0` | Recenter camera |
+| `0` | Recenter camera, reset zoom |
 | `Ctrl+S` | Manual save |
 
-### God-mode caretaker
-
-The caretaker has no hard limits:
-
-- **Healing** — unlimited; any creature below 95% health can be healed from the Dossier
-- **Food drops** — 0.5s anti-spam cooldown only
-- **Thunder and fire** — 1.5s cooldown, no daily cap
-- **River redirect** — unlimited; shape the hydrology freely
-- **Enrichment** — place items anywhere; they degrade naturally after 40 uses
-
-### Enrichment system
-
-Eight natural-world items, each with a distinct ecological role and a behavioral trade-off:
-
-| Item | Effect | Trade-off |
-|---|---|---|
-| Resting Spot | stress↓, warmth↑ | calm rest only |
-| Scratching Post | stress↓↓ | physical release |
-| Burrow | stress↓, warmth↑↑ | hidden shelter |
-| Warm Stone | warmth↑↑↑, stress↓ | thermal basking |
-| Mud Pool | thirst↓↓, stress↓ | cooling clay wallow |
-| Worn Path | stress↓, exercise | hunger↑ (running burns energy) |
-| Play Stones | stress↓↓, social bonus | hunger↑ slight |
-| Springy Moss | stress↓↓↓, health↑ | hunger↑ (exertion) |
-
-**Trait-driven use**: Lazy prefers Resting Spot and Warm Stone. Curious seeks Worn Path and Springy Moss. Nurturing gravitates to Play Stones with bonded partners nearby. Timid avoids exposed high-energy items. Aggressive displaces current users. Recluse skips enrichment when others are nearby.
-
-**Degradation**: each item disappears after 40 uses; the renderer fades items as durability drops.
-
-**Natural enrichment**: caves reduce stress passively; river/mud tiles calm creatures; bush concealment calms all creatures (especially Timid); tree canopy provides mild comfort; rocky biome boosts Sentinel sentience.
-
-### Bush tiles
-
-Low fruiting shrubs scatter across the world in humid biomes (lush 13%, wetland 11%, temperate 6.5%, rare in arid 1.5%). Each bush:
-
-- **Food source** — berries ripen each season (spring: fast, summer: moderate, autumn: slow, winter: none), max 35 food. Burned bushes turn barren.
-- **Concealment** — Timid creatures actively seek bushes when stressed (1.8× stress reduction vs. baseline). Recluse also benefits.
-- **Movement** — slight hindrance (0.80× speed vs. grass's 1.00×).
-- **Ecology** — Spore body includes bushes in terrain affinity; Greedy and Lazy seek them as food targets.
-- **Rendering** — foliage scales with a minimum display size so bushes are always visible regardless of zoom level; biome tints at 12–17% opacity give each zone a readable chromatic identity.
-
-### World depth
-
-Tile side-skirt height scales with elevation (low tiles ~3px, high-elevation mountain peaks ~7px), giving the isometric view a natural 2.5D layering — valleys read as recessed, peaks as elevated.
-
-### Genetics and morphology
-
-Each creature carries 3 discrete gene slots plus accumulated morphological traits. Mutation chance defaults to 15% per slot per birth event. Newly born mutants display a pulsing spark ring and show a mutation notice in the Dossier for 15 game days.
-
-### Body types
-
-| Body | Max age | Speed | Role |
-|---|---|---|---|
-| Spore | ~7.5 min | 1.2x | R-strategist; only body that divides asexually |
-| Shell | ~25 min | 0.5x | K-strategist; long-lived colony backbone |
-| Spike | ~12 min | 0.9x | Territorial defender; highest fight power |
-| Wisp | ~10 min | 2.2x | Scout; empathic; drives awareness stage |
-
-### The awareness arc
-
-| Stage | Trigger | Message tone |
-|---|---|---|
-| 1 | Default | Third-person observational |
-| 2 | Generation 3+ and a live Sentinel exists | Personal, eerie |
-| 3 | Pop 50+ alive, any Sentinel alive, any creature gen 4+ | Direct address |
-
-### The three endings
-
-- **Extinction** — all creatures die. Fossil record written to Supabase.
-- **Fracture** — two tribes war over the last river tile. *(stub)*
-- **Ascension** — population 80+ (or 70 with expectation=ascension), Sentinel at gen 4+ alive.
+Speed controls (1×, 2×, 4×) are in the toolbar.
 
 ---
 
-## Design philosophy
+## Database schema
 
-LA-IET follows the **Dwarf Fortress principle**: emergent complexity from simple rules. The player should never feel in control — only responsible.
+Two tables, created by `supabase_schema.sql`:
 
-- You **cannot command** creatures. You can only place things.
-- The **awareness arc** must feel earned — stage 3 messages never appear before generation 4 and population 50.
-- The colony can **survive without you** — time passes meaningfully during absence.
-- **Neglect has consequences** — if you ignore the colony for hours in winter, creatures die.
-- **Fossil records persist across extinctions** — your history survives colony death.
+```
+colonies       — world_id (pk), user_id, state (jsonb), updated_at
+fossil_records — id (pk), user_id, fossil (jsonb), created_at
+```
+
+Both have RLS enabled. Two server functions: `reset_user_data()` (authenticated, wipes your own data) and `admin_reset_all_app_data()` (service role only).
 
 ---
 
-## Credits
-
-Built by Sammakara Mak. Free forever.
+*Built by Sammakara Mak. Free forever.*
 
 > *"you cannot command them. you can only tend.*
 > *the colony will outlive your attention, remember your absence,*
 > *and eventually — decide what you are to them."*
-
----
-
-## Keywords
-
-`colony simulation` · `insect simulation` · `browser game` · `emergent behavior` · `generational simulation` · `life simulation` · `evolution` · `artificial life` · `Dwarf Fortress inspired` · `idle simulation` · `React` · `TypeScript` · `Vite` · `Supabase`

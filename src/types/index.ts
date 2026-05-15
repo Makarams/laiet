@@ -375,7 +375,7 @@ export interface SimModifiers {
   awarenessMessageMult: number  // ×1.0 default; scales message cooldown (< 1 = more messages)
   healCharges: number           // 3 default; daily heal uses available to caretaker
   foodDropCooldownMs: number    // 5000 default; ms between food drop actions
-  ascensionThresholdOffset: number // 0 default; subtracted from ASCENSION_POPULATION
+  ascensionThresholdOffset: number // 0 default; reserved for save compatibility
 }
 
 // ─── Caretaker Resources ─────────────────────────────────────────────────────
