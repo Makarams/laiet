@@ -520,14 +520,14 @@ const THOUGHT_SYMBOLS: Record<string, string> = {
   hungry: '!', thirsty: '~', cold: '*', stressed: '?',
   content: '·', fighting: '×', bonding: '♥', curious: '→',
   mourning: '…', watching: '◉', dreaming: '∿', sick: '+',
-  playing: '♪', mutated: '⚡',
+  playing: '♪', mutated: '⚡', grooming: '♡', carrying: '↑',
 }
 
 const THOUGHT_COLORS: Record<string, string> = {
   hungry: '#ffb050', thirsty: '#80c8ff', cold: '#b0d8ff', stressed: '#ff7080',
   content: '#cdc4a8', fighting: '#ff5060', bonding: '#ff9aff', curious: '#80f0a0',
   mourning: '#7878a0', watching: '#ff8048', dreaming: '#c878f0', sick: '#ff5060',
-  playing: '#80f0e0', mutated: '#ffee44',
+  playing: '#80f0e0', mutated: '#ffee44', grooming: '#ffbbff', carrying: '#88ddaa',
 }
 
 function drawThoughtSymbol(

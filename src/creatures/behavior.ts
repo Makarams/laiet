@@ -14,6 +14,8 @@ import {
   ENRICHMENT_USE_RADIUS, ENRICHMENT_EFFECTS, ENRICHMENT_COOLDOWN_TICKS,
   HEALROOT_SEEK_HEALTH, HEALROOT_HEAL_PER_USE, HEALROOT_CONSUME_AMOUNT,
   EARLY_GEN_MAX, EARLY_GEN_COHESION_RADIUS,
+  CROWD_DISPERSE_THRESHOLD, CROWD_DISPERSE_RADIUS,
+  CROWD_DISPERSE_DISTANCE_MIN, CROWD_DISPERSE_DISTANCE_MAX,
   WEATHER_BREED_MULT,
 } from '@/engine/constants'
 import { findNearestTileOfType, findNearestInIndex, getTile, isTilePassable, TileTypeIndex } from '@/world/worldGen'
@@ -56,12 +58,16 @@ export function tickNeeds(creature: Creature, season: Season, biome?: string): C
 
   c.age += 1
 
-  // Thought bubble
-  c.thoughtTimer = Math.max(0, c.thoughtTimer - 1)
-  if (c.thoughtTimer === 0) {
-    c.currentThought = pickThought(c)
-    c.thoughtTimer = 15 + Math.floor(Math.random() * 30)
-  }
+  // Thought symbol — live derivation from state every tick so it reflects
+  // the creature's actual condition in real time, not on a 15-30 tick delay.
+  // Timer stays at 20 while a meaningful thought is active (prevents flicker);
+  // decays toward 0 when the state returns to content (content is suppressed
+  // in the renderer, so the symbol just fades out naturally).
+  const freshThought = pickThought(c)
+  c.currentThought = freshThought
+  c.thoughtTimer = freshThought !== 'content'
+    ? 20
+    : Math.max(0, (c.thoughtTimer ?? 0) - 1)
 
   return c
 }
@@ -118,20 +124,30 @@ function computeNeedSatisfaction(c: Creature): number {
 }
 
 function pickThought(c: Creature): ThoughtSymbol {
-  if (c.state === 'sick') return 'sick'
-  if (c.state === 'fighting') return 'fighting'
-  if (c.state === 'mourning') return 'mourning'
-  if (c.state === 'bonding') return 'bonding'
-  if (c.state === 'grooming') return 'grooming'
-  if (c.state === 'dreaming') return 'dreaming'
+  // Priority: medical emergency → combat → social/behavioral → needs → personality
+  if (c.state === 'dying' || c.state === 'sick') return 'sick'
+  if (c.state === 'fighting')                    return 'fighting'
+  // Fleeing and low-health threat both signal distress — not a new symbol,
+  // but 'stressed' (?) is the closest match for acute panic/escape.
+  if (c.state === 'fleeing' || (c.health < 25 && c.stress > 55)) return 'stressed'
+  if (c.state === 'mourning')                    return 'mourning'
+  if (c.state === 'grooming')                    return 'grooming'
   if (c.state === 'playing' || c.state === 'using_enrichment') return 'playing'
-  if (c.carrying) return 'carrying'
-  if (c.genome.mind === 'Sentinel') return 'watching'
-  if (c.hunger > HUNGER_CRITICAL) return 'hungry'
-  if (c.thirst > THIRST_CRITICAL) return 'thirsty'
-  if (c.warmth < WARMTH_CRITICAL) return 'cold'
-  if (c.stress > 60) return 'stressed'
-  if (c.genome.personality === 'Curious') return 'curious'
+  // observing: Sentinel actively patrolling the boundary — show 'watching' only when in that state
+  if (c.state === 'observing')                   return 'watching'
+  if (c.state === 'dreaming')                    return 'dreaming'
+  if (c.state === 'bonding')                     return 'bonding'
+  if (c.carrying !== undefined)                  return 'carrying'
+  // Recent mutation: brief flash on birth before need-states take over
+  if (c.recentMutation !== undefined)            return 'mutated'
+  // Need urgency — only fire when past the critical threshold, not baseline levels
+  if (c.hunger > HUNGER_CRITICAL)                return 'hungry'
+  if (c.thirst > THIRST_CRITICAL)                return 'thirsty'
+  if (c.warmth < WARMTH_CRITICAL)                return 'cold'
+  if (c.stress > 60)                             return 'stressed'
+  // Curious expression only when actively exploring, not at rest
+  if ((c.genome.personality === 'Curious' || c.genome.personality === 'Wanderer')
+      && (c.state === 'wandering' || c.state === 'migrating')) return 'curious'
   return 'content'
 }
 
@@ -227,11 +243,12 @@ export function tickBehavior(
       return changes
     }
 
-    // No food found locally; migrate. Pick a distant random spot to scout.
-    // This is the colony's response to environmental scarcity.
+    // No food found locally; migrate. Pick a distant spot to scout.
+    // Larger distance ensures starvation actually breaks the cluster,
+    // rather than shuffling creatures within the same depleted area.
     if (c.hunger > 55) {
-      const tx = Math.max(0, Math.min(WORLD_SIZE - 1, c.x + (Math.random() < 0.5 ? -1 : 1) * (15 + Math.floor(Math.random() * 15))))
-      const ty = Math.max(0, Math.min(WORLD_SIZE - 1, c.y + (Math.random() < 0.5 ? -1 : 1) * (15 + Math.floor(Math.random() * 15))))
+      const tx = Math.max(0, Math.min(WORLD_SIZE - 1, c.x + (Math.random() < 0.5 ? -1 : 1) * (25 + Math.floor(Math.random() * 25))))
+      const ty = Math.max(0, Math.min(WORLD_SIZE - 1, c.y + (Math.random() < 0.5 ? -1 : 1) * (25 + Math.floor(Math.random() * 25))))
       changes.state = 'migrating'
       changes.targetX = tx
       changes.targetY = ty
@@ -714,6 +731,40 @@ export function tickBehavior(
         cohesionTarget.x + Math.floor(Math.random() * (jitter * 2 + 1)) - jitter))
       const ty = Math.max(0, Math.min(WORLD_SIZE - 1,
         cohesionTarget.y + Math.floor(Math.random() * (jitter * 2 + 1)) - jitter))
+      if (tiles[ty]?.[tx] && isTilePassable(tiles[ty][tx])) {
+        changes.state = 'wandering'
+        changes.targetX = tx
+        changes.targetY = ty
+        targetSet = true
+      }
+    }
+  }
+
+  // ── 6.7. Population pressure dispersal; dense clusters push gen≥1 non-social creatures outward ──
+  // Only activates after the founding generation so early bonding is not disrupted.
+  // Social, Nurturing, and Timid personalities prefer proximity and are excluded.
+  // Recluse already has stronger dispersal logic above.
+  if (!targetSet
+      && c.generation >= 1
+      && c.genome.personality !== 'Social'
+      && c.genome.personality !== 'Nurturing'
+      && c.genome.personality !== 'Timid'
+      && c.genome.personality !== 'Recluse'
+      && Math.random() < 0.03) {
+    const crowdNearby = aliveCreatures.filter(
+      o => o.id !== c.id
+        && Math.abs(o.x - c.x) <= CROWD_DISPERSE_RADIUS
+        && Math.abs(o.y - c.y) <= CROWD_DISPERSE_RADIUS
+    )
+    if (crowdNearby.length > CROWD_DISPERSE_THRESHOLD) {
+      const cx = crowdNearby.reduce((s, o) => s + o.x, 0) / crowdNearby.length
+      const cy = crowdNearby.reduce((s, o) => s + o.y, 0) / crowdNearby.length
+      const dx = Math.sign(c.x - cx) || (Math.random() < 0.5 ? -1 : 1)
+      const dy = Math.sign(c.y - cy) || (Math.random() < 0.5 ? -1 : 1)
+      const dist = CROWD_DISPERSE_DISTANCE_MIN
+        + Math.floor(Math.random() * (CROWD_DISPERSE_DISTANCE_MAX - CROWD_DISPERSE_DISTANCE_MIN + 1))
+      const tx = Math.max(0, Math.min(WORLD_SIZE - 1, c.x + dx * dist))
+      const ty = Math.max(0, Math.min(WORLD_SIZE - 1, c.y + dy * dist))
       if (tiles[ty]?.[tx] && isTilePassable(tiles[ty][tx])) {
         changes.state = 'wandering'
         changes.targetX = tx

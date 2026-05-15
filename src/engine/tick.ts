@@ -5,7 +5,7 @@ import {
 } from '@/types'
 import {
   DAY_FRACTION_PER_TICK, DAYS_PER_SEASON, FOOD_REGROW_RATE_BASE,
-  FOOD_REGROW_MULTIPLIER, TREE_GROW_DAYS, WATER_REPLENISH_RATE,
+  FOOD_REGROW_MULTIPLIER, TREE_GROW_DAYS, WATER_REPLENISH_RATE, WATER_DRINK_DRAIN,
   WORLD_SIZE, BOND_STRENGTH_PER_TICK, DEBUG,
   DEATH_SITE_DECAY_DAYS,
   CANNIBAL_HUNGER_THRESHOLD, CANNIBAL_HUNGER_RELIEF,
@@ -59,7 +59,7 @@ import {
 import { DEFAULT_MODIFIERS } from '@/engine/profile'
 import { createOffspring, createAsexualOffspring, getColonyStage, computeAwarenessStage } from '@/creatures/factory'
 import { generateMessage, deathMessage, extinctionMessage, boneMemoryMessage, generateRaceRevivalMessage } from './messages'
-import { createRng, getAdjacentTiles, buildTileIndex } from '@/world/worldGen'
+import { createRng, buildTileIndex } from '@/world/worldGen'
 import { getSpeechContext, buildSentence, learnFromNearby, unlockTierEmoji, assignRole } from '@/engine/speech'
 
 // ─── Tick entry point ─────────────────────────────────────────────────────────
@@ -931,7 +931,7 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
       // Cannibal trauma: persistent stress from witnessing cannibalism
       if (c.traumaUntil !== undefined && c.traumaUntil > state.time.day) {
         c.stress = Math.min(100, c.stress + CANNIBAL_TRAUMA_STRESS_PER_TICK)
-        if (!c.currentThought) c.currentThought = 'mourning'
+        // thought is derived from state in tickNeeds; no direct override needed
       }
 
       // Natural enrichment; world terrain as passive enrichment
@@ -987,23 +987,32 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
         tiles[c.y][c.x] = { ...tiles[c.y][c.x], puddleLevel: Math.max(0, (currentTile.puddleLevel ?? 0) - 0.008) }
       }
 
-      // Drink when on river tile and thirsty
-      if (currentTile.type === 'river' && c.thirst > 15) {
+      // Drink when on river tile and thirsty; consumes water from the tile
+      if (currentTile.type === 'river' && currentTile.waterLevel > 0 && c.thirst > 15) {
         const before = c.thirst
         c = drinkFromTile(c, currentTile)
+        const wt = writeTile(c.y, c.x)
+        wt.waterLevel = Math.max(0, wt.waterLevel - WATER_DRINK_DRAIN)
         if (c.state === 'seeking_water') c.state = 'idle'
         if (DEBUG) console.log(`[DRINK] ${c.name} thirst ${before.toFixed(1)} → ${c.thirst.toFixed(1)}`)
       }
 
-      // Drink when adjacent to river tile (creature is standing next to water)
+      // Drink when adjacent to a river tile; position-aware so the drained tile is tracked
       if (currentTile.type !== 'river' && c.thirst > 15) {
-        const adjacents = getAdjacentTiles(tiles, c.x, c.y)
-        const nearRiver = adjacents.find(t => t.type === 'river')
-        if (nearRiver) {
-          const before = c.thirst
-          c = drinkFromTile(c, nearRiver)
-          if (c.state === 'seeking_water') c.state = 'idle'
-          if (DEBUG) console.log(`[DRINK adj] ${c.name} thirst ${before.toFixed(1)} → ${c.thirst.toFixed(1)}`)
+        const adjDirs = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]] as const
+        for (const [dx, dy] of adjDirs) {
+          const ax = c.x + dx, ay = c.y + dy
+          if (ax < 0 || ax >= WORLD_SIZE || ay < 0 || ay >= WORLD_SIZE) continue
+          const adjTile = tiles[ay][ax]
+          if (adjTile.type === 'river' && adjTile.waterLevel > 0) {
+            const before = c.thirst
+            c = drinkFromTile(c, adjTile)
+            const wt = writeTile(ay, ax)
+            wt.waterLevel = Math.max(0, wt.waterLevel - WATER_DRINK_DRAIN)
+            if (c.state === 'seeking_water') c.state = 'idle'
+            if (DEBUG) console.log(`[DRINK adj] ${c.name} thirst ${before.toFixed(1)} → ${c.thirst.toFixed(1)}`)
+            break
+          }
         }
       }
 
@@ -1315,12 +1324,17 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
     // and at least 8 ticks since last speech (8s real time per creature).
     const speechTimeMs = Date.now()
     const speechCooldown = c.role === 'shaman' || c.role === 'elder' ? 6000 : 10000
+    // Urgent broadcast: fighting, fleeing, sick, dying, or critical needs can speak
+    // without a bonded nearby partner — these are distress signals, not conversations.
+    const isUrgentBroadcast = c.state === 'fighting' || c.state === 'fleeing'
+      || c.state === 'sick' || c.state === 'dying'
+      || c.hunger > 85 || c.thirst > 85 || c.warmth < 12
     const canSpeak = c.diedOnDay === null
       && c.genome.mind !== 'Feral'
       && c.knownEmoji.length > 0
       && (c.lastSpeechTick === undefined || speechTimeMs - c.lastSpeechTick > speechCooldown)
-      && nearby.some(o => c.bonds.some(b => b.targetId === o.id && b.strength > 20))
-      && Math.random() < 0.015  // ~1.5% per tick when conditions met; quiet world
+      && (isUrgentBroadcast || nearby.some(o => c.bonds.some(b => b.targetId === o.id && b.strength > 20)))
+      && Math.random() < (isUrgentBroadcast ? 0.04 : 0.015)
 
     if (canSpeak) {
       const context = getSpeechContext(c, state.awarenessStage)

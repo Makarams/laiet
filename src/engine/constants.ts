@@ -89,7 +89,7 @@ export const CREATURE_MATURITY_TICKS = 30         // must be this old to reprodu
 // ─── Food & resources ─────────────────────────────────────────────────────────
 export const FOOD_PER_PATCH = 100
 export const FOOD_EAT_AMOUNT = 20                 // slightly less per eat
-export const FOOD_REGROW_RATE_BASE = 0.8          // was 0.2; faster regrowth
+export const FOOD_REGROW_RATE_BASE = 0.25         // was 0.8; reduced so patches deplete under pressure
 export const FOOD_REGROW_MULTIPLIER: Record<string, number> = {
   spring: 1.6,
   summer: 1.2,
@@ -97,7 +97,8 @@ export const FOOD_REGROW_MULTIPLIER: Record<string, number> = {
   winter: 0.05,
 }
 export const TREE_GROW_DAYS = 2 * 60
-export const WATER_REPLENISH_RATE = 0.5           // river refills faster
+export const WATER_REPLENISH_RATE = 0.06          // slow passive refill; drought now net-negative
+export const WATER_DRINK_DRAIN = 4               // waterLevel lost per drink event
 
 // ─── Caretaker ───────────────────────────────────────────────────────────────
 export const HEAL_CHARGES_PER_DAY = 3            // resets each real day
@@ -305,7 +306,7 @@ export const NATURAL_BUSH_STRESS_REDUCTION   = 0.18  // per tick on bush tile (c
 
 // ─── Bush tiles ───────────────────────────────────────────────────────────────
 export const BUSH_FOOD_MAX         = 35   // max berry amount per bush tile
-export const BUSH_FOOD_REGROW_RATE = 0.12 // berries regrow slowly without needing a tree
+export const BUSH_FOOD_REGROW_RATE = 0.07 // berries regrow slowly without needing a tree
 
 // ─── Healroot ────────────────────────────────────────────────────────────────
 // Medicinal herb patches that grow in lush and wetland biomes.
@@ -369,11 +370,19 @@ export const RIVER_DRYING_CHANCE  = 0.00008  // drought: low-water isolated rive
 export const RIVER_WINTER_FLOOD_CHANCE = 0.00015
 
 // ─── Early-generation cohesion ────────────────────────────────────────────────
-// Gen 0-2 creatures have a homing bias toward the nearest living creature.
-// This keeps the founding colony together long enough to bond and reproduce,
-// preventing early dispersal that prevents first-generation breeding.
-export const EARLY_GEN_MAX            = 2    // apply cohesion up to and including this generation
+// Only the founding generation (gen 0) has a homing bias toward the nearest
+// living creature. Gen 1+ creatures gain full autonomy immediately.
+export const EARLY_GEN_MAX            = 0    // cohesion applies to gen 0 only
 export const EARLY_GEN_COHESION_RADIUS = 28  // tile radius to search for nearest creature
+
+// ─── Population pressure dispersal ───────────────────────────────────────────
+// When local density exceeds CROWD_DISPERSE_THRESHOLD within CROWD_DISPERSE_RADIUS
+// tiles, gen 1+ non-social creatures wander away from the cluster centroid.
+// This is the primary driver of natural group splitting as the colony grows.
+export const CROWD_DISPERSE_THRESHOLD    = 10   // neighbors within radius to trigger dispersal
+export const CROWD_DISPERSE_RADIUS       = 10   // tile radius for the density check
+export const CROWD_DISPERSE_DISTANCE_MIN = 20   // minimum dispersal distance in tiles
+export const CROWD_DISPERSE_DISTANCE_MAX = 45   // maximum dispersal distance in tiles
 
 // ─── Vegetation lifecycle ─────────────────────────────────────────────────────
 // Trees have a finite productive lifespan. After TREE_PEAK_AGE ticks they enter
