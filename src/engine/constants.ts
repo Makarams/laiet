@@ -20,7 +20,7 @@ export const DAY_PHASE_THRESHOLDS = {
 
 // ─── World ────────────────────────────────────────────────────────────────────
 export const WORLD_SIZE = 240                     // 240×240 for biome diversity, exploration, natural dispersion
-export const MUTATION_CHANCE = 0.08               // 8% per gene slot; slower genetic drift preserves intermediate stages
+export const MUTATION_CHANCE = 0.12               // 12% per gene slot; enables visible trait variety by gen 5-7
 export const DEATH_SITE_DECAY_DAYS = 10           // ~2 Spore generations; death sites clear quickly so the map stays readable
 
 // ─── Creature stats ───────────────────────────────────────────────────────────
@@ -138,8 +138,8 @@ export const DISEASE_HEALTH_DRAIN      = 0.3      // extra health loss per tick 
 
 export const ASEXUAL_HEALTH_MIN        = 78       // must be very healthy to divide
 export const ASEXUAL_HUNGER_MAX        = 30       // and well-fed
-export const ASEXUAL_BASE_CHANCE       = 0.0008   // rare; Spore body only
-export const ASEXUAL_MUTATION_CHANCE   = 0.15     // higher than sexual (single-parent)
+export const ASEXUAL_BASE_CHANCE       = 0.0018   // 2.25× boost; rare but more visible evolution
+export const ASEXUAL_MUTATION_CHANCE   = 0.20     // higher than sexual (single-parent)
 
 // Minimum bond strength for sexual reproduction partnership
 export const REPRODUCE_BOND_MIN_STRENGTH = 35    // achievable in ~20 adjacency ticks from starter bond

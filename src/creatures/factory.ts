@@ -85,6 +85,7 @@ export function spawnCreature(
 
 // Detect which genome slots in offspring differ from BOTH parents; true mutation.
 // Returns list of slot names that changed vs. both parents.
+// Also detects significant morphology threshold crossings (new features appearing).
 function detectMutations(offspring: Genome, parentA: Creature, parentB: Creature): string[] {
   const mutated: string[] = []
   if (offspring.personality !== parentA.genome.personality && offspring.personality !== parentB.genome.personality)
@@ -102,6 +103,32 @@ function detectMutations(offspring: Genome, parentA: Creature, parentB: Creature
     && !(parentB.genome.latentAncestry?.[offspring.race])) {
     mutated.push('race')
   }
+
+  // Detect morphology threshold crossings (new visible features appearing)
+  const offMorph = offspring.morphology
+  const parentAMorph = parentA.genome.morphology
+  const parentBMorph = parentB.genome.morphology
+
+  // Limb thresholds: 0.20, 0.30, 0.35, 0.55
+  const limbThresholds = [0.20, 0.30, 0.35, 0.55]
+  for (const threshold of limbThresholds) {
+    const parentsBelowThreshold = (parentAMorph.limbLength < threshold && parentBMorph.limbLength < threshold)
+    if (parentsBelowThreshold && offMorph.limbLength >= threshold) {
+      mutated.push('limbs')
+      break
+    }
+  }
+
+  // Spine thresholds: 0.25, 0.30, 0.45, 0.50, 0.55
+  const spineThresholds = [0.25, 0.30, 0.45, 0.50, 0.55]
+  for (const threshold of spineThresholds) {
+    const parentsBelowThreshold = (parentAMorph.spinalLength < threshold && parentBMorph.spinalLength < threshold)
+    if (parentsBelowThreshold && offMorph.spinalLength >= threshold) {
+      mutated.push('spine')
+      break
+    }
+  }
+
   return mutated
 }
 
@@ -156,7 +183,7 @@ export function createAsexualOffspring(
   rng: () => number
 ): Creature {
   const genome = mutateGenomeAsexual(parent.genome, rng, ASEXUAL_MUTATION_CHANCE)
-  return spawnCreature({
+  const c = spawnCreature({
     x, y,
     name: generateName(rng),
     familyName: mutateFamily(parent.familyName, rng),
@@ -167,6 +194,24 @@ export function createAsexualOffspring(
     bornOnDay: currentDay,
     knownEmoji: inheritEmoji(parent, null, [], rng),
   }, rng)
+
+  // Track asexual morphology mutations as a special case (clones always mutate)
+  const parentMorph = parent.genome.morphology
+  const offMorph = genome.morphology
+
+  // Check if morphology changed significantly (any trait drifted > 0.05)
+  const limbChanged = Math.abs(offMorph.limbLength - parentMorph.limbLength) > 0.05
+  const spineChanged = Math.abs(offMorph.spinalLength - parentMorph.spinalLength) > 0.05
+  const sizeChanged = Math.abs(offMorph.sizeScale - parentMorph.sizeScale) > 0.05
+
+  if (limbChanged || spineChanged || sizeChanged) {
+    c.recentMutation = currentDay
+    c.mutatedTraits = ['morphology']
+    c.currentThought = 'mutated'
+    c.thoughtTimer = 30
+  }
+
+  return c
 }
 
 // ─── Starter creature genomes: all four body types represented ────────────────

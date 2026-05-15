@@ -24,17 +24,17 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 // Sexual inheritance: blend both parents' accumulated traits then add a small
-// per-generation drift. Small delta (~±0.04) means change is gradual and
-// compounds meaningfully only after 5-10 generations.
+// per-generation drift. Small delta (~±0.06) means change is gradual and
+// compounds meaningfully only after 3-5 generations.
 function inheritMorphology(a: MorphologyTraits, b: MorphologyTraits, rng: () => number): MorphologyTraits {
   const m = a ?? initMorphology()
   const n = b ?? initMorphology()
   return {
-    sizeScale:    clamp(((m.sizeScale    + n.sizeScale)    / 2) + (rng() - 0.5) * 0.08, 0.70, 1.50),
-    limbLength:   clamp(((m.limbLength   + n.limbLength)   / 2) + (rng() - 0.5) * 0.10, 0.00, 1.00),
-    spinalLength: clamp(((m.spinalLength + n.spinalLength) / 2) + (rng() - 0.5) * 0.10, 0.00, 1.00),
-    colorDrift:   clamp(((m.colorDrift   + n.colorDrift)   / 2) + (rng() - 0.5) * 0.06, -0.50, 0.50),
-    eyeSize:      clamp(((m.eyeSize      + n.eyeSize)      / 2) + (rng() - 0.5) * 0.08, 0.70, 1.50),
+    sizeScale:    clamp(((m.sizeScale    + n.sizeScale)    / 2) + (rng() - 0.5) * 0.12, 0.70, 1.50),
+    limbLength:   clamp(((m.limbLength   + n.limbLength)   / 2) + (rng() - 0.5) * 0.15, 0.00, 1.00),
+    spinalLength: clamp(((m.spinalLength + n.spinalLength) / 2) + (rng() - 0.5) * 0.15, 0.00, 1.00),
+    colorDrift:   clamp(((m.colorDrift   + n.colorDrift)   / 2) + (rng() - 0.5) * 0.09, -0.50, 0.50),
+    eyeSize:      clamp(((m.eyeSize      + n.eyeSize)      / 2) + (rng() - 0.5) * 0.12, 0.70, 1.50),
   }
 }
 
@@ -43,11 +43,11 @@ function inheritMorphology(a: MorphologyTraits, b: MorphologyTraits, rng: () => 
 function mutateMorphologyAsexual(parent: MorphologyTraits, rng: () => number): MorphologyTraits {
   const m = parent ?? initMorphology()
   return {
-    sizeScale:    clamp(m.sizeScale    + (rng() - 0.5) * 0.14, 0.70, 1.50),
-    limbLength:   clamp(m.limbLength   + (rng() - 0.5) * 0.18, 0.00, 1.00),
-    spinalLength: clamp(m.spinalLength + (rng() - 0.5) * 0.18, 0.00, 1.00),
-    colorDrift:   clamp(m.colorDrift   + (rng() - 0.5) * 0.10, -0.50, 0.50),
-    eyeSize:      clamp(m.eyeSize      + (rng() - 0.5) * 0.14, 0.70, 1.50),
+    sizeScale:    clamp(m.sizeScale    + (rng() - 0.5) * 0.24, 0.70, 1.50),
+    limbLength:   clamp(m.limbLength   + (rng() - 0.5) * 0.30, 0.00, 1.00),
+    spinalLength: clamp(m.spinalLength + (rng() - 0.5) * 0.30, 0.00, 1.00),
+    colorDrift:   clamp(m.colorDrift   + (rng() - 0.5) * 0.17, -0.50, 0.50),
+    eyeSize:      clamp(m.eyeSize      + (rng() - 0.5) * 0.24, 0.70, 1.50),
   }
 }
 

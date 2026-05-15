@@ -1535,6 +1535,24 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
       totalCreaturesEver++
       totalGenerations = Math.max(totalGenerations, offspring.generation)
       checkBoneMemory(offspring, state, messages, lastMsgDay)
+
+      // Emit mutation message for asexual offspring
+      if (offspring.recentMutation !== undefined && offspring.mutatedTraits && offspring.mutatedTraits.length > 0) {
+        const traitNames = offspring.mutatedTraits.join(', ')
+        if (state.time.day - lastMsgDay >= 1) {
+          messages.push({
+            id: uuid(),
+            text: `⚡ ${offspring.name} ${offspring.familyName} — evolved ${traitNames}`,
+            stage: 1,
+            creatureId: offspring.id,
+            day: state.time.day,
+            timestamp: Date.now(),
+            read: false,
+          })
+          lastMsgDay = state.time.day
+        }
+      }
+
       if (DEBUG) console.log(`[BIRTH·asexual] ${offspring.name} (gen ${offspring.generation}) ← ${c.name}`)
     }
   }

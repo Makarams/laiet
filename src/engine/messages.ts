@@ -31,6 +31,12 @@ const STAGE_1_MESSAGES = [
   'something moved at the northern edge at night. no member confirmed to be missing',
   'territorial markers are overlapping at the river bend. dispute probability elevated',
   'the youngest members are ranging further than previous generations at this age',
+  '{name} developed limbs. form changed. lineage noted.',
+  'prominent spinal ridges appeared on {name}. structure diverged.',
+  '{name} is noticeably smaller than siblings. size variance detected.',
+  '{name} is noticeably larger than siblings. size variance detected.',
+  'appendages developed on a new lineage member. morphology recorded.',
+  'tail structures grew on a {name} offspring. dorsal feature noted.',
 ]
 
 const STAGE_2_MESSAGES = [
