@@ -454,6 +454,12 @@ export interface GameState {
   racePopulations?: Partial<Record<RaceTrait, number>>  // alive count per race (updated each tick)
   extinctRaces?: RaceTrait[]                            // races seen alive but now at 0
 
+  // Awareness stage window tracking — optional for backward compat with pre-emergent saves.
+  // Stores the game-day when each stage-up condition was first continuously met.
+  // Undefined = condition has never been met or recently lapsed (window reset).
+  roleWindowStart?: number     // day 4-distinct-roles condition began its sustained window
+  lexiconWindowStart?: number  // day colony-lexicon threshold began its sustained window
+
   // stats
   totalCreaturesEver: number
   totalGenerations: number

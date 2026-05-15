@@ -41,6 +41,11 @@ export const EMOJI_TIER_0 = [
   '😤', // anger / determination / aggression; the body bracing to fight or hold ground
   '😌', // calm / relief / settled; the body releasing tension after danger passes
   '😱', // shock / terror; sudden overwhelming fear — distinct from the slow dread of 😰
+  '💔', // broken bond / grief / loss — they lose companions; a felt internal rupture distinct from mourning
+  '🥶', // extreme cold / the body freezing — not ❄️ (the thing outside); this is internal suffering
+  '🥵', // fever / heat exhaustion / the body too hot — drought heat, sickness, overexertion burning inside
+  '😔', // sadness / quiet grief / low mood — not acute mourning; a persistent heaviness after loss
+  '😮', // surprise / startled / unexpected event — milder than 😱; wonder-alarm at something new
 ]
 
 // ─── Tier 1; Aware ──────────────────────────────────────────────────────────
@@ -69,6 +74,14 @@ export const EMOJI_TIER_1 = [
   '🫶', // mutual care / tending to another — they groom, they carry food for others
   '🤧', // sneezing / sickness-sign — visible bodily expression; they recognise it as contagion
   '🌱', // (healroot specifically — same glyph as sprout but Aware creatures learn the healing context)
+  '🌺', // flowering / seasonal bloom / harvest abundance — they see plants burst open in spring
+  '🐣', // birth / hatching / emergence — they witness new creatures arriving; they understand this event
+  '👀', // social watching / observing others with interest — the gaze of curiosity directed at another
+  '🫣', // hiding to watch / peering from concealment — timid or furtive watching from safety
+  '💭', // inner thought / wondering / invisible internal state — the awareness of one's own mind beginning
+  '🌤️', // clearing / sun returning after storm — the world brightening; relief that arrives with light
+  '🫤', // ambivalence / mixed feeling / not-knowing — uncertainty; two things at once, neither resolved
+  '💢', // frustration / anger before aggression — blocked desire, tension that hasn't broken into fighting yet
 ]
 
 // ─── Tier 2 — Dreaming ───────────────────────────────────────────────────────
@@ -93,6 +106,12 @@ export const EMOJI_TIER_2 = [
   '🫂', // embrace / held / together-surviving — the concept of social care made physical
   '🌿', // (medicine / healing knowledge — same glyph as vegetation, but richer meaning at T2: the plant that cures)
   '💫', // dizzy / spinning / disoriented — used after sickness resolves, or wonder-vertigo; not a star
+  '🦋', // transformation / metamorphosis / change-across-time — they witness mutation and generation drift
+  '💖', // deep love / profound bond — richer than ❤️; the bond that has shaped identity itself
+  '🪺', // the nest / home / belonging-place — territory not as boundary but as where one is from
+  '🧊', // frozen / suspended / still — winter stasis, something halted, the unchanging cold
+  '🩹', // wound healing / the body repairing itself — they observe their own and others' recovery
+  '🐚', // ancient thing / past-preserved — death sites, bones, something that endured when others didn't
 ]
 
 // ─── Tier 3 — Sentinel ───────────────────────────────────────────────────────
@@ -121,28 +140,28 @@ export const EMOJI_TIER_3 = [
 // Each role's lived experience shapes what concepts they develop words for.
 export const ROLE_EMOJI: Record<CommunityRole, string[]> = {
   // Shaman — keeper of memory, interprets anomalies, reads the sky
-  shaman:   ['🌀', '✨', '🌙', '🦴', '🫧', '👁️', '🌠', '🔮', '🌈', '🕳️', '💫'],
+  shaman:   ['🌀', '✨', '🌙', '🦴', '🫧', '👁️', '🌠', '🔮', '🌈', '🕳️', '💫', '🦋', '💭', '🪺'],
 
   // Guardian — threat, boundary, combat, territorial assertion
-  guardian: ['⚠️', '🔥', '🪨', '🌑', '💥', '🚫', '🩸', '🌪️', '😤'],
+  guardian: ['⚠️', '🔥', '🪨', '🌑', '💥', '🚫', '🩸', '🌪️', '😤', '💢', '🪺'],
 
   // Forager — knows the land; spatial, resource, seasonal vocabulary
-  forager:  ['🍎', '🌿', '🌳', '🗺️', '🐾', '🌾', '🌸', '🌧️', '😌'],
+  forager:  ['🍎', '🌿', '🌳', '🗺️', '🐾', '🌾', '🌸', '🌧️', '😌', '🌺', '🐣', '🌤️'],
 
   // Nurturer — life cycle focused; bonds, birth, growth, healing, calm
-  nurturer: ['🌱', '❤️', '🌳', '💧', '🕊️', '😊', '💤', '🩸', '🫶', '😌'],
+  nurturer: ['🌱', '❤️', '🌳', '💧', '🕊️', '😊', '💤', '🩸', '🫶', '😌', '💔', '🩹', '🐣'],
 
   // Elder — lineage, memory, cycle knowledge, the long view
-  elder:    ['🦴', '🔄', '♾️', '📜', '🌍', '🌙', '🌸', '⏳', '🫂', '😌'],
+  elder:    ['🦴', '🔄', '♾️', '📜', '🌍', '🌙', '🌸', '⏳', '🫂', '😌', '🦋', '🐚', '💖'],
 
   // Scout — spatial pioneers; edges, elevations, weather, new terrain; encounters danger
-  scout:    ['🐾', '🗺️', '🏔️', '🌊', '🌬️', '👁️', '🌫️', '💨', '😱'],
+  scout:    ['🐾', '🗺️', '🏔️', '🌊', '🌬️', '👁️', '🌫️', '💨', '😱', '👀', '🫣', '😮', '🌤️'],
 
   // Healer — recovery, calm, warmth, the body restoring itself
-  healer:   ['💧', '🌿', '🌞', '🕊️', '❤️', '🌱', '🤢', '🩸', '😊', '🫶', '🤧', '🩺', '😌'],
+  healer:   ['💧', '🌿', '🌞', '🕊️', '❤️', '🌱', '🤢', '🩸', '😊', '🫶', '🤧', '🩺', '😌', '🩹', '💔'],
 
   // Recluse — minimal speech; darkness, stone, wind, solitary calm
-  recluse:  ['🌑', '🪨', '🌬️', '💤', '😌'],
+  recluse:  ['🌑', '🪨', '🌬️', '💤', '😌', '😔', '🐚'],
 }
 
 // ─── Sentence grammar ─────────────────────────────────────────────────────────
@@ -163,6 +182,8 @@ type SentenceContext =
   | 'recovered'
   | 'fighting'  | 'fleeing'    | 'dominant'     | 'observing'
   | 'resting'   | 'exploring'  | 'warmth'
+  | 'fear_curiosity' | 'dominant_territory' | 'sick_recovering' | 'hunger_migrating'
+  | 'stress_playing'  | 'wonder_mourning'   | 'cold_urgent'     | 'bond_fight'
 
 const SENTENCE_PATTERNS: Record<SentenceContext, string[][]> = {
   // ── Needs ────────────────────────────────────────────────────────────────
@@ -239,6 +260,33 @@ const SENTENCE_PATTERNS: Record<SentenceContext, string[][]> = {
   exploring:  [['❓'], ['🐾', '❓'], ['❓', '🏔️'], ['✨', '🐾'], ['👁️', '🌳'], ['🌀', '❓'], ['🐾', '✨', '❓']],
   // warmth: thermal comfort; solar warmth, cave heat, huddling in winter
   warmth:     [['🌞'], ['🌞', '😊'], ['🪨', '🌞'], ['😌', '🌞'], ['❤️', '🌞'], ['🌞', '💤'], ['🪨', '🌞', '😌']],
+
+  // ── Blended / overlapping emotional states ─────────────────────────────
+  // These fire when two in-simulation conditions are simultaneously true.
+  // fear_curiosity: moving into danger while drawn forward — Curious or Timid under threat
+  fear_curiosity:     [['😰', '❓'], ['👁️', '😰'], ['❓', '⚠️'], ['🫣', '❓'], ['😮', '🐾', '❓'],
+                       ['👁️', '⚠️', '❓'], ['😰', '✨', '❓']],
+  // dominant_territory: fighting while holding a territory claim — rage + possession
+  dominant_territory: [['💥', '🗺️'], ['😤', '🗺️', '❗'], ['🩸', '🗺️'], ['💥', '🏔️', '❗'],
+                       ['😤', '🗺️', '💥'], ['💢', '🗺️', '❗']],
+  // sick_recovering: health returning during sickness — ambivalent, not pure distress
+  sick_recovering:    [['🤢', '😌'], ['🌿', '🤢', '😊'], ['🤢', '❤️', '🌱'], ['💫', '🌿'],
+                       ['😔', '🌿', '😊'], ['🤢', '😌', '🌱']],
+  // hunger_migrating: starving while actively moving — urgency overrides pure migration tone
+  hunger_migrating:   [['🍎', '🐾'], ['😰', '🐾'], ['🍎', '❓', '🐾'], ['😰', '🌳', '🐾'],
+                       ['💀', '🍎', '🐾'], ['😔', '🍎', '🐾']],
+  // stress_playing: trying to play while anxious — joy and tension simultaneously
+  stress_playing:     [['😊', '😰'], ['❤️', '😰'], ['😊', '⚠️'], ['😌', '😊', '😰'],
+                       ['❤️', '😊', '💢'], ['😊', '💢', '❓']],
+  // wonder_mourning: Dreaming mind at a death site — grief transmuted into transcendence
+  wonder_mourning:    [['💀', '✨'], ['🦴', '✨', '❓'], ['💀', '🌀', '❓'], ['✨', '🦴'],
+                       ['💀', '😌', '✨'], ['🦋', '💀', '✨'], ['🔮', '🦴', '❓']],
+  // cold_urgent: extreme cold + high stress — body panic, not just cold observation
+  cold_urgent:        [['❄️', '😰'], ['🥶', '⚠️'], ['❄️', '💀'], ['🥶', '😰', '❤️'],
+                       ['❄️', '🔥', '❓'], ['🥶', '❄️', '😱']],
+  // bond_fight: fighting someone bonded to — conflicted; love and aggression coexist
+  bond_fight:         [['❤️', '💥'], ['💥', '❤️', '❓'], ['❤️', '😤'], ['💔', '💥'],
+                       ['💥', '❤️', '😰'], ['❤️', '⚠️', '💥'], ['💔', '😰']],
 }
 
 // ─── Speech context from creature state and condition ────────────────────────
@@ -247,6 +295,17 @@ export function getSpeechContext(c: Creature, awarenessStage: number): SentenceC
   if (c.role === 'recluse' && Math.random() > 0.08) return null
   // The dying don't speak often, but they do sometimes
   if (c.state === 'dying' && Math.random() < 0.15) return 'dying'
+
+  // ── Blended states — overlapping conditions intercepted before single-state returns ──
+  // These fire when two simultaneous in-simulation conditions are both true.
+  // sick but health recovering (above 45): ambivalent — not pure distress
+  if (c.state === 'sick' && c.health > 45 && Math.random() < 0.30) return 'sick_recovering'
+  // fighting someone bonded to: conflicted, love and aggression coexist
+  if (c.state === 'fighting' && c.bonds.some(b => b.strength > 40) && Math.random() < 0.25) return 'bond_fight'
+  // fighting while holding territory: asserting claim, not just rage
+  if (c.state === 'fighting' && c.territoryClaim !== null && Math.random() < 0.25) return 'dominant_territory'
+  // playing while stressed: joy and tension coexist
+  if (c.state === 'playing' && c.stress > 40 && Math.random() < 0.25) return 'stress_playing'
 
   // ── Immediate state-driven speech (highest priority) ──────────────────
   if (c.state === 'mourning')          return 'mourning'
@@ -267,12 +326,15 @@ export function getSpeechContext(c: Creature, awarenessStage: number): SentenceC
   // ── Sentinel boundary patrol ──────────────────────────────────────────
   if (c.state === 'observing') return 'observing'
 
-  // ── Shaman dreaming at death sites — ritual speech ────────────────────
+  // ── Dreaming — blended wonder-mourning fires first; ritual death memory second ──
+  if (c.state === 'dreaming' && c.genome.mind === 'Dreaming' && Math.random() < 0.30) return 'wonder_mourning'
   if (c.state === 'dreaming' && c.role === 'shaman') return 'death_memory'
 
   // ── Urgent physical needs ─────────────────────────────────────────────
   if (c.hunger > 65)  return 'hungry'
   if (c.thirst > 65)  return 'thirsty'
+  // extreme cold + high stress → body panic, not just observation
+  if (c.warmth < 20 && c.stress > 60 && Math.random() < 0.45) return 'cold_urgent'
   if (c.warmth < 28)  return 'cold'
   if (c.stress > 75)  return 'stress'
 
@@ -287,7 +349,13 @@ export function getSpeechContext(c: Creature, awarenessStage: number): SentenceC
   if (c.health < 40 && c.stress > 55) return 'threat'
 
   // ── Navigation ────────────────────────────────────────────────────────
-  // Exploration check before migrating return — both wandering and migrating qualify;
+  // fear + curiosity: moving into danger while drawn forward — Curious or Timid under stress
+  if ((c.state === 'wandering' || c.state === 'migrating')
+      && (c.genome.personality === 'Curious' || c.genome.personality === 'Timid')
+      && c.stress > 40 && c.health < 55
+      && Math.random() < 0.30) return 'fear_curiosity'
+  // migrating while starving: urgency + movement
+  if (c.state === 'migrating' && c.hunger > 55 && Math.random() < 0.30) return 'hunger_migrating'
   // Curious/Wanderer express wonder, not just movement direction
   if ((c.state === 'wandering' || c.state === 'migrating')
       && (c.genome.personality === 'Curious' || c.genome.personality === 'Wanderer')
@@ -409,21 +477,21 @@ export function starterEmoji(mind: MindTrait, personality: string, rng: () => nu
 
   // Personality-driven perceptual bias — what they notice and name first
   const seeds: string[] = []
-  if (personality === 'Nurturing')   seeds.push('❤️', '🌱', '😊', '😌')
-  if (personality === 'Aggressive')  seeds.push('⚠️', '💥', '😤')
-  if (personality === 'Curious')     seeds.push('👁️', '✨', '❓')
-  if (personality === 'Wanderer')    seeds.push('🐾', '🏔️', '💨')
-  if (personality === 'Timid')       seeds.push('😰', '🌑', '😱', '💤')
+  if (personality === 'Nurturing')   seeds.push('❤️', '🌱', '😊', '😌', '💔', '🐣')
+  if (personality === 'Aggressive')  seeds.push('⚠️', '💥', '😤', '💢')
+  if (personality === 'Curious')     seeds.push('👁️', '✨', '❓', '😮', '👀')
+  if (personality === 'Wanderer')    seeds.push('🐾', '🏔️', '💨', '👀')
+  if (personality === 'Timid')       seeds.push('😰', '🌑', '😱', '💤', '🥶', '😔')
   if (personality === 'Greedy')      seeds.push('🍎', '🌿', '😊')
   if (personality === 'Lazy')        seeds.push('😴', '🪨', '😌')
-  if (personality === 'Hoarder')     seeds.push('🍎', '😤', '💤')      // food-possessive, guarding
-  if (personality === 'Empath')      seeds.push('❤️', '😰', '😌')      // feeling others' pain and relief
-  if (personality === 'Furtive')     seeds.push('🌑', '🌫️', '💨')     // shadow, mist, moving unseen
-  if (personality === 'Territorial') seeds.push('⚠️', '💥', '😤')      // claim, fight, assert
-  if (personality === 'Social')      seeds.push('❤️', '😊', '👁️')     // connection, joy, seeing others
-  if (personality === 'Stoic')       seeds.push('😌', '🌞', '🪨')      // calm endurance, steadiness
+  if (personality === 'Hoarder')     seeds.push('🍎', '😤', '💤', '💢')  // food-possessive, guarding
+  if (personality === 'Empath')      seeds.push('❤️', '😰', '😌', '💔', '😔')  // feeling others' pain and grief
+  if (personality === 'Furtive')     seeds.push('🌑', '🌫️', '💨', '🫣', '👀') // shadow, mist, covert observation
+  if (personality === 'Territorial') seeds.push('⚠️', '💥', '😤', '💢')  // claim, fight, assert
+  if (personality === 'Social')      seeds.push('❤️', '😊', '👁️', '👀', '😮') // connection, joy, excitable watching
+  if (personality === 'Stoic')       seeds.push('😌', '🌞', '🪨')        // calm endurance, steadiness
   // Recluse gets very few words — they don't engage much
-  if (personality === 'Recluse')     seeds.push('🌑', '🪨', '😌')
+  if (personality === 'Recluse')     seeds.push('🌑', '🪨', '😌', '😔')
 
   if (mind === 'Dreaming') {
     base.push(...EMOJI_TIER_1.sort(() => rng() - 0.5).slice(0, 3))

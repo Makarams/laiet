@@ -154,10 +154,18 @@ export const COLONY_STAGE_THRESHOLDS = {
   ascendant:  80,
 } as const
 
-// ─── Awareness ────────────────────────────────────────────────────────────────
-export const AWARENESS_STAGE_2_GENERATION = 5
-export const AWARENESS_STAGE_3_POPULATION = 80
-export const AWARENESS_STAGE_3_GENERATION = 6
+// ─── Awareness — emergent stage conditions ────────────────────────────────────
+// Stage 1→2: behavioral specialization via role diversity.
+// At least this many distinct community roles must be simultaneously held by
+// alive creatures, sustained for the window duration before the stage advances.
+export const AWARENESS_STAGE_2_ROLES_REQUIRED = 4
+export const AWARENESS_STAGE_2_WINDOW_DAYS    = 7   // in-game days conditions must hold
+
+// Stage 2→3: cultural depth via colony vocabulary.
+// The union of all alive creatures' known emoji must reach this size,
+// sustained for the window duration. Represents a mature shared language.
+export const AWARENESS_STAGE_3_LEXICON_MIN    = 30
+export const AWARENESS_STAGE_3_WINDOW_DAYS    = 7
 
 // ─── Sentience growth ────────────────────────────────────────────────────────
 export const SENTIENCE_GROWTH_BY_MIND: Record<string, number> = {

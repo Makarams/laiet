@@ -50,6 +50,9 @@ import {
   HUDDLE_WARMTH_BONUS,
   // cannibal trauma
   CANNIBAL_TRAUMA_DURATION_DAYS, CANNIBAL_TRAUMA_STRESS_PER_TICK,
+  // awareness stage window tracking
+  AWARENESS_STAGE_2_ROLES_REQUIRED,
+  AWARENESS_STAGE_3_LEXICON_MIN,
 } from './constants'
 import {
   tickNeeds, tickBehavior, tickMovement,
@@ -121,12 +124,41 @@ export function tickSimulation(state: GameState): GameState {
   const liveCount = Object.values(next.creatures).filter(c => !c.diedOnDay).length
   next.colonyStage = getColonyStage(liveCount) as GameState['colonyStage']
 
-  // Q5C: Stage may drop from 3→2 when conditions are no longer met, but never below 2.
-  // Once stage 2 is reached it is permanent; stage 3 can be lost if Sentinels/pop fall.
+  // ── Awareness stage — emergent window tracking ──────────────────────────────
+  // Stages are permanent milestones: once reached they never regress, because
+  // each stage reflects a historical achievement in the colony's development.
+  //
+  // Stage 1→2 gate: 4 distinct community roles simultaneously alive.
+  //   Window starts when the condition is first met; resets if it lapses.
+  //   Stage advances only after the window has been sustained for 7 in-game days.
+  //
+  // Stage 2→3 gate: colony vocabulary (union of all alive knownEmoji) ≥ 30 symbols.
+  //   Same window pattern — cultural depth must be a persistent state, not a spike.
+  {
+    const aliveForStage = Object.values(next.creatures).filter(c => !c.diedOnDay)
+
+    // Role diversity window
+    const distinctRoles = new Set(aliveForStage.map(c => c.role).filter(r => r !== undefined)).size
+    const meetsRoles = distinctRoles >= AWARENESS_STAGE_2_ROLES_REQUIRED
+    next.roleWindowStart = meetsRoles
+      ? (next.roleWindowStart ?? next.time.day)  // keep start or record today
+      : undefined                                 // lapsed — reset
+
+    // Colony vocabulary window
+    const colonyVocab = new Set<string>()
+    for (const c of aliveForStage) c.knownEmoji.forEach(e => colonyVocab.add(e))
+    const meetsLexicon = colonyVocab.size >= AWARENESS_STAGE_3_LEXICON_MIN
+    next.lexiconWindowStart = meetsLexicon
+      ? (next.lexiconWindowStart ?? next.time.day)
+      : undefined
+  }
+
   const computedStage = computeAwarenessStage(next)
-  next.awarenessStage = (computedStage >= state.awarenessStage
-    ? computedStage
-    : Math.max(computedStage, Math.min(state.awarenessStage, 2))) as 1 | 2 | 3
+  // Stages follow conditions — if role diversity collapses or vocabulary drops,
+  // the stage falls with it. The sustained window requirement prevents flicker:
+  // a brief lapse resets the window, so the colony must rebuild the condition
+  // before it can re-enter the higher stage.
+  next.awarenessStage = computedStage
 
   next = tickCaretaker(next, mods)
   next = checkEndgame(next, mods)

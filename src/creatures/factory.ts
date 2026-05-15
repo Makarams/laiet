@@ -7,6 +7,10 @@ import {
   ASEXUAL_MUTATION_CHANCE,
   STARTER_BOND_STRENGTH,
   REPRODUCE_BOND_MIN_STRENGTH,
+  AWARENESS_STAGE_2_ROLES_REQUIRED,
+  AWARENESS_STAGE_2_WINDOW_DAYS,
+  AWARENESS_STAGE_3_LEXICON_MIN,
+  AWARENESS_STAGE_3_WINDOW_DAYS,
 } from '@/engine/constants'
 import {
   randomGenome,
@@ -282,14 +286,27 @@ export function getColonyStage(population: number) {
 
 export function computeAwarenessStage(state: GameState): 1 | 2 | 3 {
   const alive = Object.values(state.creatures).filter(c => c.diedOnDay === null)
-  const maxGen = alive.length > 0 ? Math.max(0, ...alive.map(c => c.generation)) : 0
-  const hasSentinel = alive.some(c => c.genome.mind === 'Sentinel')
-  // Dreaming creatures at high sentience serve as a soft Sentinel substitute —
-  // the awareness arc can still progress even if no Sentinel lineage survives.
-  const hasDreamingFallback = alive.some(c => c.genome.mind === 'Dreaming' && c.sentience >= 80)
-  const sentientEnough = hasSentinel || hasDreamingFallback
 
-  if (alive.length >= 80 && maxGen >= 6 && hasSentinel) return 3
-  if (maxGen >= 5 && sentientEnough) return 2
-  return 1
+  // Stage 1→2: behavioral specialization — 4 distinct community roles held
+  // simultaneously by alive creatures, sustained for 7 consecutive in-game days.
+  // Roles are emergent (assigned in tickTribes from personality+body+mind+history),
+  // so this gate fires only when the colony has genuinely diversified its behavior.
+  const liveRoles = new Set(alive.map(c => c.role).filter(r => r !== undefined))
+  const rolesMet = liveRoles.size >= AWARENESS_STAGE_2_ROLES_REQUIRED
+    && state.roleWindowStart !== undefined
+    && state.time.day - state.roleWindowStart >= AWARENESS_STAGE_2_WINDOW_DAYS
+
+  if (!rolesMet) return 1
+
+  // Stage 2→3: cultural depth — the union of all alive creatures' known emoji
+  // reaches a threshold, sustained for 7 consecutive in-game days.
+  // 30 distinct symbols represents significant Tier 1 penetration across the colony,
+  // requiring multiple generations of learning, inheritance, and vocal exchange.
+  const colonyVocab = new Set<string>()
+  for (const c of alive) c.knownEmoji.forEach(e => colonyVocab.add(e))
+  const lexiconMet = colonyVocab.size >= AWARENESS_STAGE_3_LEXICON_MIN
+    && state.lexiconWindowStart !== undefined
+    && state.time.day - state.lexiconWindowStart >= AWARENESS_STAGE_3_WINDOW_DAYS
+
+  return lexiconMet ? 3 : 2
 }
