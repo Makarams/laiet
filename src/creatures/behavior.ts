@@ -18,6 +18,7 @@ import {
   CROWD_DISPERSE_THRESHOLD, CROWD_DISPERSE_RADIUS,
   CROWD_DISPERSE_DISTANCE_MIN, CROWD_DISPERSE_DISTANCE_MAX,
   WEATHER_BREED_MULT,
+  PUDDLE_MOVE_MODIFIER, PUDDLE_MOVE_THRESHOLD,
 } from '@/engine/constants'
 import { findNearestTileOfType, findNearestInIndex, getTile, isTilePassable, TileTypeIndex } from '@/world/worldGen'
 import { tickSentience } from './factory'
@@ -209,7 +210,7 @@ export function tickBehavior(
   // Nurturing/healer creatures also seek healroot to carry to sick tribemates.
   if (c.health < HEALROOT_SEEK_HEALTH && c.state !== 'seeking_healroot') {
     const hrTile = findNearest(['healroot'], 30)
-    if (hrTile) {
+    if (hrTile && (hrTile.healrootAmount ?? 0) > 0) {
       changes.state = 'seeking_healroot'
       changes.targetX = hrTile.x
       changes.targetY = hrTile.y
@@ -984,9 +985,11 @@ export function tickMovement(creature: Creature, tiles: Tile[][]): Partial<Creat
 
   const speed = MOVE_SPEED_BY_BODY[c.genome.body]
   // Tile type modulates movement: forests slow, open ground speeds, impassable = 0
-  const currentTileType = tiles[c.y]?.[c.x]?.type ?? 'grass'
+  const currentTile = tiles[c.y]?.[c.x]
+  const currentTileType = currentTile?.type ?? 'grass'
   const tileMod = TILE_MOVE_MODIFIER[currentTileType] ?? 1.0
-  const moveChance = Math.min(0.85, speed * 0.32 * tileMod)
+  const puddleMod = (currentTile?.puddleLevel ?? 0) > PUDDLE_MOVE_THRESHOLD ? PUDDLE_MOVE_MODIFIER : 1.0
+  const moveChance = Math.min(0.85, speed * 0.32 * tileMod * puddleMod)
   if (Math.random() > moveChance) return {}
 
   const dx = Math.sign(c.targetX - c.x)
@@ -1040,7 +1043,7 @@ export function healFromRoot(creature: Creature, tile: Tile): { creature: Creatu
       stress: Math.max(0, creature.stress - 8),
       state: creature.health + healed >= 40 ? 'idle' : 'seeking_healroot',
     },
-    tile: { ...tile, healrootAmount: potency - HEALROOT_CONSUME_AMOUNT },
+    tile: { ...tile, healrootAmount: Math.max(0, potency - HEALROOT_CONSUME_AMOUNT) },
   }
 }
 

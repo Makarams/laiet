@@ -229,7 +229,7 @@ export const FOG_STRESS_RELIEF          = 0.04  // passive stress removed per ti
 // Each season generates a distinct food resource beyond the base tree/bush system.
 
 // Spring bloom: ephemeral wildflower patches on grass tiles during rain or clear spring
-export const SPRING_BLOOM_CHANCE        = 0.00025  // per eligible grass tile per tick
+export const SPRING_BLOOM_CHANCE        = 0.00012  // was 0.00025; FRUIT_MAX_AGE limits steady-state
 export const SPRING_BLOOM_RAIN_MULT     = 3.5      // multiplied during rain/fog
 export const SPRING_BLOOM_FOOD          = 35       // initial food amount on new bloom patch
 export const SPRING_BLOOM_BIOME_BIAS: Record<string, number> = {
@@ -237,18 +237,18 @@ export const SPRING_BLOOM_BIOME_BIAS: Record<string, number> = {
 }
 
 // Summer riparian: lush food_patches appear on grass adjacent to rivers in summer
-export const SUMMER_RIPARIAN_CHANCE     = 0.00020  // per eligible river-adjacent grass tile per tick
+export const SUMMER_RIPARIAN_CHANCE     = 0.00009  // was 0.00020
 export const SUMMER_RIPARIAN_FOOD       = 28       // initial food amount
 
 // Autumn windfall: maturing/peak trees drop large fruit bursts before winter
-export const AUTUMN_WINDFALL_CHANCE     = 0.0008   // per tree at or past TREE_PEAK_AGE per tick
+export const AUTUMN_WINDFALL_CHANCE     = 0.00035  // was 0.0008
 export const AUTUMN_WINDFALL_FOOD       = 55       // large harvest drop amount
 // Autumn mushroom: withering trees seed fungal patches in their shade
-export const AUTUMN_MUSHROOM_CHANCE     = 0.00025  // per tree entering wither phase per tick
+export const AUTUMN_MUSHROOM_CHANCE     = 0.00010  // was 0.00025
 export const AUTUMN_MUSHROOM_FOOD       = 38       // mushroom-like patch food amount
 
 // Winter lichen: sparse crust on rocky/barren tiles near caves; reliable but meagre
-export const WINTER_LICHEN_CHANCE       = 0.00022  // per eligible tile per tick
+export const WINTER_LICHEN_CHANCE       = 0.00009  // was 0.00022
 export const WINTER_LICHEN_FOOD         = 22       // sparse but sustaining
 export const WINTER_LICHEN_CAVE_RADIUS  = 5        // must be within this many tiles of a cave
 
@@ -412,9 +412,17 @@ export const HEALROOT_CONSUME_AMOUNT  = 35   // potency consumed per feeding eve
 export const HEALROOT_SEEK_HEALTH     = 40   // health threshold: creature will seek healroot
 export const HEALROOT_CARRY_HEAL      = 15   // health restored when a carried healroot is delivered
 
+// Healroot lifecycle: depleted patches can wither back to grass/barren.
+// Rate doubles in drought and winter (harsh seasons stress the herb).
+export const HEALROOT_WITHER_THRESHOLD = 8      // potency below which wither can occur
+export const HEALROOT_WITHER_CHANCE    = 0.0008 // per tick when below threshold
+
+// Global cap prevents death-site accumulation from saturating the map.
+export const HEALROOT_CAP              = 60     // max healroot tiles world-wide
+
 // How close to a death site healroot can spontaneously spawn (memorial growth)
 export const HEALROOT_DEATH_SITE_RADIUS = 3
-export const HEALROOT_DEATH_SPAWN_CHANCE = 0.08  // per death event
+export const HEALROOT_DEATH_SPAWN_CHANCE = 0.025  // was 0.08; rarer memorial growth
 
 // ─── Micro-animations ────────────────────────────────────────────────────────
 // Short body-language bursts triggered by creature state and conditions.
@@ -497,6 +505,10 @@ export const BUSH_REGROW_CHANCE   = 0.0004  // per tick on grass tile in spring/
 export const FRUIT_DECAY_RATE        = 0.15   // food lost per tick when isolated (no tree nearby)
 export const FRUIT_SEED_CHANCE       = 0.002  // chance a decaying food tile spawns a sapling
 export const FRUIT_OVERPRODUCTION_CAP = 0.004 // max drop chance regardless of season multiplier
+// Hard lifespan: food_patch tiles wither when fruitAge exceeds this, even near trees.
+// Trees reset fruitAge to 0 when actively dropping fruit, so well-tended patches
+// survive indefinitely; seasonal orphans die within ~12 real minutes (700 ticks).
+export const FRUIT_MAX_AGE           = 700
 
 // ─── Weather; rain puddles & rivers ─────────────────────────────────────────
 // Rain accumulates on grass tiles. When a tile's puddle level reaches the
@@ -513,6 +525,8 @@ export const RIVER_OVERFLOW_CHANCE  = 0.003 // rain causes rivers to overflow to
 // Creature behaviour near puddles
 export const PUDDLE_THIRST_RELIEF   = 8.0   // thirst reduced per tick when drinking from puddle
 export const PUDDLE_MOVE_MODIFIER   = 0.75  // movement speed on puddle tile (slippery)
+export const PUDDLE_MOVE_THRESHOLD  = 0.18  // puddleLevel above which PUDDLE_MOVE_MODIFIER kicks in
+export const RAIN_WARMTH_DRAIN      = 0.10  // warmth drained per tick while in rain (1.5× in storm)
 
 // ─── Solar warmth recovery ────────────────────────────────────────────────────
 // Warmth restored per tick when on temperate or arid biome during clear daytime.

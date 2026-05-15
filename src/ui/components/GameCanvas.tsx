@@ -6,7 +6,7 @@ import {
   gridToIso, canvasOrigin, isoToGrid, resetCanvasState, drawEnrichmentItem,
 } from '@/ui/renderer'
 import { WORLD_SIZE, ISO_TILE_HEIGHT } from '@/engine/constants'
-import type { GameState, Season, EnrichmentType, Tile } from '@/types'
+import type { GameState, Season, EnrichmentType, Tile, Creature, EnrichmentItem } from '@/types'
 import { genomeColor } from '@/engine/genetics'
 
 const TICK_MS = 1000
@@ -225,7 +225,11 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
   const seasonOverlayRef = useRef<{ text: string; startTime: number } | null>(null)
 
   // Tile hover tooltip (3-second hold)
-  const [tileInfo, setTileInfo] = useState<{ tile: Tile; cx: number; cy: number } | null>(null)
+  const [tileInfo, setTileInfo] = useState<{
+    tile: Tile; cx: number; cy: number
+    enrichmentItem?: EnrichmentItem
+    creature?: Creature
+  } | null>(null)
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastHoveredGridRef = useRef<{ x: number; y: number } | null>(null)
   const hoverClientRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -621,7 +625,13 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
           const tile = gs.tiles[gy]?.[gx]
           if (tile) {
             const { x: cx, y: cy } = hoverClientRef.current
-            setTileInfo({ tile, cx, cy })
+            const enrichmentItem = Object.values(gs.enrichmentItems ?? {}).find(
+              item => item.x === gx && item.y === gy
+            )
+            const creature = Object.values(gs.creatures).find(
+              c => c.x === gx && c.y === gy && c.diedOnDay === null
+            )
+            setTileInfo({ tile, cx, cy, enrichmentItem, creature })
           }
         }, 1500)
       }
@@ -764,15 +774,41 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
       <ToolHint>{toolHints[activeTool]}</ToolHint>
       {tileInfo && (
         <TileTooltip $x={tileInfo.cx} $y={tileInfo.cy}>
-          <strong>{tileInfo.tile.type.replace(/_/g, ' ')}</strong>
-          {tileInfo.tile.biome && <span>biome: {tileInfo.tile.biome}<br /></span>}
-          {(tileInfo.tile.foodAmount ?? 0) > 0 && <span>food: {Math.round(tileInfo.tile.foodAmount)}<br /></span>}
-          {tileInfo.tile.type === 'river' && <span>water: {Math.round(tileInfo.tile.waterLevel ?? 0)}<br /></span>}
-          {(tileInfo.tile.snowDepth ?? 0) > 0.05 && <span>snow: {(tileInfo.tile.snowDepth! * 100).toFixed(0)}%<br /></span>}
-          {(tileInfo.tile.burning ?? 0) > 0 && <span style={{ color: '#e07050' }}>burning<br /></span>}
-          {tileInfo.tile.type === 'healroot' && <span>medicine: {Math.round(tileInfo.tile.healrootAmount ?? 0)}<br /></span>}
-          {tileInfo.tile.elevation !== undefined && tileInfo.tile.elevation > 0.4 && (
-            <span>elevation: {tileInfo.tile.elevation.toFixed(2)}<br /></span>
+          {tileInfo.creature ? (
+            <>
+              <strong>{tileInfo.creature.name} {tileInfo.creature.familyName}</strong>
+              <span>{tileInfo.creature.genome.body} · {tileInfo.creature.genome.mind} · {tileInfo.creature.genome.personality}<br /></span>
+              <span>gen {tileInfo.creature.generation} · age {tileInfo.creature.age}<br /></span>
+              <span>health: {Math.round(tileInfo.creature.health)} · stress: {Math.round(tileInfo.creature.stress)}<br /></span>
+              {(tileInfo.creature.genome.adaptations?.length ?? 0) > 0 && (
+                <span style={{ color: '#7ec8c8' }}>{tileInfo.creature.genome.adaptations!.join(', ')}<br /></span>
+              )}
+              {tileInfo.creature.role && <span style={{ color: '#aaaaaa' }}>{tileInfo.creature.role}<br /></span>}
+            </>
+          ) : tileInfo.enrichmentItem ? (
+            <>
+              <strong>{tileInfo.enrichmentItem.type.replace(/_/g, ' ')}</strong>
+              <span>uses: {tileInfo.enrichmentItem.usesRemaining}/{tileInfo.enrichmentItem.maxUses}<br /></span>
+              {tileInfo.enrichmentItem.usedBy && <span style={{ color: '#aaaaaa' }}>in use<br /></span>}
+            </>
+          ) : (
+            <>
+              <strong>
+                {(tileInfo.tile.snowDepth ?? 0) > 0.25
+                  ? `snow · ${tileInfo.tile.type.replace(/_/g, ' ')}`
+                  : tileInfo.tile.type.replace(/_/g, ' ')}
+              </strong>
+              {tileInfo.tile.biome && <span>biome: {tileInfo.tile.biome}<br /></span>}
+              {(tileInfo.tile.foodAmount ?? 0) > 0 && <span>food: {Math.round(tileInfo.tile.foodAmount)}<br /></span>}
+              {tileInfo.tile.type === 'river' && <span>water: {Math.round(tileInfo.tile.waterLevel ?? 0)}<br /></span>}
+              {(tileInfo.tile.snowDepth ?? 0) > 0.05 && <span>snow: {(tileInfo.tile.snowDepth! * 100).toFixed(0)}%<br /></span>}
+              {(tileInfo.tile.puddleLevel ?? 0) > 0.08 && <span>wet: {((tileInfo.tile.puddleLevel ?? 0) * 100).toFixed(0)}%<br /></span>}
+              {(tileInfo.tile.burning ?? 0) > 0 && <span style={{ color: '#e07050' }}>burning<br /></span>}
+              {tileInfo.tile.type === 'healroot' && <span>medicine: {Math.round(tileInfo.tile.healrootAmount ?? 0)}<br /></span>}
+              {tileInfo.tile.elevation !== undefined && tileInfo.tile.elevation > 0.4 && (
+                <span>elevation: {tileInfo.tile.elevation.toFixed(2)}<br /></span>
+              )}
+            </>
           )}
         </TileTooltip>
       )}

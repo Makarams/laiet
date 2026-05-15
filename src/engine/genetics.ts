@@ -264,6 +264,39 @@ const SYLLABLES = [
   'va', 've', 'vi', 'vo', 'ya', 'ye', 'yi', 'yo', 'za',
 ]
 
+const FAMILY_NAME_SYLLABLE_COUNT = 2
+
+export function normalizeFamilyName(familyName: string): string {
+  const clean = familyName.toLowerCase().replace(/[^a-z]/g, '')
+  if (clean.length === 0) return 'Lala'
+
+  const trimmed = clean.slice(0, 4)
+  const canonical = trimmed.length >= 2 ? trimmed : clean.padEnd(2, clean[clean.length - 1])
+  return canonical.charAt(0).toUpperCase() + canonical.slice(1)
+}
+
+function randomSyllable(rng: () => number): string {
+  return SYLLABLES[Math.floor(rng() * SYLLABLES.length)]
+}
+
+function normalizeFamilyNameSeed(familyName: string, rng: () => number): string[] {
+  const clean = normalizeFamilyName(familyName).toLowerCase()
+  const seed: string[] = []
+
+  if (clean.length >= 2) seed.push(clean.slice(0, 2))
+  else seed.push(randomSyllable(rng))
+
+  if (clean.length >= 4) seed.push(clean.slice(2, 4))
+  else seed.push(randomSyllable(rng))
+
+  return seed
+}
+
+function capitalizeName(parts: string[]): string {
+  const name = parts.join('')
+  return name.charAt(0).toUpperCase() + name.slice(1)
+}
+
 export function generateName(rng: () => number): string {
   const length = 2 + Math.floor(rng() * 2)
   let name = ''
@@ -274,14 +307,15 @@ export function generateName(rng: () => number): string {
 }
 
 export function mutateFamily(familyName: string, rng: () => number): string {
+  const seed = normalizeFamilyNameSeed(familyName, rng)
+  const root = seed[0]
+  const suffix = seed[1]
+
   const mutations = [
-    () => SYLLABLES[Math.floor(rng() * SYLLABLES.length)] + familyName.toLowerCase(),
-    () => familyName + SYLLABLES[Math.floor(rng() * SYLLABLES.length)],
-    () => {
-      if (familyName.length <= 2) return familyName + SYLLABLES[Math.floor(rng() * SYLLABLES.length)]
-      return familyName.slice(0, -2) + SYLLABLES[Math.floor(rng() * SYLLABLES.length)]
-    },
-    () => familyName,
+    () => [root, suffix],
+    () => [root, randomSyllable(rng)],
+    () => [root, randomSyllable(rng)],
+    () => [root, suffix],
   ]
 
   const weights = [0.2, 0.3, 0.3, 0.2]
@@ -293,8 +327,7 @@ export function mutateFamily(familyName: string, rng: () => number): string {
     if (r < cumulative) { chosen = mutations[i]; break }
   }
 
-  const result = chosen()
-  return result.charAt(0).toUpperCase() + result.slice(1)
+  return capitalizeName(chosen().slice(0, FAMILY_NAME_SYLLABLE_COUNT))
 }
 
 // ─── Trait descriptions ───────────────────────────────────────────────────────

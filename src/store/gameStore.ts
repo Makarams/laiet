@@ -9,6 +9,7 @@ import { generateWorld, worldSeedFromTimestamp } from '@/world/worldGen'
 import { createStarterCreatures } from '@/creatures/factory'
 import { saveToCloud, loadBestAvailable, startAutoSave, stopAutoSave, resetUserData } from '@/db/persistence'
 import { computeSimModifiers } from '@/engine/profile'
+import { normalizeFamilyName } from '@/engine/genetics'
 import {
   TICK_INTERVAL_MS, FOOD_DROP_COOLDOWN_MS, FOOD_PER_PATCH,
   HEAL_CHARGES_PER_DAY, HEAL_AMOUNT,
@@ -37,6 +38,19 @@ const defaultCaretaker = (healCharges = HEAL_CHARGES_PER_DAY, foodDropCooldown =
   awaitingResponseUntil: 0,
   respondedToQuestion: false,
 })
+
+function normalizeLoadedCreatureNames(state: GameState): { state: GameState; changed: boolean } {
+  let changed = false
+  const creatures = Object.fromEntries(
+    Object.entries(state.creatures).map(([id, creature]) => {
+      const familyName = normalizeFamilyName(creature.familyName)
+      if (familyName !== creature.familyName) changed = true
+      return [id, { ...creature, familyName }]
+    })
+  )
+
+  return changed ? { state: { ...state, creatures }, changed: true } : { state, changed: false }
+}
 
 // Returns updated caretaker fields for any tile-targeted action.
 // Records position for awareness acceleration and sets respondedToQuestion
@@ -206,27 +220,32 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     try {
       const state = await loadBestAvailable(userId)
       if (state) {
+        const migrated = normalizeLoadedCreatureNames(state)
+
         // Legacy saves may have endgame:'ascension' or 'fracture' from before those
         // endings were removed. Clear them so the simulation resumes rather than
         // freezing with no escape route. Only 'extinction' is a valid terminal state.
-        if (state.endgame && state.endgame !== 'extinction') {
-          state.endgame = null
+        if (migrated.state.endgame && migrated.state.endgame !== 'extinction') {
+          migrated.state.endgame = null
         }
 
         // If already extinct, restore for viewing only; no tick loop, no autosave
-        if (state.endgame === 'extinction') {
-          set({ gameState: state })
+        if (migrated.state.endgame === 'extinction') {
+          set({ gameState: migrated.state })
+          if (migrated.changed) {
+            await saveToCloud(migrated.state)
+          }
           return
         }
 
         // Q10C: Asymmetric idle consequences — spring/summer absence is safe (0 ticks),
         // autumn/storm applies limited catch-up, winter/drought applies full catch-up.
-        const rawPassiveTicks = computePassiveTicks(state.lastSessionEnd)
-        const isHarsh    = state.time.season === 'winter' || (state.weather ?? 'clear') === 'drought'
-        const isModerate  = state.time.season === 'autumn' || (state.weather ?? 'clear') === 'storm'
+        const rawPassiveTicks = computePassiveTicks(migrated.state.lastSessionEnd)
+        const isHarsh    = migrated.state.time.season === 'winter' || (migrated.state.weather ?? 'clear') === 'drought'
+        const isModerate  = migrated.state.time.season === 'autumn' || (migrated.state.weather ?? 'clear') === 'storm'
         const passiveTicks = isHarsh ? rawPassiveTicks : isModerate ? Math.min(rawPassiveTicks, 40) : 0
-        const hoursAway   = computeAbsenceHours(state.lastSessionEnd)
-        let advanced = state
+        const hoursAway   = computeAbsenceHours(migrated.state.lastSessionEnd)
+        let advanced = migrated.state
         for (let i = 0; i < passiveTicks; i++) {
           if (advanced.endgame) break   // colony died during catch-up; stop here
           advanced = tickSimulation(advanced)
@@ -245,6 +264,9 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
         }
 
         set({ gameState: advanced })
+        if (migrated.changed) {
+          await saveToCloud(advanced)
+        }
         if (!advanced.endgame) {
           get().startTicking()
           startAutoSave(() => get().gameState!, 30_000)

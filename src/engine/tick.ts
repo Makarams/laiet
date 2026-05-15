@@ -20,7 +20,7 @@ import {
   DROUGHT_FOOD_FACTOR, THIRST_DECAY, HUNGER_DECAY,
   HEATWAVE_THIRST_MULT, HEATWAVE_STRESS_PER_TICK, HEATWAVE_FOOD_EXTRA_DECAY,
   FOG_THIRST_REDUCTION, FOG_STRESS_RELIEF,
-  HEAT_PLATED_THIRST_BLOCK, STORM_STRESS_PER_TICK,
+  HEAT_PLATED_THIRST_BLOCK, STORM_STRESS_PER_TICK, RAIN_WARMTH_DRAIN,
   // seasonal food sources
   SPRING_BLOOM_CHANCE, SPRING_BLOOM_RAIN_MULT, SPRING_BLOOM_FOOD, SPRING_BLOOM_BIOME_BIAS,
   SUMMER_RIPARIAN_CHANCE, SUMMER_RIPARIAN_FOOD,
@@ -52,6 +52,8 @@ import {
   // healroot
   HEALROOT_REGROW_RATE, HEALROOT_MAX_AMOUNT,
   HEALROOT_SEEK_HEALTH, HEALROOT_CARRY_HEAL, HEALROOT_DEATH_SITE_RADIUS, HEALROOT_DEATH_SPAWN_CHANCE,
+  HEALROOT_WITHER_THRESHOLD, HEALROOT_WITHER_CHANCE, HEALROOT_CAP,
+  FRUIT_MAX_AGE,
   // micro-animations
   MICRO_ANIM_TRIGGER_CHANCE,
   // bond grief
@@ -346,14 +348,15 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
     * mods.foodRegrowMult
 
   // Pre-count vegetation so growth checks can enforce world-wide caps.
-  // This prevents trees and bushes from stacking endlessly; new growth only
+  // This prevents trees, bushes, and healroot from stacking endlessly; new growth only
   // occurs when the count is below the cap, forcing natural turnover.
-  let treeCount = 0, bushCount = 0
+  let treeCount = 0, bushCount = 0, healrootCount = 0
   for (let vy = 0; vy < WORLD_SIZE; vy++) {
     for (let vx = 0; vx < WORLD_SIZE; vx++) {
       const vt = state.tiles[vy][vx].type
       if (vt === 'tree' || vt === 'shelter') treeCount++
       else if (vt === 'bush') bushCount++
+      else if (vt === 'healroot') healrootCount++
     }
   }
 
@@ -416,7 +419,17 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
       // Healroot regrowth; slow, suppressed in drought and winter
       if (t.type === 'healroot') {
         const amount = t.healrootAmount ?? 0
-        if (amount < HEALROOT_MAX_AMOUNT) {
+        // Wither: deeply depleted patches in harsh conditions revert to grass.
+        // Rate doubles in drought/winter — harsh seasons thin sparse patches first.
+        if (amount < HEALROOT_WITHER_THRESHOLD) {
+          const isHarsh = weather === 'drought' || season === 'winter'
+          if (Math.random() < HEALROOT_WITHER_CHANCE * (isHarsh ? 2.0 : 1.0)) {
+            const wt = writeTile(y, x)
+            wt.type = t.biome === 'arid' ? 'barren' : 'grass'
+            wt.healrootAmount = 0
+            healrootCount--
+          }
+        } else if (amount < HEALROOT_MAX_AMOUNT) {
           const regrowMod = weather === 'drought' ? 0.0
             : season === 'winter' ? 0.15
             : weather === 'rain' || weather === 'storm' ? 1.5
@@ -569,9 +582,18 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
             writeTile(y, x).foodAmount = newAmount
           }
         }
-        // Age fruit regardless of tree proximity
-        if (tiles[y]?.[x]?.type === 'food_patch') {
-          writeTile(y, x).fruitAge = (t.fruitAge ?? 0) + 1
+        // Age fruit regardless of tree proximity; hard lifespan enforces natural turnover.
+      // Trees reset fruitAge to 0 when they actively drop fruit, so well-tended patches
+      // persist indefinitely. Seasonal orphans (bloom, riparian, etc.) wither after FRUIT_MAX_AGE.
+        const livePatch = tiles[y]?.[x]
+        if (livePatch?.type === 'food_patch') {
+          const newFruitAge = (livePatch.fruitAge ?? 0) + 1
+          const wt = writeTile(y, x)
+          wt.fruitAge = newFruitAge
+          if (newFruitAge > FRUIT_MAX_AGE) {
+            wt.type = t.biome === 'arid' ? 'barren' : 'grass'
+            wt.foodAmount = 0
+          }
         }
       }
 
@@ -936,6 +958,13 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
   const events: GameEvent[] = [...state.events]
   let totalDeaths = state.totalDeaths
   const weather = (state.weather ?? 'clear') as WeatherState
+  // Live healroot tile count for spawn gating; incremented when death-site spawning adds tiles
+  let healrootCount = 0
+  for (let vy = 0; vy < WORLD_SIZE; vy++) {
+    for (let vx = 0; vx < WORLD_SIZE; vx++) {
+      if (srcTiles[vy][vx].type === 'healroot') healrootCount++
+    }
+  }
   // Tool-as-answer tracking; updated when a question is generated this tick
   let nextAwaitingResponseUntil = state.caretaker.awaitingResponseUntil ?? 0
   let clearRespondedFlag = false
@@ -969,6 +998,10 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
     const adaptations = c.genome.adaptations ?? []
     if (weather === 'rain' || weather === 'storm') {
       c.thirst = Math.max(0, c.thirst - THIRST_DECAY * RAIN_THIRST_REDUCTION)
+      // Rain chills exposed creatures; cold_hardy lineages partially resist
+      const rainWarmthDrain = RAIN_WARMTH_DRAIN * (weather === 'storm' ? 1.5 : 1.0)
+        * (adaptations.includes('cold_hardy') ? 0.5 : 1.0)
+      c.warmth = Math.max(0, c.warmth - rainWarmthDrain)
       // Storm adds baseline stress; storm_braced lineages are immune
       if (weather === 'storm' && !adaptations.includes('storm_braced')) {
         c.stress = Math.min(100, c.stress + STORM_STRESS_PER_TICK)
@@ -1353,16 +1386,21 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
         deathTile.type = 'death_site'
         deathTile.deathSiteAge = 0
 
-        // Healroot spawns around death sites; the world offers remedy to mourners
-        for (let dy = -HEALROOT_DEATH_SITE_RADIUS; dy <= HEALROOT_DEATH_SITE_RADIUS; dy++) {
-          for (let dx = -HEALROOT_DEATH_SITE_RADIUS; dx <= HEALROOT_DEATH_SITE_RADIUS; dx++) {
-            const ny = c.y + dy
-            const nx = c.x + dx
-            if (ny >= 0 && ny < WORLD_SIZE && nx >= 0 && nx < WORLD_SIZE && Math.random() < HEALROOT_DEATH_SPAWN_CHANCE) {
-              const tile = writeTile(ny, nx)
-              if (tile.type === 'grass' || tile.type === 'mud') {
-                tile.type = 'healroot'
-                tile.healrootAmount = 60
+        // Healroot spawns around death sites; the world offers remedy to mourners.
+        // Capped to prevent late-game death saturation from flooding the map.
+        if (healrootCount < HEALROOT_CAP) {
+          for (let dy = -HEALROOT_DEATH_SITE_RADIUS; dy <= HEALROOT_DEATH_SITE_RADIUS; dy++) {
+            for (let dx = -HEALROOT_DEATH_SITE_RADIUS; dx <= HEALROOT_DEATH_SITE_RADIUS; dx++) {
+              if (healrootCount >= HEALROOT_CAP) break
+              const ny = c.y + dy
+              const nx = c.x + dx
+              if (ny >= 0 && ny < WORLD_SIZE && nx >= 0 && nx < WORLD_SIZE && Math.random() < HEALROOT_DEATH_SPAWN_CHANCE) {
+                const tile = writeTile(ny, nx)
+                if (tile.type === 'grass' || tile.type === 'mud') {
+                  tile.type = 'healroot'
+                  tile.healrootAmount = 60
+                  healrootCount++
+                }
               }
             }
           }
