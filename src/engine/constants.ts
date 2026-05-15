@@ -128,6 +128,7 @@ export const CANNIBAL_TRAUMA_STRESS_PER_TICK = 0.25 // stress added per tick dur
 export const HUDDLE_WARMTH_BONUS = 0.03 // warmth per adjacent bonded creature in winter (max 3)
 export const WEATHER_BREED_MULT: Record<string, number> = {
   clear: 1.00, rain: 1.10, storm: 0.90, drought: 0.65,
+  snow: 0.40, heatwave: 0.50, fog: 1.05,
 }
 
 export const DISEASE_RECOVERY_HEALTH   = 40       // health level at which sick state auto-clears
@@ -194,10 +195,13 @@ export const CAVE_WARMTH_BONUS = 0.06             // warmth restored per tick in
 // ─── Weather ─────────────────────────────────────────────────────────────────
 // Durations: [min, max] game days in each state
 export const WEATHER_DURATION: Record<string, [number, number]> = {
-  clear:   [18, 38],
-  rain:    [ 5, 14],
-  storm:   [ 2,  7],
-  drought: [12, 26],
+  clear:    [18, 38],
+  rain:     [ 5, 14],
+  storm:    [ 2,  7],
+  drought:  [12, 26],
+  snow:     [ 4, 12],
+  heatwave: [ 6, 18],
+  fog:      [ 2,  7],
 }
 
 export const RAIN_WATER_BONUS       = 0.22   // water level gain per tick in river tiles
@@ -209,6 +213,56 @@ export const STORM_LIGHTNING_CHANCE = 0.0022 // 4× AUTO_LIGHTNING_CHANCE in sto
 export const DROUGHT_WATER_DRAIN    = 0.10   // water level loss per tick in river tiles
 export const DROUGHT_THIRST_PENALTY = 0.40   // fraction of THIRST_DECAY added by drought
 export const DROUGHT_FOOD_FACTOR    = 0.45   // food regrowth multiplier in drought
+
+// ─── Heatwave ────────────────────────────────────────────────────────────────
+// Summer-only extreme heat. Compounds drought; drives thirst/stress into crisis.
+export const HEATWAVE_THIRST_MULT       = 2.2   // thirst decays this many times faster
+export const HEATWAVE_STRESS_PER_TICK   = 0.06  // passive stress per tick even when satisfied
+export const HEATWAVE_FOOD_EXTRA_DECAY  = 0.12  // extra food wilt per tick on all food_patches (heat)
+
+// ─── Fog ─────────────────────────────────────────────────────────────────────
+// Spring/autumn moisture haze. Mild; calming; slight thirst and stress relief.
+export const FOG_THIRST_REDUCTION       = 0.25  // fraction of THIRST_DECAY removed by fog moisture
+export const FOG_STRESS_RELIEF          = 0.04  // passive stress removed per tick in fog
+
+// ─── Seasonal food sources ────────────────────────────────────────────────────
+// Each season generates a distinct food resource beyond the base tree/bush system.
+
+// Spring bloom: ephemeral wildflower patches on grass tiles during rain or clear spring
+export const SPRING_BLOOM_CHANCE        = 0.00025  // per eligible grass tile per tick
+export const SPRING_BLOOM_RAIN_MULT     = 3.5      // multiplied during rain/fog
+export const SPRING_BLOOM_FOOD          = 35       // initial food amount on new bloom patch
+export const SPRING_BLOOM_BIOME_BIAS: Record<string, number> = {
+  lush: 3.0, wetland: 2.0, temperate: 1.0, rocky: 0.2, arid: 0.05,
+}
+
+// Summer riparian: lush food_patches appear on grass adjacent to rivers in summer
+export const SUMMER_RIPARIAN_CHANCE     = 0.00020  // per eligible river-adjacent grass tile per tick
+export const SUMMER_RIPARIAN_FOOD       = 28       // initial food amount
+
+// Autumn windfall: maturing/peak trees drop large fruit bursts before winter
+export const AUTUMN_WINDFALL_CHANCE     = 0.0008   // per tree at or past TREE_PEAK_AGE per tick
+export const AUTUMN_WINDFALL_FOOD       = 55       // large harvest drop amount
+// Autumn mushroom: withering trees seed fungal patches in their shade
+export const AUTUMN_MUSHROOM_CHANCE     = 0.00025  // per tree entering wither phase per tick
+export const AUTUMN_MUSHROOM_FOOD       = 38       // mushroom-like patch food amount
+
+// Winter lichen: sparse crust on rocky/barren tiles near caves; reliable but meagre
+export const WINTER_LICHEN_CHANCE       = 0.00022  // per eligible tile per tick
+export const WINTER_LICHEN_FOOD         = 22       // sparse but sustaining
+export const WINTER_LICHEN_CAVE_RADIUS  = 5        // must be within this many tiles of a cave
+
+// ─── Environmental adaptations ────────────────────────────────────────────────
+// Traits heritable from parents (ADAPTATION_INHERIT_CHANCE each) and acquirable
+// at birth from the spawn environment. Capped at ADAPTATION_MAX per creature.
+export const ADAPTATION_INHERIT_CHANCE     = 0.65   // probability per parent trait inherited
+export const ADAPTATION_MAX                = 3      // max concurrent adaptations
+
+export const COLD_HARDY_WARMTH_MULT        = 0.65   // warmth decay multiplier (cold_hardy)
+export const DROUGHT_TOUGH_HUNGER_MULT     = 0.78   // hunger decay multiplier (drought_tough)
+export const HYDRO_FINS_THIRST_MULT        = 0.55   // thirst decay mult on wetland/river (hydro_fins)
+export const HEAT_PLATED_THIRST_BLOCK      = 0.50   // fraction of heatwave extra thirst blocked
+export const STORM_STRESS_PER_TICK         = 0.08   // base stress from storm weather (storm_braced blocks this entirely)
 
 // ─── Biome thirst modifiers (applied as extra fraction of THIRST_DECAY) ──────
 export const BIOME_THIRST_EXTRA: Record<string, number> = {
@@ -302,6 +356,37 @@ export const ENRICHMENT_EFFECTS: Record<string, {
   worn_path:       { stress: -1.8, hunger:  1.5, thirst:  0.5, warmth:  0.5, health:  0.15 },
   play_stones:     { stress: -3.0, hunger:  0.5, thirst:  0.0, warmth:  0.0, health:  0.0 },
   springy_moss:    { stress: -3.5, hunger:  1.0, thirst:  0.5, warmth:  0.0, health:  0.0 },
+}
+
+// ─── Natural enrichment item spawning ────────────────────────────────────────
+// Items spawn in the world based on biome conditions and are refreshed nearby on depletion.
+export const NATURAL_ENRICHMENT_SPAWN_CHANCE     = 0.003  // base chance per tile attempt per tick
+export const NATURAL_ENRICHMENT_ATTEMPTS_PER_TICK = 3     // tile sample attempts per tickNaturalEnrichment call
+export const NATURAL_ENRICHMENT_MAX_USES         = 80     // natural items are more durable than player-placed
+export const NATURAL_ENRICHMENT_REGEN_RADIUS     = 12     // tile radius for respawn after depletion
+export const NATURAL_ENRICHMENT_CAP_BASE         = 4      // minimum natural item slots in the world
+export const NATURAL_ENRICHMENT_CAP_PER_N_ALIVE  = 10    // alive creatures per extra slot (+1 per 10)
+export const NATURAL_ENRICHMENT_CAP_MAX          = 20    // absolute ceiling
+
+// Which enrichment types can appear naturally in each biome
+export const NATURAL_ENRICHMENT_BIOME_TYPES: Record<string, string[]> = {
+  rocky:     ['warm_stone', 'burrow', 'play_stones'],
+  temperate: ['resting_spot', 'burrow', 'warm_stone', 'worn_path', 'scratching_post'],
+  lush:      ['springy_moss', 'resting_spot', 'scratching_post'],
+  wetland:   ['mud_pool', 'springy_moss', 'resting_spot'],
+  arid:      ['resting_spot', 'play_stones', 'worn_path', 'burrow'],
+}
+
+// Season spawn chance multiplier per enrichment type
+export const NATURAL_ENRICHMENT_SEASON_MOD: Record<string, Record<string, number>> = {
+  warm_stone:      { winter: 5.0, autumn: 2.0, spring: 0.5, summer: 0.2 },
+  burrow:          { winter: 3.0, autumn: 1.5, spring: 1.0, summer: 0.8 },
+  springy_moss:    { winter: 0.2, autumn: 0.5, spring: 2.5, summer: 2.0 },
+  mud_pool:        { winter: 0.1, autumn: 0.4, spring: 2.0, summer: 2.5 },
+  resting_spot:    { winter: 1.0, autumn: 1.2, spring: 1.5, summer: 1.2 },
+  scratching_post: { winter: 0.8, autumn: 1.0, spring: 1.2, summer: 1.0 },
+  worn_path:       { winter: 0.7, autumn: 0.9, spring: 1.2, summer: 1.1 },
+  play_stones:     { winter: 0.6, autumn: 0.9, spring: 1.3, summer: 1.3 },
 }
 
 // ─── Natural enrichment; passive bonuses from world terrain ─────────────────
@@ -440,19 +525,52 @@ export const SOLAR_WARMTH_BONUS = 0.010
 export const DEAD_BOND_FADE_PER_TICK = 0.35
 
 // ─── Snow ─────────────────────────────────────────────────────────────────────
-// Snow only occurs during winter in cold biomes (rocky, temperate) or anywhere
-// during a storm in winter. Snow accumulates on tiles, reducing movement, food
-// visibility, and warmth. It melts in spring or when temperature rises.
+// Snow falls on all land during winter and spreads gradually like a blanket.
+// Active snowfall (weather='snow' or storm+winter) accumulates at SNOW_ACCUMULATE_RATE.
+// Clear winter applies a slow frost baseline so the land stays lightly covered between storms.
+// Deep snow spreads to adjacent tiles at SNOW_SPREAD_CHANCE, creating the blanketing effect.
+// Melts in spring/summer; arid biomes melt faster, wetland slightly faster than temperate.
 export const SNOW_ENABLED = true
-export const SNOW_ACCUMULATE_RATE  = 0.007  // depth added per tick during snowfall
-export const SNOW_MELT_RATE        = 0.003  // depth removed per tick in clear spring
-export const SNOW_MAX_DEPTH        = 1.0    // 0..1, normalised
-export const SNOW_MOVE_PENALTY     = 0.55   // tile move modifier under full snow cover
-export const SNOW_WARMTH_DRAIN     = 0.06   // extra warmth decay per tick in snow
-export const SNOW_FOOD_COVER_FACTOR = 0.0   // food invisible to creatures when fully covered
-export const SNOW_VISIBILITY_REDUCE = 0.50  // renderer alpha on snow-covered food tiles
-// Biomes that can accumulate snow (wetland stays wetter, arid rarely gets snow)
-export const SNOW_BIOMES = ['temperate','rocky','lush'] as const
+export const SNOW_ACCUMULATE_RATE   = 0.007   // depth added per tick during active snowfall
+export const SNOW_MELT_RATE         = 0.003   // base melt rate per tick when not snowing
+export const SNOW_MAX_DEPTH         = 1.0     // 0..1, normalised
+export const SNOW_MOVE_PENALTY      = 0.55    // tile move modifier under full snow cover
+export const SNOW_WARMTH_DRAIN      = 0.06    // extra warmth decay per tick in snow
+export const SNOW_FOOD_COVER_FACTOR = 0.0     // food invisible to creatures when fully covered
+export const SNOW_VISIBILITY_REDUCE = 0.50    // renderer alpha on snow-covered food tiles
+// Baseline frost in clear winter: slow accumulation keeps the world lightly snowed between storms
+export const SNOW_WINTER_FROST_RATE = 0.001   // depth added per tick in clear winter (non-drought)
+export const SNOW_WINTER_FROST_CAP  = 0.28    // max depth from frost alone (full depth needs snowfall)
+// Spread: deep snow gradually blankets adjacent tiles (like puddle flow)
+export const SNOW_SPREAD_CHANCE     = 0.003   // per tile per tick when depth > SNOW_SPREAD_THRESHOLD
+export const SNOW_SPREAD_THRESHOLD  = 0.35    // minimum depth before a tile starts spreading
+export const SNOW_SPREAD_AMOUNT     = 0.002   // depth transferred to adjacent tile per spread event
+// Biome accumulation factors (all biomes receive snow; these scale the rate)
+export const SNOW_BIOME_FACTOR: Record<string, number> = {
+  temperate: 1.00,
+  rocky:     1.10,   // cold stone holds snow well
+  lush:      0.85,   // canopy intercepts some snowfall
+  wetland:   0.65,   // wet ground; snow melts into slush faster
+  arid:      0.40,   // dry heat resists accumulation
+}
+// Biome melt multipliers (higher = melts faster)
+export const SNOW_BIOME_MELT_FACTOR: Record<string, number> = {
+  temperate: 1.0,
+  rocky:     0.9,
+  lush:      1.1,
+  wetland:   1.6,
+  arid:      3.0,
+}
+// Keep for renderer / UI references; all biomes now accumulate snow
+export const SNOW_BIOMES = ['temperate', 'rocky', 'lush', 'wetland', 'arid'] as const
+
+// ─── Lineage forking ─────────────────────────────────────────────────────────
+// Every LINEAGE_FORK_GENERATION generations, offspring receive a new sub-lineage
+// ID derived from their primary parent rather than the original root ancestor ID.
+// This makes cousins N generations apart into strangers, unlocking the existing
+// fight gates (lineageId !== lineageId in behavior.ts) without any new combat logic.
+// Gen 0-3 = one family; gen 4-7 = first fracture; gen 8+ = deep tribal splits.
+export const LINEAGE_FORK_GENERATION = 4
 
 // ─── Race lineage & latent ancestry ──────────────────────────────────────────
 export const LATENT_REVIVAL_BASE    = 0.025  // 2.5% base revival chance per latent race

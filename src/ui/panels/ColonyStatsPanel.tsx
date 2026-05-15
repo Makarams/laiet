@@ -129,8 +129,8 @@ const SnowBar = styled.div<{ $pct: number }>`
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const WEATHER_GLYPH: Record<WeatherState | 'snow', string> = {
-  clear:'☀', rain:'☂', storm:'⚡', drought:'◌', snow:'❄',
+const WEATHER_GLYPH: Record<WeatherState, string> = {
+  clear:'☀', rain:'☂', storm:'⚡', drought:'◌', snow:'❄', heatwave:'🌡', fog:'≋',
 }
 const WEATHER_COLOR: Record<string, string> = {
   clear: THEME.amber, rain: THEME.water, storm: '#a0c8f0',

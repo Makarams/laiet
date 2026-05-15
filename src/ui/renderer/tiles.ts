@@ -1329,5 +1329,19 @@ export function drawEnrichmentItem(
     ctx.setLineDash([])
   }
 
+  // Natural items: small green dot indicator in the top-right corner
+  if (item.natural) {
+    ctx.globalAlpha = 0.75 * durabilityAlpha
+    ctx.fillStyle = '#5dba6a'
+    ctx.beginPath()
+    ctx.arc(cx + 5 * s, cy - 4 * s, 1.4 * s, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.globalAlpha = 0.35 * durabilityAlpha
+    ctx.fillStyle = '#aaf0b0'
+    ctx.beginPath()
+    ctx.arc(cx + 4.5 * s, cy - 4.5 * s, 0.6 * s, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
   ctx.restore()
 }

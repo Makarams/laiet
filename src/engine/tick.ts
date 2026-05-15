@@ -2,6 +2,7 @@ import { v4 as uuid } from 'uuid'
 import {
   GameState, Creature, GameEvent, EventType, Season, WeatherState,
   ExtinctionRecord, ColonyMessage, SimModifiers, RaceTrait,
+  EnrichmentItem, EnrichmentType, EnvContext,
 } from '@/types'
 import {
   DAY_FRACTION_PER_TICK, DAYS_PER_SEASON, FOOD_REGROW_RATE_BASE,
@@ -17,6 +18,14 @@ import {
   WEATHER_DURATION, RAIN_WATER_BONUS, RAIN_THIRST_REDUCTION, RAIN_FOOD_BONUS,
   STORM_LIGHTNING_CHANCE, DROUGHT_WATER_DRAIN, DROUGHT_THIRST_PENALTY,
   DROUGHT_FOOD_FACTOR, THIRST_DECAY, HUNGER_DECAY,
+  HEATWAVE_THIRST_MULT, HEATWAVE_STRESS_PER_TICK, HEATWAVE_FOOD_EXTRA_DECAY,
+  FOG_THIRST_REDUCTION, FOG_STRESS_RELIEF,
+  HEAT_PLATED_THIRST_BLOCK, STORM_STRESS_PER_TICK,
+  // seasonal food sources
+  SPRING_BLOOM_CHANCE, SPRING_BLOOM_RAIN_MULT, SPRING_BLOOM_FOOD, SPRING_BLOOM_BIOME_BIAS,
+  SUMMER_RIPARIAN_CHANCE, SUMMER_RIPARIAN_FOOD,
+  AUTUMN_WINDFALL_CHANCE, AUTUMN_WINDFALL_FOOD, AUTUMN_MUSHROOM_CHANCE, AUTUMN_MUSHROOM_FOOD,
+  WINTER_LICHEN_CHANCE, WINTER_LICHEN_FOOD, WINTER_LICHEN_CAVE_RADIUS,
   WARMTH_DECAY_BASE, WARMTH_DECAY_WINTER,
   CARETAKER_PRESENCE_RADIUS, CARETAKER_PRESENCE_WINDOW_MS, CARETAKER_SENTIENCE_BOOST,
   BONE_MEMORY_CHANCE, BONE_MEMORY_RADIUS,
@@ -36,7 +45,10 @@ import {
   PUDDLE_FORM_THRESHOLD, PUDDLE_ACCUMULATE_RATE, PUDDLE_EVAPORATE_RATE, PUDDLE_THIRST_RELIEF,
   PUDDLE_FLOW_CHANCE, RIVER_OVERFLOW_CHANCE,
   SNOW_ENABLED, SNOW_ACCUMULATE_RATE, SNOW_MELT_RATE, SNOW_MAX_DEPTH,
-  SNOW_MOVE_PENALTY, SNOW_WARMTH_DRAIN, SNOW_BIOMES,
+  SNOW_MOVE_PENALTY, SNOW_WARMTH_DRAIN,
+  SNOW_WINTER_FROST_RATE, SNOW_WINTER_FROST_CAP,
+  SNOW_SPREAD_CHANCE, SNOW_SPREAD_THRESHOLD, SNOW_SPREAD_AMOUNT,
+  SNOW_BIOME_FACTOR, SNOW_BIOME_MELT_FACTOR,
   // healroot
   HEALROOT_REGROW_RATE, HEALROOT_MAX_AMOUNT,
   HEALROOT_SEEK_HEALTH, HEALROOT_CARRY_HEAL, HEALROOT_DEATH_SITE_RADIUS, HEALROOT_DEATH_SPAWN_CHANCE,
@@ -53,6 +65,11 @@ import {
   // awareness stage window tracking
   AWARENESS_STAGE_2_ROLES_REQUIRED,
   AWARENESS_STAGE_3_LEXICON_MIN,
+  // natural enrichment spawning
+  NATURAL_ENRICHMENT_SPAWN_CHANCE, NATURAL_ENRICHMENT_ATTEMPTS_PER_TICK,
+  NATURAL_ENRICHMENT_MAX_USES, NATURAL_ENRICHMENT_REGEN_RADIUS,
+  NATURAL_ENRICHMENT_CAP_BASE, NATURAL_ENRICHMENT_CAP_PER_N_ALIVE, NATURAL_ENRICHMENT_CAP_MAX,
+  NATURAL_ENRICHMENT_BIOME_TYPES, NATURAL_ENRICHMENT_SEASON_MOD,
 } from './constants'
 import {
   tickNeeds, tickBehavior, tickMovement,
@@ -119,7 +136,8 @@ export function tickSimulation(state: GameState): GameState {
 
   next = tickReproduction(next, _rng, popFactor)
   next = tickTribes(next)
-  next = tickEnrichment(next)
+  next = tickEnrichment(next, _rng)
+  next = tickNaturalEnrichment(next, _rng)
 
   const liveCount = Object.values(next.creatures).filter(c => !c.diedOnDay).length
   next.colonyStage = getColonyStage(liveCount) as GameState['colonyStage']
@@ -248,31 +266,67 @@ function tickWeather(state: GameState, mods: SimModifiers): GameState {
   let weather = (state.weather ?? 'clear') as WeatherState
   let timer = Math.max(0, (state.weatherTimer ?? 20) - DAY_FRACTION_PER_TICK)
 
+  // Season-guard: heatwave and fog don't persist into wrong seasons
+  const season = state.time.season
+  if (weather === 'heatwave' && season !== 'summer') weather = 'clear'
+  if (weather === 'fog' && season === 'winter') weather = 'snow'
+
   if (timer <= 0) {
-    // Transition to next weather based on current state
     const rnd = Math.random()
     type Trans = [WeatherState, number][]
-    // Snow only occurs in winter; during other seasons it transitions to rain or clear
-    const isWinter = state.time.season === 'winter'
+    const isSpring = season === 'spring'
+    const isSummer = season === 'summer'
+    const isAutumn = season === 'autumn'
+    const isWinter = season === 'winter'
+
     const transitions: Record<WeatherState, Trans> = {
-      clear:   isWinter
-        ? [['clear', 0.30], ['snow', 0.55], ['rain', 0.75], ['storm', 0.90], ['drought', 1.00]]
-        : [['clear', 0.40], ['rain', 0.75], ['drought', 0.95], ['storm', 1.00]],
-      rain:    [['clear', 0.45], ['storm', 0.75], ['rain', 1.00]],
-      storm:   isWinter
-        ? [['snow', 0.45], ['clear', 0.75], ['rain', 1.00]]
-        : [['clear', 0.60], ['rain', 1.00]],
-      drought: [['clear', 0.70], ['drought', 0.90], ['storm', 1.00]],
-      snow:    [['snow', 0.50], ['clear', 0.80], ['rain', 1.00]],
+      // Spring: rain and fog dominate; no drought early; brief storms
+      clear: isSpring
+        ? [['rain', 0.40], ['clear', 0.65], ['fog', 0.82], ['storm', 0.96], ['drought', 1.00]]
+        : isSummer
+        ? [['clear', 0.30], ['drought', 0.52], ['heatwave', 0.68], ['rain', 0.84], ['storm', 1.00]]
+        : isAutumn
+        ? [['clear', 0.28], ['fog', 0.48], ['rain', 0.68], ['storm', 0.84], ['snow', 0.95], ['drought', 1.00]]
+        : /* winter */
+          [['clear', 0.25], ['snow', 0.55], ['rain', 0.70], ['storm', 0.85], ['drought', 1.00]],
+
+      rain: isSpring
+        ? [['rain', 0.35], ['clear', 0.60], ['fog', 0.80], ['storm', 1.00]]
+        : isSummer
+        ? [['clear', 0.55], ['storm', 0.80], ['rain', 1.00]]
+        : isAutumn
+        ? [['rain', 0.30], ['storm', 0.55], ['clear', 0.78], ['fog', 1.00]]
+        : /* winter */
+          [['snow', 0.40], ['clear', 0.70], ['storm', 0.88], ['rain', 1.00]],
+
+      storm: isSpring
+        ? [['rain', 0.45], ['clear', 0.70], ['fog', 0.88], ['storm', 1.00]]
+        : isSummer
+        ? [['drought', 0.35], ['clear', 0.65], ['rain', 0.88], ['storm', 1.00]]
+        : isAutumn
+        ? [['rain', 0.35], ['storm', 0.55], ['snow', 0.70], ['clear', 1.00]]
+        : /* winter */
+          [['snow', 0.50], ['clear', 0.78], ['rain', 1.00]],
+
+      drought: isSummer
+        ? [['drought', 0.40], ['heatwave', 0.60], ['clear', 0.85], ['storm', 1.00]]
+        : isWinter
+        ? [['drought', 0.35], ['clear', 0.70], ['snow', 0.88], ['storm', 1.00]]
+        : [['clear', 0.60], ['drought', 0.82], ['storm', 1.00]],
+
+      snow:     [['snow', 0.45], ['clear', 0.75], ['storm', 0.90], ['rain', 1.00]],
+      heatwave: [['heatwave', 0.35], ['drought', 0.60], ['clear', 0.88], ['storm', 1.00]],
+      fog: isSpring
+        ? [['clear', 0.40], ['fog', 0.60], ['rain', 0.82], ['storm', 1.00]]
+        : [['fog', 0.40], ['clear', 0.62], ['rain', 0.82], ['storm', 1.00]],
     }
+
     let next: WeatherState = 'clear'
-    let cumulative = 0
     for (const [w, prob] of transitions[weather]) {
-      cumulative = prob
-      if (rnd < cumulative) { next = w; break }
+      if (rnd < prob) { next = w; break }
     }
     weather = next
-    const [min, max] = WEATHER_DURATION[weather]
+    const [min, max] = WEATHER_DURATION[weather] ?? [8, 20]
     const durationMult = weather === 'drought' ? mods.droughtDurationMult : 1.0
     timer = (min + Math.random() * (max - min)) * durationMult
   }
@@ -521,6 +575,94 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
         }
       }
 
+      // ── Heatwave: all food_patches wilt faster regardless of tree cover ────
+      if (weather === 'heatwave' && t.type === 'food_patch' && t.foodAmount > 0) {
+        const wilted = Math.max(0, t.foodAmount - HEATWAVE_FOOD_EXTRA_DECAY)
+        if (wilted === 0) {
+          const wt = writeTile(y, x)
+          wt.type = t.biome === 'arid' ? 'barren' : 'grass'; wt.foodAmount = 0
+        } else {
+          writeTile(y, x).foodAmount = wilted
+        }
+      }
+
+      // ── Seasonal food sources ─────────────────────────────────────────────
+      // Spring bloom: wildflower patches on lush/wetland grass during rain or clear
+      if (season === 'spring' && t.type === 'grass') {
+        const biomeBias = SPRING_BLOOM_BIOME_BIAS[t.biome] ?? 1.0
+        const weatherMult = (weather === 'rain' || weather === 'fog') ? SPRING_BLOOM_RAIN_MULT : 1.0
+        if (Math.random() < SPRING_BLOOM_CHANCE * biomeBias * weatherMult) {
+          const wt = writeTile(y, x)
+          wt.type = 'food_patch'; wt.foodAmount = SPRING_BLOOM_FOOD; wt.fruitAge = 0
+        }
+      }
+
+      // Summer riparian: river-adjacent grass spawns food patches in summer heat
+      if (season === 'summer' && t.type === 'grass') {
+        let adjacentRiver = false
+        for (const [ddx, ddy] of [[0,1],[0,-1],[1,0],[-1,0]] as [number,number][]) {
+          const nx = x + ddx, ny = y + ddy
+          if (nx >= 0 && ny >= 0 && nx < WORLD_SIZE && ny < WORLD_SIZE
+              && srcTiles[ny][nx].type === 'river') {
+            adjacentRiver = true; break
+          }
+        }
+        if (adjacentRiver && Math.random() < SUMMER_RIPARIAN_CHANCE) {
+          const wt = writeTile(y, x)
+          wt.type = 'food_patch'; wt.foodAmount = SUMMER_RIPARIAN_FOOD; wt.fruitAge = 0
+        }
+      }
+
+      // Autumn windfall: peak/withering trees drop a large fruit burst
+      if (season === 'autumn' && (t.type === 'tree' || t.type === 'shelter')) {
+        if (t.treeAge >= TREE_PEAK_AGE && Math.random() < AUTUMN_WINDFALL_CHANCE) {
+          for (const [ddx, ddy] of [[0,1],[0,-1],[1,0],[-1,0],[1,1],[-1,1],[1,-1],[-1,-1]] as [number,number][]) {
+            const tx = x + ddx, ty = y + ddy
+            if (tx < 0 || ty < 0 || tx >= WORLD_SIZE || ty >= WORLD_SIZE) continue
+            const adj = srcTiles[ty][tx]
+            if (adj.type === 'grass') {
+              const wt = writeTile(ty, tx)
+              wt.type = 'food_patch'; wt.foodAmount = AUTUMN_WINDFALL_FOOD; wt.fruitAge = 0
+              break
+            } else if (adj.type === 'food_patch' && adj.foodAmount < 80) {
+              writeTile(ty, tx).foodAmount = Math.min(100, adj.foodAmount + AUTUMN_WINDFALL_FOOD)
+              break
+            }
+          }
+        }
+        // Withering trees seed fungal/mushroom-like patches in their shade
+        if (t.treeAge >= TREE_WITHER_AGE && Math.random() < AUTUMN_MUSHROOM_CHANCE) {
+          for (const [ddx, ddy] of [[0,1],[0,-1],[1,0],[-1,0]] as [number,number][]) {
+            const tx = x + ddx, ty = y + ddy
+            if (tx < 0 || ty < 0 || tx >= WORLD_SIZE || ty >= WORLD_SIZE) continue
+            const adj = srcTiles[ty][tx]
+            if (adj.type === 'grass' || (adj.type === 'food_patch' && adj.foodAmount < 50)) {
+              const wt = writeTile(ty, tx)
+              wt.type = 'food_patch'; wt.foodAmount = Math.min(100, (adj.foodAmount ?? 0) + AUTUMN_MUSHROOM_FOOD)
+              wt.fruitAge = 0; break
+            }
+          }
+        }
+      }
+
+      // Winter lichen: sparse edible crust on rocky/barren tiles near caves
+      if (season === 'winter' && (t.type === 'barren' || (t.biome === 'rocky' && t.type === 'grass'))) {
+        if (Math.random() < WINTER_LICHEN_CHANCE) {
+          let nearCave = false
+          for (let dy2 = -WINTER_LICHEN_CAVE_RADIUS; dy2 <= WINTER_LICHEN_CAVE_RADIUS && !nearCave; dy2++) {
+            for (let dx2 = -WINTER_LICHEN_CAVE_RADIUS; dx2 <= WINTER_LICHEN_CAVE_RADIUS && !nearCave; dx2++) {
+              const cx = x + dx2, cy = y + dy2
+              if (cx >= 0 && cy >= 0 && cx < WORLD_SIZE && cy < WORLD_SIZE
+                  && srcTiles[cy][cx].type === 'cave') nearCave = true
+            }
+          }
+          if (nearCave) {
+            const wt = writeTile(y, x)
+            wt.type = 'food_patch'; wt.foodAmount = WINTER_LICHEN_FOOD; wt.fruitAge = 0
+          }
+        }
+      }
+
       // Water replenishment; reads from working tile so it stacks with rain bonus above
       if (t.type === 'river') {
         const wt = writeTile(y, x)
@@ -583,23 +725,47 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
         }
       }
 
-      // ── Snow accumulation & melt ──────────────────────────────────────────
+      // ── Snow accumulation, spread & melt ─────────────────────────────────
       if (SNOW_ENABLED) {
-        const canSnow = (SNOW_BIOMES as readonly string[]).includes(t.biome)
-          || weather === 'snow'  // global snowfall overrides biome restriction
         const isSnowWeather = weather === 'snow' || (weather === 'storm' && season === 'winter')
+        const isWinter = season === 'winter'
         const currentDepth = t.snowDepth ?? 0
+        const impassable = t.type === 'river' || t.type === 'mountain'
+          || t.type === 'cliff' || t.type === 'rock'
 
-        if (isSnowWeather && canSnow &&
-            (t.type as string) !== 'river' && t.type !== 'mountain' && t.type !== 'cliff') {
-          writeTile(y, x).snowDepth = Math.min(SNOW_MAX_DEPTH, currentDepth + SNOW_ACCUMULATE_RATE)
-        } else if (!isSnowWeather && currentDepth > 0) {
-          // Snow melts faster in spring, slower in clear winter
-          const meltRate = season === 'spring' ? SNOW_MELT_RATE * 3 :
-                           season === 'summer' ? SNOW_MELT_RATE * 5 :
-                           SNOW_MELT_RATE
-          const newDepth = Math.max(0, currentDepth - meltRate)
-          writeTile(y, x).snowDepth = newDepth
+        if (!impassable) {
+          const biomeFactor = SNOW_BIOME_FACTOR[t.biome] ?? 1.0
+
+          if (isSnowWeather) {
+            // Active snowfall: accumulate on all land tiles, rate scaled by biome
+            writeTile(y, x).snowDepth = Math.min(SNOW_MAX_DEPTH, currentDepth + SNOW_ACCUMULATE_RATE * biomeFactor)
+          } else if (isWinter && weather !== 'drought' && t.biome !== 'arid') {
+            // Clear winter: light frost baseline keeps the land lightly dusted between storms
+            writeTile(y, x).snowDepth = Math.min(SNOW_WINTER_FROST_CAP, currentDepth + SNOW_WINTER_FROST_RATE)
+          } else if (currentDepth > 0) {
+            // Melting: season and biome both govern the rate
+            const seasonMelt = season === 'spring' ? 3 : season === 'summer' ? 5 : 1
+            const biomeMelt = SNOW_BIOME_MELT_FACTOR[t.biome] ?? 1.0
+            writeTile(y, x).snowDepth = Math.max(0, currentDepth - SNOW_MELT_RATE * seasonMelt * biomeMelt)
+          }
+
+          // Spread: deep snow blankets adjacent tiles gradually (blanket effect)
+          if (currentDepth > SNOW_SPREAD_THRESHOLD && Math.random() < SNOW_SPREAD_CHANCE) {
+            const dirs = [{dx:1,dy:0},{dx:-1,dy:0},{dx:0,dy:1},{dx:0,dy:-1}]
+            const dir = dirs[Math.floor(Math.random() * 4)]
+            const nx = x + dir.dx, ny = y + dir.dy
+            if (nx >= 0 && ny >= 0 && nx < WORLD_SIZE && ny < WORLD_SIZE) {
+              const nb = srcTiles[ny][nx]
+              if (nb && nb.type !== 'river' && nb.type !== 'mountain'
+                  && nb.type !== 'cliff' && nb.type !== 'rock') {
+                const nbDepth = nb.snowDepth ?? 0
+                writeTile(ny, nx).snowDepth = Math.min(SNOW_MAX_DEPTH, nbDepth + SNOW_SPREAD_AMOUNT)
+              }
+            }
+          }
+        } else if (currentDepth > 0) {
+          // Impassable tiles (rivers, rock faces) shed snow quickly
+          writeTile(y, x).snowDepth = Math.max(0, currentDepth - SNOW_MELT_RATE * 4)
         }
       }
 
@@ -792,16 +958,33 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
 
     // Night warmth spike; doubles effective warmth decay at night, forcing
     // creatures toward shelter/caves before conditions become critical.
-    if (state.time.phase === 'night') {
+    // cave_sighted creatures are adapted to dark environments and skip this penalty.
+    if (state.time.phase === 'night' && !c.genome.adaptations?.includes('cave_sighted')) {
       const extraDrain = state.time.season === 'winter' ? WARMTH_DECAY_WINTER : WARMTH_DECAY_BASE
       c.warmth = Math.max(0, c.warmth - extraDrain)
     }
 
-    // Weather thirst correction; rain/storm reduces thirst pressure; drought increases it
+    // Weather thirst/stress correction; rain/storm reduces thirst; drought/heat increases it.
+    // Adaptation traits block or reduce specific weather penalties.
+    const adaptations = c.genome.adaptations ?? []
     if (weather === 'rain' || weather === 'storm') {
       c.thirst = Math.max(0, c.thirst - THIRST_DECAY * RAIN_THIRST_REDUCTION)
+      // Storm adds baseline stress; storm_braced lineages are immune
+      if (weather === 'storm' && !adaptations.includes('storm_braced')) {
+        c.stress = Math.min(100, c.stress + STORM_STRESS_PER_TICK)
+      }
     } else if (weather === 'drought') {
       c.thirst = Math.min(100, c.thirst + THIRST_DECAY * DROUGHT_THIRST_PENALTY)
+    } else if (weather === 'heatwave') {
+      const thirstBlock = adaptations.includes('heat_plated') ? HEAT_PLATED_THIRST_BLOCK : 0
+      c.thirst = Math.min(100, c.thirst + THIRST_DECAY * (HEATWAVE_THIRST_MULT - 1) * (1 - thirstBlock))
+      // heat_plated lineages have evolved chitin plates that dissipate heat; stress blocked entirely
+      if (!adaptations.includes('heat_plated')) {
+        c.stress = Math.min(100, c.stress + HEATWAVE_STRESS_PER_TICK)
+      }
+    } else if (weather === 'fog') {
+      c.thirst = Math.max(0, c.thirst - THIRST_DECAY * FOG_THIRST_REDUCTION)
+      c.stress = Math.max(0, c.stress - FOG_STRESS_RELIEF)
     }
 
     // Awareness acceleration; caretaker actions near a creature boost sentience
@@ -1476,7 +1659,9 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
         const tribeALex = c.tribeId ? (state.tribes[c.tribeId]?.tribalLexicon ?? []) : []
         const tribeBLex = partner.tribeId ? (state.tribes[partner.tribeId]?.tribalLexicon ?? []) : []
         const combinedLex = [...new Set([...tribeALex, ...tribeBLex])]
-        const offspring = createOffspring(c, partner, c.x, c.y, state.time.day, tickRng, state.modifiers?.mutationChance, combinedLex)
+        const spawnTile = state.tiles[c.y]?.[c.x]
+        const envCtx: EnvContext = { biome: spawnTile?.biome ?? 'temperate', weather: state.weather ?? 'clear', season: state.time.season }
+        const offspring = createOffspring(c, partner, c.x, c.y, state.time.day, tickRng, state.modifiers?.mutationChance, combinedLex, envCtx)
         newCreatures.push(offspring)
 
         creatures[c.id] = {
@@ -1522,7 +1707,9 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
     // creature is genuinely thriving and population isn't overstretched.
     if (canAsexuallyReproduce(c, state.time.season, popFactor)
       && tickRng() < ASEXUAL_BASE_CHANCE * popFactor) {
-      const offspring = createAsexualOffspring(c, c.x, c.y, state.time.day, tickRng)
+      const asexSpawnTile = state.tiles[c.y]?.[c.x]
+      const asexEnvCtx: EnvContext = { biome: asexSpawnTile?.biome ?? 'temperate', weather: state.weather ?? 'clear', season: state.time.season }
+      const offspring = createAsexualOffspring(c, c.x, c.y, state.time.day, tickRng, asexEnvCtx)
       newCreatures.push(offspring)
       creatures[c.id] = {
         ...creatures[c.id],
@@ -1586,7 +1773,7 @@ function checkBoneMemory(
 
 // ─── Enrichment ──────────────────────────────────────────────────────────────
 
-function tickEnrichment(state: GameState): GameState {
+function tickEnrichment(state: GameState, rng: () => number): GameState {
   const items = state.enrichmentItems
   if (!items || Object.keys(items).length === 0) return state
 
@@ -1607,7 +1794,13 @@ function tickEnrichment(state: GameState): GameState {
         // Active use; decrement usesRemaining (degradation)
         const usesLeft = (item.usesRemaining ?? item.maxUses ?? 40) - 1
         if (usesLeft <= 0) {
-          // Item fully degraded; remove it; release creature from using_enrichment
+          // Natural items respawn nearby; player-placed items simply vanish
+          if (item.natural) {
+            const replacement = spawnNaturalNearby(item, state.tiles, updatedItems, state.time.day, rng)
+            if (replacement) {
+              updatedItems[replacement.id] = replacement
+            }
+          }
           delete updatedItems[id]
           changed = true
           continue
@@ -1637,6 +1830,98 @@ function tickEnrichment(state: GameState): GameState {
 
   if (!changed) return state
   return { ...state, enrichmentItems: updatedItems }
+}
+
+// Find a nearby biome-compatible tile and return a fresh natural EnrichmentItem, or null.
+function spawnNaturalNearby(
+  depleted: EnrichmentItem,
+  tiles: GameState['tiles'],
+  existingItems: Record<string, EnrichmentItem>,
+  day: number,
+  rng: () => number
+): EnrichmentItem | null {
+  const { x: ox, y: oy, type } = depleted
+  for (let attempt = 0; attempt < 15; attempt++) {
+    const angle = rng() * Math.PI * 2
+    const dist = 2 + rng() * NATURAL_ENRICHMENT_REGEN_RADIUS
+    const nx = Math.round(ox + Math.cos(angle) * dist)
+    const ny = Math.round(oy + Math.sin(angle) * dist)
+    if (nx < 0 || ny < 0 || nx >= WORLD_SIZE || ny >= WORLD_SIZE) continue
+    const tile = tiles[ny]?.[nx]
+    if (!tile) continue
+    if (['rock', 'river', 'mountain', 'cliff', 'flooded'].includes(tile.type)) continue
+    const eligible = NATURAL_ENRICHMENT_BIOME_TYPES[tile.biome] ?? []
+    if (!eligible.includes(type)) continue
+    if (Object.values(existingItems).some(e => e.x === nx && e.y === ny)) continue
+    return {
+      id: uuid(),
+      type: type as EnrichmentType,
+      x: nx, y: ny,
+      placedOnDay: day,
+      usedBy: null,
+      totalUses: 0,
+      maxUses: NATURAL_ENRICHMENT_MAX_USES,
+      usesRemaining: NATURAL_ENRICHMENT_MAX_USES,
+      natural: true,
+    }
+  }
+  return null
+}
+
+// Spawn new natural enrichment items up to the colony-scaled cap.
+function tickNaturalEnrichment(state: GameState, rng: () => number): GameState {
+  const alive = Object.values(state.creatures).filter(c => !c.diedOnDay).length
+  const cap = Math.min(
+    NATURAL_ENRICHMENT_CAP_MAX,
+    NATURAL_ENRICHMENT_CAP_BASE + Math.floor(alive / NATURAL_ENRICHMENT_CAP_PER_N_ALIVE)
+  )
+  const naturalCount = Object.values(state.enrichmentItems).filter(e => e.natural).length
+  if (naturalCount >= cap) return state
+
+  const season = state.time.season
+  const newItems: Record<string, EnrichmentItem> = {}
+
+  for (let attempt = 0; attempt < NATURAL_ENRICHMENT_ATTEMPTS_PER_TICK; attempt++) {
+    const x = Math.floor(rng() * WORLD_SIZE)
+    const y = Math.floor(rng() * WORLD_SIZE)
+    const tile = state.tiles[y]?.[x]
+    if (!tile) continue
+    if (['rock', 'river', 'mountain', 'cliff', 'flooded'].includes(tile.type)) continue
+
+    const allItems = { ...state.enrichmentItems, ...newItems }
+    if (Object.values(allItems).some(e => e.x === x && e.y === y)) continue
+
+    const eligible = NATURAL_ENRICHMENT_BIOME_TYPES[tile.biome]
+    if (!eligible || eligible.length === 0) continue
+
+    // Pick first eligible type that passes its season-weighted roll
+    let chosen: string | null = null
+    for (const t of eligible) {
+      const seasonMod = NATURAL_ENRICHMENT_SEASON_MOD[t]?.[season] ?? 1.0
+      if (rng() < NATURAL_ENRICHMENT_SPAWN_CHANCE * seasonMod) {
+        chosen = t
+        break
+      }
+    }
+    if (!chosen) continue
+
+    const id = uuid()
+    newItems[id] = {
+      id,
+      type: chosen as EnrichmentType,
+      x, y,
+      placedOnDay: state.time.day,
+      usedBy: null,
+      totalUses: 0,
+      maxUses: NATURAL_ENRICHMENT_MAX_USES,
+      usesRemaining: NATURAL_ENRICHMENT_MAX_USES,
+      natural: true,
+    }
+    break // one spawn per tick
+  }
+
+  if (Object.keys(newItems).length === 0) return state
+  return { ...state, enrichmentItems: { ...state.enrichmentItems, ...newItems } }
 }
 
 // ─── Tribes ───────────────────────────────────────────────────────────────────
@@ -1701,9 +1986,10 @@ function checkEndgame(state: GameState, _mods: SimModifiers): GameState {
       id: uuid(),
       extinctionDay: state.time.day,
       extinctionCause: (
-        state.weather === 'drought'                                       ? 'drought'
-        : (state.time.season === 'winter' || state.weather === 'snow')    ? 'winter'
-        : state.totalDeaths > 20                                           ? 'starvation'
+        state.weather === 'heatwave'                                        ? 'heatwave'
+        : state.weather === 'drought'                                       ? 'drought'
+        : (state.time.season === 'winter' || state.weather === 'snow')     ? 'winter'
+        : state.totalDeaths > 20                                            ? 'starvation'
         : 'neglect'
       ),
       peakPopulation: state.totalCreaturesEver,

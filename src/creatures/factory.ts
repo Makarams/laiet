@@ -1,5 +1,5 @@
 import { v4 as uuid } from 'uuid'
-import { Creature, Genome, GameState, PersonalityTrait, BodyTrait, MindTrait } from '@/types'
+import { Creature, Genome, GameState, PersonalityTrait, BodyTrait, MindTrait, EnvContext } from '@/types'
 import {
   MAX_AGE_BY_BODY,
   SENTIENCE_GROWTH_BY_MIND,
@@ -11,6 +11,7 @@ import {
   AWARENESS_STAGE_2_WINDOW_DAYS,
   AWARENESS_STAGE_3_LEXICON_MIN,
   AWARENESS_STAGE_3_WINDOW_DAYS,
+  LINEAGE_FORK_GENERATION,
 } from '@/engine/constants'
 import {
   randomGenome,
@@ -19,6 +20,8 @@ import {
   generateName,
   mutateFamily,
   initMorphology,
+  acquireAdaptation,
+  inheritAdaptations,
   RACES,
 } from '@/engine/genetics'
 import { createRng } from '@/world/worldGen'
@@ -132,6 +135,19 @@ function detectMutations(offspring: Genome, parentA: Creature, parentB: Creature
   return mutated
 }
 
+// Compute the lineageId for a new offspring. Every LINEAGE_FORK_GENERATION
+// generations, the ID forks from the root ancestor into a sub-lineage so that
+// distant cousins are treated as strangers by the existing fight gates.
+// UUIDs use hyphens; underscore is the tier separator and won't collide.
+function deriveLineageId(primaryParent: Creature, offspringGeneration: number): string {
+  const tier = Math.floor(offspringGeneration / LINEAGE_FORK_GENERATION)
+  if (tier === 0) return primaryParent.lineageId
+  const rootId = primaryParent.lineageId.includes('_')
+    ? primaryParent.lineageId.split('_')[0]
+    : primaryParent.lineageId
+  return `${rootId}_${tier}`
+}
+
 export function createOffspring(
   parentA: Creature,
   parentB: Creature,
@@ -140,9 +156,15 @@ export function createOffspring(
   currentDay: number,
   rng: () => number,
   mutationChance?: number,
-  tribalLexicon: string[] = []
+  tribalLexicon: string[] = [],
+  envCtx?: EnvContext,
 ): Creature {
-  const genome = inheritGenome(parentA.genome, parentB.genome, rng, mutationChance)
+  const baseGenome = inheritGenome(parentA.genome, parentB.genome, rng, mutationChance, envCtx)
+  const newAdaptation = envCtx ? acquireAdaptation(envCtx) : null
+  const genome = {
+    ...baseGenome,
+    adaptations: inheritAdaptations(parentA.genome, parentB.genome, newAdaptation, rng),
+  }
   const generation = Math.max(parentA.generation, parentB.generation) + 1
 
   const inheritFromA = rng() < 0.5
@@ -158,7 +180,7 @@ export function createOffspring(
     genome,
     generation,
     parentIds: [parentA.id, parentB.id],
-    lineageId: inheritFromA ? parentA.lineageId : parentB.lineageId,
+    lineageId: deriveLineageId(inheritFromA ? parentA : parentB, generation),
     bornOnDay: currentDay,
     knownEmoji: inheritEmoji(parentA, parentB, tribalLexicon, rng),
   }, rng)
@@ -180,9 +202,15 @@ export function createAsexualOffspring(
   x: number,
   y: number,
   currentDay: number,
-  rng: () => number
+  rng: () => number,
+  envCtx?: EnvContext,
 ): Creature {
-  const genome = mutateGenomeAsexual(parent.genome, rng, ASEXUAL_MUTATION_CHANCE)
+  const baseGenome = mutateGenomeAsexual(parent.genome, rng, ASEXUAL_MUTATION_CHANCE)
+  const newAdaptation = envCtx ? acquireAdaptation(envCtx) : null
+  const genome = {
+    ...baseGenome,
+    adaptations: inheritAdaptations(parent.genome, null, newAdaptation, rng),
+  }
   const c = spawnCreature({
     x, y,
     name: generateName(rng),
@@ -190,7 +218,7 @@ export function createAsexualOffspring(
     genome,
     generation: parent.generation + 1,
     parentIds: [parent.id, null],
-    lineageId: parent.lineageId,
+    lineageId: deriveLineageId(parent, parent.generation + 1),
     bornOnDay: currentDay,
     knownEmoji: inheritEmoji(parent, null, [], rng),
   }, rng)

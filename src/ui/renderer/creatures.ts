@@ -399,6 +399,9 @@ export function drawCreature(
     ctx.fill()
   }
 
+  // ── Environmental adaptation overlays ─────────────────────────────────────
+  drawAdaptationOverlays(ctx, creature, cx, cy, r)
+
   // ── Stress stress marks ; visible wear at high stress ─────────────────────
   // Jagged micro-cracks across the body surface indicate chronic stress
   if (creature.stress > 65 && creature.age > 20) {
@@ -424,8 +427,9 @@ export function drawCreature(
   // ── Eyes by genome.mind ────────────────────────────────────────────────────
   if (creature.genome.mind !== 'Feral') {
     // Rocky/cave-biome creatures develop slightly larger eyes (low-light adapted).
-    // Accumulated eyeSize morphology further scales the eye independently of biome.
-    const eyeEnlarge = (creature.dominantBiome === 'rocky' ? 1.25 : 1.0) * (morph.eyeSize ?? 1.0)
+    // cave_sighted adaptation gives a heritable eye enlargement on top of biome and morphology.
+    const caveSightedBoost = creature.genome.adaptations?.includes('cave_sighted') ? 1.40 : 1.0
+    const eyeEnlarge = (creature.dominantBiome === 'rocky' ? 1.25 : 1.0) * (morph.eyeSize ?? 1.0) * caveSightedBoost
     const eyeR = Math.max(0.6, r * 0.20 * eyeEnlarge)
     const eyeOff = r * 0.30
 
@@ -509,6 +513,133 @@ export function drawCreature(
     ctx.ellipse(cx, cy, r * 1.15, r * 1.15, 0, 0, Math.PI * 2)
     ctx.fill()
     ctx.globalAlpha = baseAlpha
+  }
+
+  ctx.restore()
+}
+
+// ─── Environmental adaptation overlays ───────────────────────────────────────
+// Drawn after biome tint, before stress marks. Each visual is subtle at low r
+// and scales naturally with zoom. Multiple adaptations stack.
+
+function drawAdaptationOverlays(
+  ctx: CanvasRenderingContext2D,
+  creature: Creature,
+  cx: number,
+  cy: number,
+  r: number,
+): void {
+  const adaptations = creature.genome.adaptations
+  if (!adaptations || adaptations.length === 0) return
+  const now = Date.now()
+  const seed = creature.id.charCodeAt(0)
+
+  ctx.save()
+  ctx.shadowBlur = 0
+  ctx.shadowColor = 'transparent'
+
+  if (adaptations.includes('cold_hardy')) {
+    // Frost shimmer ring: pale blue-white pulsing halo
+    const shimmer = 0.10 + Math.sin(now / 700 + seed) * 0.04
+    ctx.strokeStyle = `rgba(160, 215, 255, ${shimmer})`
+    ctx.lineWidth = 1.4
+    ctx.beginPath()
+    ctx.arc(cx, cy, r + 2.5, 0, Math.PI * 2)
+    ctx.stroke()
+    // Orbiting ice-crystal dots
+    for (let i = 0; i < 5; i++) {
+      const ang = now / 3500 + i * 1.257 + seed
+      const dotAlpha = 0.35 + Math.sin(now / 900 + i) * 0.15
+      ctx.fillStyle = `rgba(220, 242, 255, ${dotAlpha})`
+      ctx.beginPath()
+      ctx.arc(cx + Math.cos(ang) * (r + 3.5), cy + Math.sin(ang) * (r + 3.5), Math.max(0.8, r * 0.08), 0, Math.PI * 2)
+      ctx.fill()
+    }
+  }
+
+  if (adaptations.includes('drought_tough')) {
+    // Amber chitin plate lines radiating from centre
+    ctx.strokeStyle = 'rgba(210, 138, 32, 0.30)'
+    ctx.lineWidth = Math.max(0.6, r * 0.06)
+    const morphOff = creature.genome.morphSeed * 6.28
+    for (let i = 0; i < 4; i++) {
+      const ang = morphOff + i * 1.571
+      ctx.beginPath()
+      ctx.moveTo(cx + Math.cos(ang) * r * 0.28, cy + Math.sin(ang) * r * 0.28)
+      ctx.lineTo(cx + Math.cos(ang) * r * 0.82, cy + Math.sin(ang) * r * 0.82)
+      ctx.stroke()
+    }
+    ctx.fillStyle = 'rgba(195, 110, 18, 0.055)'
+    ctx.beginPath()
+    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  if (adaptations.includes('cave_sighted')) {
+    // Bioluminescent inner ring; slow pulse
+    const bioAlpha = 0.09 + Math.sin(now / 1400 + seed) * 0.04
+    ctx.strokeStyle = `rgba(160, 255, 180, ${bioAlpha})`
+    ctx.lineWidth = 1.2
+    ctx.beginPath()
+    ctx.arc(cx, cy, r * 0.68, 0, Math.PI * 2)
+    ctx.stroke()
+    // Faint green glow fill
+    ctx.fillStyle = `rgba(120, 220, 150, ${bioAlpha * 0.5})`
+    ctx.beginPath()
+    ctx.arc(cx, cy, r * 0.55, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  if (adaptations.includes('hydro_fins')) {
+    // Wet sheen: rippling blue highlight ellipse + fine outer ring
+    const ripple = Math.sin(now / 850 + seed) * 0.025
+    ctx.fillStyle = `rgba(38, 118, 200, ${0.06 + ripple})`
+    ctx.beginPath()
+    ctx.ellipse(cx, cy, r * 1.04, r * 0.94, 0, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.strokeStyle = `rgba(80, 165, 245, 0.16)`
+    ctx.lineWidth = 1.0
+    ctx.beginPath()
+    ctx.arc(cx, cy, r + 1.8, 0, Math.PI * 2)
+    ctx.stroke()
+  }
+
+  if (adaptations.includes('heat_plated')) {
+    // Gold chitin horizontal stripes across body (3 bands)
+    ctx.strokeStyle = 'rgba(218, 162, 28, 0.26)'
+    ctx.lineWidth = Math.max(0.5, r * 0.055)
+    for (let i = 0; i < 3; i++) {
+      const yOff = cy + r * (-0.38 + i * 0.38)
+      const t = -0.38 + i * 0.38
+      const halfW = r * Math.sqrt(Math.max(0, 1 - t * t)) * 0.68
+      ctx.beginPath()
+      ctx.moveTo(cx - halfW, yOff)
+      ctx.lineTo(cx + halfW, yOff)
+      ctx.stroke()
+    }
+    // Faint gold fill
+    ctx.fillStyle = 'rgba(240, 175, 10, 0.048)'
+    ctx.beginPath()
+    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  if (adaptations.includes('storm_braced')) {
+    // Dark metallic border + slow-cycling electric dots
+    ctx.strokeStyle = 'rgba(55, 75, 120, 0.28)'
+    ctx.lineWidth = Math.max(1.2, r * 0.14)
+    ctx.beginPath()
+    ctx.arc(cx, cy, r + 0.6, 0, Math.PI * 2)
+    ctx.stroke()
+    // Crackling arc dots cycling around the silhouette
+    const crackAlpha = 0.22 + Math.sin(now / 220 + seed) * 0.14
+    for (let i = 0; i < 3; i++) {
+      const ang = creature.genome.morphSeed * 6.28 + i * 2.094 + now / 1800
+      ctx.fillStyle = `rgba(130, 175, 255, ${crackAlpha})`
+      ctx.beginPath()
+      ctx.arc(cx + Math.cos(ang) * r * 0.82, cy + Math.sin(ang) * r * 0.82, Math.max(0.9, r * 0.10), 0, Math.PI * 2)
+      ctx.fill()
+    }
   }
 
   ctx.restore()

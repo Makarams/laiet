@@ -1,7 +1,8 @@
-import { Genome, PersonalityTrait, BodyTrait, MindTrait, MorphologyTraits, RaceTrait } from '@/types'
+import { Genome, PersonalityTrait, BodyTrait, MindTrait, MorphologyTraits, RaceTrait, AdaptationTrait, EnvContext } from '@/types'
 import {
   MUTATION_CHANCE,
   LATENT_REVIVAL_BASE, LATENT_DEPTH_BONUS, LATENT_MAX_DEPTH, LATENT_DOMINANT_WEIGHT,
+  ADAPTATION_INHERIT_CHANCE, ADAPTATION_MAX,
 } from './constants'
 
 export const PERSONALITIES: PersonalityTrait[] = [
@@ -15,27 +16,82 @@ export const RACES: RaceTrait[] = ['Kin', 'Drift', 'Burrow', 'Apex', 'Pale', 'Ti
 // ─── Morphology helpers ───────────────────────────────────────────────────────
 
 // Neutral baseline for gen-0 creatures; each reproduction event drifts these.
+// limbLength/spinalLength start above 0 so the first generation already shows
+// rudimentary pseudopods/tails, giving sexual blending a non-zero base to build on.
 export function initMorphology(): MorphologyTraits {
-  return { sizeScale: 1.0, limbLength: 0.0, spinalLength: 0.0, colorDrift: 0.0, eyeSize: 1.0 }
+  return { sizeScale: 1.0, limbLength: 0.15, spinalLength: 0.15, colorDrift: 0.0, eyeSize: 1.0 }
 }
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v))
 }
 
-// Sexual inheritance: blend both parents' accumulated traits then add a small
-// per-generation drift. Small delta (~±0.06) means change is gradual and
-// compounds meaningfully only after 3-5 generations.
-function inheritMorphology(a: MorphologyTraits, b: MorphologyTraits, rng: () => number): MorphologyTraits {
+// Sexual inheritance: bias toward the higher-trait parent so advantageous
+// morphology compounds across generations rather than regressing to the mean.
+// Pure averaging causes visual stagnation when starting from near-zero values.
+// Optional envBias applies directional pressure from the birth environment.
+function inheritMorphology(a: MorphologyTraits, b: MorphologyTraits, rng: () => number, envBias?: MorphBias): MorphologyTraits {
   const m = a ?? initMorphology()
   const n = b ?? initMorphology()
+  // Weighted blend: 60% from the higher-trait parent, 40% from the lower.
+  const hi = (x: number, y: number) => Math.max(x, y) * 0.60 + Math.min(x, y) * 0.40
   return {
-    sizeScale:    clamp(((m.sizeScale    + n.sizeScale)    / 2) + (rng() - 0.5) * 0.12, 0.70, 1.50),
-    limbLength:   clamp(((m.limbLength   + n.limbLength)   / 2) + (rng() - 0.5) * 0.15, 0.00, 1.00),
-    spinalLength: clamp(((m.spinalLength + n.spinalLength) / 2) + (rng() - 0.5) * 0.15, 0.00, 1.00),
-    colorDrift:   clamp(((m.colorDrift   + n.colorDrift)   / 2) + (rng() - 0.5) * 0.09, -0.50, 0.50),
-    eyeSize:      clamp(((m.eyeSize      + n.eyeSize)      / 2) + (rng() - 0.5) * 0.12, 0.70, 1.50),
+    sizeScale:    clamp(hi(m.sizeScale,    n.sizeScale)    + (rng() - 0.5) * 0.12 + (envBias?.sizeBias   ?? 0), 0.70, 1.50),
+    limbLength:   clamp(hi(m.limbLength,   n.limbLength)   + (rng() - 0.5) * 0.18 + (envBias?.limbBias   ?? 0), 0.00, 1.00),
+    spinalLength: clamp(hi(m.spinalLength, n.spinalLength) + (rng() - 0.5) * 0.18 + (envBias?.spinalBias ?? 0), 0.00, 1.00),
+    colorDrift:   clamp(hi(m.colorDrift,   n.colorDrift)   + (rng() - 0.5) * 0.09,                             -0.50, 0.50),
+    eyeSize:      clamp(hi(m.eyeSize,      n.eyeSize)      + (rng() - 0.5) * 0.12 + (envBias?.eyeBias    ?? 0), 0.70, 1.50),
   }
+}
+
+// Environmental morphology bias: birth conditions nudge continuous trait drift
+// in a directional way, so wetland lineages accumulate limbLength faster,
+// cave lineages grow eyeSize, cold lineages grow larger, etc.
+interface MorphBias { limbBias: number; spinalBias: number; sizeBias: number; eyeBias: number }
+
+function computeMorphBias(env: EnvContext): MorphBias {
+  let limbBias = 0, spinalBias = 0, sizeBias = 0, eyeBias = 0
+  const { biome, weather, season } = env
+  if (biome === 'wetland')                             { limbBias  += 0.06; sizeBias   -= 0.02 }
+  if (biome === 'rocky')                               { eyeBias   += 0.06; spinalBias -= 0.02 }
+  if (biome === 'arid')                                { sizeBias  -= 0.05; spinalBias += 0.03 }
+  if (biome === 'lush')                                { limbBias  += 0.03 }
+  if (season === 'winter' || weather === 'snow')       { sizeBias  += 0.05 }
+  if (weather === 'heatwave' || weather === 'drought') { sizeBias  -= 0.04; spinalBias += 0.03 }
+  if (weather === 'rain'    || weather === 'storm')    { limbBias  += 0.03 }
+  return { limbBias, spinalBias, sizeBias, eyeBias }
+}
+
+// Returns the single adaptation trait an offspring can acquire from its birth environment,
+// or null if conditions don't favour a specific trait.
+export function acquireAdaptation(env: EnvContext): AdaptationTrait | null {
+  const { biome, weather, season } = env
+  if (season === 'winter' || weather === 'snow')                         return 'cold_hardy'
+  if (biome === 'wetland')                                               return 'hydro_fins'
+  if (biome === 'rocky')                                                 return 'cave_sighted'
+  if (weather === 'heatwave' && season === 'summer')                    return 'heat_plated'
+  if (weather === 'drought' || biome === 'arid')                        return 'drought_tough'
+  if (weather === 'storm')                                               return 'storm_braced'
+  return null
+}
+
+// Inherits adaptations from both parents (65% each) and adds the new birth adaptation.
+// Deduplicates and caps at ADAPTATION_MAX to prevent infinite stacking.
+export function inheritAdaptations(
+  parentA: Genome,
+  parentB: Genome | null,
+  newAdaptation: AdaptationTrait | null,
+  rng: () => number,
+): AdaptationTrait[] {
+  const pool = new Set<AdaptationTrait>()
+  for (const a of (parentA.adaptations ?? []))
+    if (rng() < ADAPTATION_INHERIT_CHANCE) pool.add(a)
+  if (parentB) {
+    for (const a of (parentB.adaptations ?? []))
+      if (rng() < ADAPTATION_INHERIT_CHANCE) pool.add(a)
+  }
+  if (newAdaptation) pool.add(newAdaptation)
+  return [...pool].slice(0, ADAPTATION_MAX)
 }
 
 // Asexual mutation; single parent but larger drift per trait; clonal lines
@@ -126,7 +182,8 @@ export function inheritRace(
 
 // Sexual inheritance; mix from two parents with mutation chance per slot.
 // mutationChance defaults to the constant but can be overridden by SimModifiers.
-export function inheritGenome(parentA: Genome, parentB: Genome, rng: () => number, mutationChance = MUTATION_CHANCE): Genome {
+// Optional envCtx applies directional morphology pressure from birth conditions.
+export function inheritGenome(parentA: Genome, parentB: Genome, rng: () => number, mutationChance = MUTATION_CHANCE, envCtx?: EnvContext): Genome {
   const pick = <T>(a: T, b: T, pool: T[]): T => {
     const base = rng() < 0.5 ? a : b
     if (rng() < mutationChance) return pool[Math.floor(rng() * pool.length)]
@@ -150,6 +207,7 @@ export function inheritGenome(parentA: Genome, parentB: Genome, rng: () => numbe
       parentA.morphology ?? initMorphology(),
       parentB.morphology ?? initMorphology(),
       rng,
+      envCtx ? computeMorphBias(envCtx) : undefined,
     ),
     race,
     latentAncestry,

@@ -10,6 +10,23 @@ export type MindTrait = 'Feral' | 'Aware' | 'Dreaming' | 'Sentinel'
 // from latent ancestry even after a race has been absent for many generations.
 export type RaceTrait = 'Kin' | 'Drift' | 'Burrow' | 'Apex' | 'Pale' | 'Tide' | 'Bloom' | 'Ash'
 
+// Heritable environmental adaptations; acquired at birth from spawn conditions
+// and passed to offspring at ADAPTATION_INHERIT_CHANCE per trait (max 3 per creature).
+export type AdaptationTrait =
+  | 'cold_hardy'    // winter/snow birth → warmth decay ×0.65
+  | 'drought_tough' // arid/drought birth → hunger decay ×0.78
+  | 'cave_sighted'  // rocky biome birth → no night warmth penalty; enlarged pale eyes
+  | 'hydro_fins'    // wetland birth → thirst decay ×0.55 on wetland/river tiles
+  | 'heat_plated'   // heatwave/summer birth → heatwave stress blocked; gold chitin stripe
+  | 'storm_braced'  // storm birth → storm stress immune; dark crackle ring
+
+// Environmental context at time of birth; shapes morphology pressure and adaptation acquisition.
+export interface EnvContext {
+  biome: string
+  weather: WeatherState
+  season: Season
+}
+
 // Heritable accumulated evolutionary traits; small per-generation drift lets
 // each lineage develop a visually distinct morphological profile over time.
 // All traits start neutral at gen 0 and compound with each birth event.
@@ -29,6 +46,7 @@ export interface Genome {
   morphology: MorphologyTraits // heritable accumulated evolutionary traits; drifts each generation
   race?: RaceTrait                                    // ancestral lineage; optional for backward compat
   latentAncestry?: Partial<Record<RaceTrait, number>> // dormant race → generations-dormant counter
+  adaptations?: AdaptationTrait[]                     // environmental adaptations; up to 3 per creature
 }
 
 // ─── Creature ─────────────────────────────────────────────────────────────────
@@ -252,13 +270,14 @@ export interface EnrichmentItem {
   totalUses: number            // lifetime interaction count
   maxUses: number              // item degrades and disappears after this many uses
   usesRemaining: number        // decremented each use session
+  natural?: boolean            // true = world-spawned; undefined/false = caretaker-placed
 }
 
 // ─── Season & Time ────────────────────────────────────────────────────────────
 
 export type Season = 'spring' | 'summer' | 'autumn' | 'winter'
 export type DayPhase = 'dawn' | 'day' | 'dusk' | 'night'
-export type WeatherState = 'clear' | 'rain' | 'storm' | 'drought' | 'snow'
+export type WeatherState = 'clear' | 'rain' | 'storm' | 'drought' | 'snow' | 'heatwave' | 'fog'
 
 export interface GameTime {
   day: number
@@ -342,7 +361,7 @@ export type EventAction =
 export interface ExtinctionRecord {
   id: string
   extinctionDay: number
-  extinctionCause: 'neglect' | 'war' | 'drought' | 'flood' | 'winter' | 'starvation'
+  extinctionCause: 'neglect' | 'war' | 'drought' | 'flood' | 'winter' | 'starvation' | 'heatwave'
   peakPopulation: number
   generationsReached: number
   finalMessage: string | null

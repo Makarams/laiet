@@ -101,6 +101,40 @@ export function drawAtmosphere(
 
     ctx.restore()
 
+  // ── Heatwave ─────────────────────────────────────────────────────────────────
+  } else if (weather === 'heatwave') {
+    const baseAlpha = phase === 'night' ? 0.028 : phase === 'day' ? 0.075 : 0.050
+    const shimmer = Math.sin(now / 650) * 0.020
+    ctx.fillStyle = `rgba(235, 115, 18, ${baseAlpha + shimmer})`
+    ctx.fillRect(0, 0, width, height)
+    if (phase === 'day' || phase === 'dusk') {
+      for (let i = 0; i < 7; i++) {
+        const bandY = height * (0.42 + i * 0.09) + Math.sin(now / 480 + i * 1.4) * 7
+        const bandAlpha = 0.022 + Math.sin(now / 550 + i) * 0.013
+        ctx.fillStyle = `rgba(255, 145, 30, ${bandAlpha})`
+        ctx.fillRect(0, bandY, width, 9)
+      }
+    }
+
+  // ── Fog ───────────────────────────────────────────────────────────────────────
+  } else if (weather === 'fog') {
+    ctx.save()
+    const baseAlpha = phase === 'night' ? 0.22 : phase === 'day' ? 0.13 : 0.19
+    ctx.fillStyle = `rgba(175, 192, 208, ${baseAlpha})`
+    ctx.fillRect(0, 0, width, height)
+    // Drifting fog wisps
+    const fogScroll = (now / 3200) % (width + 120)
+    for (let i = 0; i < 9; i++) {
+      const wipX = ((i * 197.3 + fogScroll) % (width + 120)) - 60
+      const wipY = height * (0.15 + (i % 5) * 0.17)
+      const wipAlpha = baseAlpha * (0.45 + Math.sin(now / 2200 + i * 0.9) * 0.22)
+      ctx.fillStyle = `rgba(200, 218, 230, ${wipAlpha})`
+      ctx.beginPath()
+      ctx.ellipse(wipX, wipY, 90 + (i % 3) * 45, 16 + (i % 4) * 9, 0, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    ctx.restore()
+
   // ── Drought ──────────────────────────────────────────────────────────────────
   } else if (weather === 'drought') {
     if (season === 'winter') {
@@ -129,10 +163,12 @@ export function drawAtmosphere(
   // ── Phase tint ; modulated by weather ────────────────────────────────────────
   if (phase === 'night') {
     // Storm deepens dark, drought clears it slightly (dry air = clearer sky)
-    const nightAlpha = weather === 'storm' ? 0.50
-      : weather === 'drought'              ? 0.34
-      : weather === 'rain'                 ? 0.46
-      : weather === 'snow'                 ? 0.38   // snow reflects moonlight ; lighter night
+    const nightAlpha = weather === 'storm'    ? 0.50
+      : weather === 'drought'                ? 0.34
+      : weather === 'rain'                   ? 0.46
+      : weather === 'snow'                   ? 0.38   // snow reflects moonlight; lighter night
+      : weather === 'heatwave'               ? 0.30   // warm night; amber glow bleeds into dark
+      : weather === 'fog'                    ? 0.52   // fog thickens darkness
       : 0.42
     ctx.fillStyle = `rgba(6, 8, 32, ${nightAlpha})`
     ctx.fillRect(0, 0, width, height)
@@ -141,12 +177,15 @@ export function drawAtmosphere(
     if (weather === 'rain' || weather === 'storm') {
       ctx.fillStyle = 'rgba(120, 140, 180, 0.06)'
     } else if (weather === 'drought') {
-      // Frost-drought in winter uses a cold pale dawn; no amber haze
       ctx.fillStyle = season === 'winter'
         ? 'rgba(180, 205, 225, 0.07)'
         : 'rgba(240, 155, 55, 0.11)'
     } else if (weather === 'snow') {
-      ctx.fillStyle = 'rgba(180, 210, 245, 0.08)'  // cool blue-white dawn through snow
+      ctx.fillStyle = 'rgba(180, 210, 245, 0.08)'
+    } else if (weather === 'heatwave') {
+      ctx.fillStyle = 'rgba(255, 130, 25, 0.14)'   // scorched orange pre-dawn
+    } else if (weather === 'fog') {
+      ctx.fillStyle = 'rgba(155, 178, 198, 0.11)'  // muted grey-blue foggy dawn
     } else {
       ctx.fillStyle = 'rgba(220, 150, 80, 0.07)'
     }
@@ -155,12 +194,15 @@ export function drawAtmosphere(
     if (weather === 'rain' || weather === 'storm') {
       ctx.fillStyle = 'rgba(100, 80, 120, 0.07)'
     } else if (weather === 'drought') {
-      // Frost-drought in winter: cold steel dusk, not orange
       ctx.fillStyle = season === 'winter'
         ? 'rgba(140, 165, 200, 0.09)'
         : 'rgba(210, 90, 60, 0.12)'
     } else if (weather === 'snow') {
-      ctx.fillStyle = 'rgba(140, 170, 210, 0.07)'  // cold purple dusk in snow
+      ctx.fillStyle = 'rgba(140, 170, 210, 0.07)'
+    } else if (weather === 'heatwave') {
+      ctx.fillStyle = 'rgba(240, 90, 18, 0.16)'    // deep amber-red heatwave dusk
+    } else if (weather === 'fog') {
+      ctx.fillStyle = 'rgba(115, 138, 162, 0.09)'  // dim blued foggy dusk
     } else {
       ctx.fillStyle = 'rgba(180, 70, 100, 0.09)'
     }

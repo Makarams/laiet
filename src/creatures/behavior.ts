@@ -4,6 +4,7 @@ import {
 import {
   HUNGER_DECAY, THIRST_DECAY, WARMTH_DECAY_BASE, WARMTH_DECAY_WINTER,
   STRESS_DECAY_BASE, HUNGER_CRITICAL, THIRST_CRITICAL, WARMTH_CRITICAL, STRESS_CRITICAL,
+  COLD_HARDY_WARMTH_MULT, DROUGHT_TOUGH_HUNGER_MULT, HYDRO_FINS_THIRST_MULT,
   HUNGER_SEEK_THRESHOLD, THIRST_SEEK_THRESHOLD, WARMTH_SEEK_THRESHOLD,
   FOOD_EAT_AMOUNT,
   MOVE_SPEED_BY_BODY, REPRODUCE_RATE_BY_BODY, FIGHT_POWER_BY_BODY,
@@ -26,12 +27,20 @@ import { tickSentience } from './factory'
 export function tickNeeds(creature: Creature, season: Season, biome?: string): Creature {
   const c = { ...creature }
   const isWinter = season === 'winter'
+  const adaptations = c.genome.adaptations ?? []
 
-  c.hunger = Math.min(100, c.hunger + HUNGER_DECAY)
+  // Adaptation modifiers on base needs decay
+  const warmthMult  = adaptations.includes('cold_hardy')    ? COLD_HARDY_WARMTH_MULT  : 1.0
+  const hungerMult  = adaptations.includes('drought_tough') ? DROUGHT_TOUGH_HUNGER_MULT : 1.0
+  // hydro_fins reduces thirst on wetland and river tiles
+  const thirstMult  = (adaptations.includes('hydro_fins') && (biome === 'wetland' || biome === 'river'))
+    ? HYDRO_FINS_THIRST_MULT : 1.0
+
+  c.hunger = Math.min(100, c.hunger + HUNGER_DECAY * hungerMult)
   // Biome thirst modifier: arid zones parch faster, wetlands are forgiving
   const biomeThirstExtra = BIOME_THIRST_EXTRA[biome ?? 'temperate'] ?? 0
-  c.thirst = Math.min(100, c.thirst + THIRST_DECAY + THIRST_DECAY * biomeThirstExtra)
-  c.warmth = Math.max(0, c.warmth - (isWinter ? WARMTH_DECAY_WINTER : WARMTH_DECAY_BASE))
+  c.thirst = Math.min(100, c.thirst + (THIRST_DECAY + THIRST_DECAY * biomeThirstExtra) * thirstMult)
+  c.warmth = Math.max(0, c.warmth - (isWinter ? WARMTH_DECAY_WINTER : WARMTH_DECAY_BASE) * warmthMult)
   c.sentience = tickSentience(c)
 
   c.needSatisfaction = computeNeedSatisfaction(c)
