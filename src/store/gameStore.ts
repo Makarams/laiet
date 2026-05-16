@@ -15,7 +15,7 @@ import {
   HEAL_CHARGES_PER_DAY, HEAL_AMOUNT,
   THUNDER_COOLDOWN_MS, THUNDER_CHARGES_PER_DAY, THUNDER_DAMAGE_RADIUS,
   FIRE_COOLDOWN_MS, FIRE_CHARGES_PER_DAY, FIRE_DURATION_TICKS,
-  ENRICHMENT_MAX_USES,
+  ENRICHMENT_MAX_USES, ABSENCE_IMPRINT_DAYS,
 } from '@/engine/constants'
 
 // ─── Default caretaker state ──────────────────────────────────────────────────
@@ -58,7 +58,8 @@ function normalizeLoadedCreatureNames(state: GameState): { state: GameState; cha
 function applyCaretakerPresence(
   ct: CaretakerState,
   x: number,
-  y: number
+  y: number,
+  toolCategory: 'placement' | 'intervention' | 'observe' = 'placement'
 ): Partial<CaretakerState> {
   const now = Date.now()
   const respondedToQuestion = (ct.awaitingResponseUntil ?? 0) > now
@@ -69,6 +70,7 @@ function applyCaretakerPresence(
     lastActionY: y,
     lastActionMs: now,
     respondedToQuestion,
+    lastToolUsed: toolCategory,
   }
 }
 
@@ -88,9 +90,9 @@ interface LaietStore {
 
   // Time controls
   isPaused: boolean
-  simSpeed: 1 | 2 | 4
+  simSpeed: 1 | 2 | 4 | 8
   togglePause: () => void
-  setSimSpeed: (speed: 1 | 2 | 4) => void
+  setSimSpeed: (speed: 1 | 2 | 4 | 8) => void
 
   // Actions
   initNewWorld: (userId: string, namedCreatures: { name: string; familyName: string }[], profile: CaretakerProfile) => void
@@ -180,6 +182,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
       caretaker: defaultCaretaker(modifiers.healCharges, modifiers.foodDropCooldownMs),
       colonyStage: 'genesis',
       awarenessStage: 1,
+      cohortPhase: 1,
       endgame: null,
       enrichmentItems: {},
       weather: 'clear' as const,
@@ -261,6 +264,11 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
             ...advanced,
             messages: [...advanced.messages, absenceMsg].slice(-200),
           }
+        }
+
+        // Absence imprint: long absences (>= 2 real hours) leave stress on the colony.
+        if (hoursAway >= 2 && !advanced.endgame) {
+          advanced = { ...advanced, absenceImprint: ABSENCE_IMPRINT_DAYS }
         }
 
         set({ gameState: advanced })
@@ -393,7 +401,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     }
   },
 
-  setSimSpeed: (speed) => {
+  setSimSpeed: (speed: 1 | 2 | 4 | 8) => {
     set({ simSpeed: speed })
     const { isPaused, gameState } = get()
     if (!isPaused && gameState && !gameState.endgame) {
@@ -552,7 +560,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
           thunderChargesToday: thunderCharges - 1,
           fireChargesToday: fireCharges,
           lastEnvReset,
-          ...applyCaretakerPresence(ct, x, y),
+          ...applyCaretakerPresence(ct, x, y, 'intervention'),
         },
       },
     })
@@ -608,7 +616,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
           fireChargesToday: fireCharges - 1,
           thunderChargesToday: thunderCharges,
           lastEnvReset,
-          ...applyCaretakerPresence(ct, x, y),
+          ...applyCaretakerPresence(ct, x, y, 'intervention'),
         },
       },
     })
@@ -678,7 +686,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
         caretaker: {
           ...state.caretaker,
           healCharges: state.caretaker.healCharges - 1,
-          ...applyCaretakerPresence(state.caretaker, creature.x, creature.y),
+          ...applyCaretakerPresence(state.caretaker, creature.x, creature.y, 'intervention'),
         },
       }
     })
@@ -792,7 +800,26 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     })
   },
 
-  selectCreature: (id) => set({ selectedCreatureId: id }),
+  selectCreature: (id) => {
+    const state = get().gameState
+    if (state && id) {
+      const creature = state.creatures[id]
+      if (creature && creature.diedOnDay === null) {
+        set({
+          selectedCreatureId: id,
+          gameState: {
+            ...state,
+            caretaker: {
+              ...state.caretaker,
+              ...applyCaretakerPresence(state.caretaker, creature.x, creature.y, 'observe'),
+            },
+          },
+        })
+        return
+      }
+    }
+    set({ selectedCreatureId: id })
+  },
   hoverTile: (pos) => set({ hoveredTile: pos }),
 
   markMessagesRead: () => {

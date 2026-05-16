@@ -19,6 +19,7 @@ export type AdaptationTrait =
   | 'hydro_fins'    // wetland birth → thirst decay ×0.55 on wetland/river tiles
   | 'heat_plated'   // heatwave/summer birth → heatwave stress blocked; gold chitin stripe
   | 'storm_braced'  // storm birth → storm stress immune; dark crackle ring
+  | 'thick_pelt'    // heavy snowfall in winter birth → broad insulation; warmth drain ×0.60 in all cold/wet weather; storm stress ×0.50
 
 // Environmental context at time of birth; shapes morphology pressure and adaptation acquisition.
 export interface EnvContext {
@@ -144,6 +145,8 @@ export interface Creature {
   // cannibal trauma; game-day until which witness stress persists above baseline
   traumaUntil?: number
 
+  immunity?: number            // 0-1; gained after surviving disease; reduces contact chance
+
   // community & speech
   role?: CommunityRole        // assigned when tribe forms or colony grows
   knownEmoji: string[]        // emoji this creature can use/pass on
@@ -161,7 +164,7 @@ export interface Creature {
 }
 
 export type MicroAnimType = 'jump' | 'shake' | 'sneeze' | 'groom' | 'wag'
-export type CarriedItemType = 'healroot' | 'fruit' | 'pebble'
+export type CarriedItemType = 'healroot' | 'fruit' | 'pebble' | 'wood' | 'stone'
 
 export type CreatureState =
   | 'idle'
@@ -185,6 +188,8 @@ export type CreatureState =
   | 'playing'          // social play; reduces stress, emerges from high satisfaction
   | 'using_enrichment' // interacting with a placed enrichment item
   | 'grooming'         // social grooming; reduces stress of both parties
+  | 'harvesting'       // heading to a resource tile to collect wood or stone
+  | 'building'         // heading to a build location to place a fence
 
 export type ThoughtSymbol =
   | 'hungry'
@@ -203,6 +208,7 @@ export type ThoughtSymbol =
   | 'mutated'
   | 'carrying'   // holding an item
   | 'grooming'   // social grooming
+  | 'building'   // harvesting resources or constructing a fence
 
 // ─── World / Tiles ────────────────────────────────────────────────────────────
 
@@ -222,6 +228,7 @@ export type TileType =
   | 'cliff'      // impassable sharp elevation drop; acts as natural barrier
   | 'bush'       // low fruiting shrub; berries ripen seasonally; Timid shelter
   | 'healroot'   // medicinal herb patch; sick creatures seek this; regrows slowly
+  | 'fence'      // constructed barrier; built by Territorial/Nurturing creatures
 
 export type BiomePatch = 'temperate' | 'arid' | 'lush' | 'rocky' | 'wetland'
 
@@ -246,6 +253,8 @@ export interface Tile {
   fruitAge?: number         // ticks since this food_patch was last replenished by a tree
   elevation?: number       // 0..1; used for mountain height variation
   healrootAmount?: number   // 0-100; potency of healroot on this tile; regrows slowly
+  fenceDurability?: number  // 0-100; constructed fence health; decays over time
+  fenceType?: 'wood' | 'stone' // material used to build
 }
 
 // ─── Enrichment ───────────────────────────────────────────────────────────────
@@ -299,9 +308,14 @@ export interface Tribe {
   tribalLexicon: string[]    // shared vocabulary pool; grows with elder/shaman knowledge, persists through generations
 }
 
+// ─── Cohort phase ────────────────────────────────────────────────────────────
+// Derived from the deepest generation ever born; a permanent ratchet on the
+// colony's evolutionary depth. Gates signal depth 4 and 5.
+export type CohortPhase = 1 | 2 | 3 | 4 | 5
+
 // ─── Messages ────────────────────────────────────────────────────────────────
 
-export type MessageStage = 1 | 2 | 3
+export type MessageStage = 1 | 2 | 3 | 4 | 5
 
 export interface ColonyMessage {
   id: string
@@ -420,6 +434,8 @@ export interface CaretakerState {
   // Tool-as-answer mechanic
   awaitingResponseUntil: number  // real ms timestamp; 0 = not waiting
   respondedToQuestion: boolean   // one-tick flag cleared after response message emitted
+  // Tool category used last; shapes differentiated colony responses
+  lastToolUsed?: 'placement' | 'intervention' | 'observe'
 }
 
 // ─── Colony Stage ─────────────────────────────────────────────────────────────
@@ -473,11 +489,23 @@ export interface GameState {
   racePopulations?: Partial<Record<RaceTrait, number>>  // alive count per race (updated each tick)
   extinctRaces?: RaceTrait[]                            // races seen alive but now at 0
 
+  // Evolutionary depth tracking — optional for backward compat.
+  cohortPhase?: CohortPhase    // derived from totalGenerations; gates depth 4 and 5
+
   // Awareness stage window tracking — optional for backward compat with pre-emergent saves.
   // Stores the game-day when each stage-up condition was first continuously met.
   // Undefined = condition has never been met or recently lapsed (window reset).
-  roleWindowStart?: number     // day 4-distinct-roles condition began its sustained window
-  lexiconWindowStart?: number  // day colony-lexicon threshold began its sustained window
+  roleWindowStart?: number        // day 4-distinct-roles condition began its sustained window
+  lexiconWindowStart?: number     // day colony-lexicon threshold began its sustained window
+  ancestralWindowStart?: number   // day depth-4 sentience condition began its sustained window
+  transcendentWindowStart?: number// day depth-5 Elder-sentience condition began its sustained window
+
+  absenceImprint?: number      // in-game days of stress imprint after long absence
+  tribeWarStart?: number       // game day when sustained inter-lineage conflict began
+
+  // neglect & legendary tracking — optional for backward compat
+  lastNeglectWarning?: number  // game day of last neglect warning message
+  legendaryFired?: string[]    // creature IDs that have already had legendary events
 
   // stats
   totalCreaturesEver: number

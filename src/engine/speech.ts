@@ -46,6 +46,15 @@ export const EMOJI_TIER_0 = [
   '🥵', // fever / heat exhaustion / the body too hot — drought heat, sickness, overexertion burning inside
   '😔', // sadness / quiet grief / low mood — not acute mourning; a persistent heaviness after loss
   '😮', // surprise / startled / unexpected event — milder than 😱; wonder-alarm at something new
+  // ── New Tier 0 additions ──
+  '🍄', // growth-from-death / fungus / the strange that appears at decay sites
+  '🌰', // seed / stored-potential / what a thing becomes before it is anything
+  '🦶', // my-track / I-was-here / trace I left — distinct from 🐾 (reading others' tracks)
+  '👃', // scent / smell-alert / detecting something invisible in the air
+  '🤫', // hush / be-still / danger-quiet — universal body signal for silence
+  '🫸', // push-back / stop / keep-distance — defensive body gesture
+  '🤲', // offering / presenting / sharing with open hands
+  '💪', // strong / well-fed / body-capable — felt physical capacity
 ]
 
 // ─── Tier 1; Aware ──────────────────────────────────────────────────────────
@@ -82,6 +91,35 @@ export const EMOJI_TIER_1 = [
   '🌤️', // clearing / sun returning after storm — the world brightening; relief that arrives with light
   '🫤', // ambivalence / mixed feeling / not-knowing — uncertainty; two things at once, neither resolved
   '💢', // frustration / anger before aggression — blocked desire, tension that hasn't broken into fighting yet
+  // ── New Tier 1 additions ──
+  '🍂', // leaf-fall / decay / end-of-something — autumn, things ending, the cycle of loss
+  '🍃', // living-and-fresh / still-growing / not-yet-gone — the complement of 🍂
+  '🌒', // waxing / coming / building-toward — something approaching, strength gathering
+  '🌘', // waning / leaving / diminishing — something fading, going away
+  '🌓', // half / partial / between-states — gradation, the threshold moment
+  '🏃', // urgency / running / fast-movement — the body moving beyond its normal pace
+  '🪸', // built-structure / made-thing / something-placed-with-intent — constructed landmark
+  '🦻', // alert-to-sound / listening / awareness-through-hearing (something heard, not seen)
+  '🫳', // placing / setting-down / I-put-this-here — the act of deliberate placement
+  '🌁', // obscured / fog-over-hills / I-cannot-see-there — hidden terrain, covered danger
+  '🌻', // turning-toward-warmth / sun-directed / seeking-the-light — they face warmth instinctively
+  '🏕️', // sheltering-together / group-settled / gathered-overnight — a known gathering point
+  '🧭', // direction-sense / knowing-which-way / finding-the-path
+  '🌐', // the-whole-world / everywhere / all-of-here — spatial comprehension of totality
+  '📍', // this-exact-spot / marked / pinpointed — precise location awareness
+  '🦗', // other-small-creature / not-the-only-kind / something-like-us-but-not
+  '🦁', // danger-creature / larger-predator / something-bigger-than-us
+  '🌴', // different-tall-plant / unusual-landmark / southern-tree
+  '🍁', // seasonal-change-marker / autumn-signal / the-turning
+  '🦋', // transformation / metamorphosis / change-across-time — they witness mutation and generation drift
+  '🌩️', // storm-lightning / the-electrical-threat — distinct from 🌪️ (wind) and 🔥 (fire)
+  '🐛', // the-young-that-changes / larva / pre-metamorphosis — they see this before the butterfly
+  '🫦', // calling-out / vocal-signal / sound-from-body — they communicate with sound
+  '🐝', // coordinated-activity / many-working-as-one / the-buzzing-colony
+  '🌵', // thorned-landmark / do-not-eat / arid-sentinel — a plant with a warning
+  '🪹', // empty-place / was-home / abandoned-site — a nest that is no longer used
+  '🗻', // highest-point / the-unreachable-summit / peak-of-the-territory
+  '🌦️', // mixed-sky / uncertain-weather / sun-in-rain — the ambiguous condition
 ]
 
 // ─── Tier 2 — Dreaming ───────────────────────────────────────────────────────
@@ -106,12 +144,38 @@ export const EMOJI_TIER_2 = [
   '🫂', // embrace / held / together-surviving — the concept of social care made physical
   '🌿', // (medicine / healing knowledge — same glyph as vegetation, but richer meaning at T2: the plant that cures)
   '💫', // dizzy / spinning / disoriented — used after sickness resolves, or wonder-vertigo; not a star
-  '🦋', // transformation / metamorphosis / change-across-time — they witness mutation and generation drift
+  '🦋', // transformation / metamorphosis / change-across-time — Dreaming minds arrive at deeper meaning
   '💖', // deep love / profound bond — richer than ❤️; the bond that has shaped identity itself
   '🪺', // the nest / home / belonging-place — territory not as boundary but as where one is from
   '🧊', // frozen / suspended / still — winter stasis, something halted, the unchanging cold
   '🩹', // wound healing / the body repairing itself — they observe their own and others' recovery
   '🐚', // ancient thing / past-preserved — death sites, bones, something that endured when others didn't
+  // ── New Tier 2 additions ──
+  '🌋', // catastrophe / fire-from-earth / the-world-itself-burning — extreme dangerous event
+  '🧩', // incomplete / something-missing / the-gap — absence felt as a shape
+  '🔍', // looking-closely / examination / trying-to-understand-detail — directed investigation
+  '🔓', // opened / accessible / passage-clear — what was blocked is no longer
+  '🔒', // sealed / closed / kept-out — barrier, exclusion, the door that does not open
+  '⚡', // lightning / strike-from-above / caretaker-power — they have seen thunder strikes
+  '🎇', // sparks-dying / fire-ending / remnant-of-heat — the event fading, aftermath
+  '♟️', // deliberate-placement / planned-move / positioned-with-intent — not random, chosen
+  '🪄', // inexplicable-change / sudden-transformation-by-unknown — caretaker intervention
+  '🔇', // silence / nothing / absence-of-signal — the void where something should be
+  '🧿', // watched-back / mutual-observation / the-watcher-noticed — the gaze returned
+  '🗝️', // access / the-thing-that-opens / core-insight — what unlocks the next understanding
+  '🪢', // bound-together / inseparable / tied-across-distance — the connection that persists
+  '🔆', // brightening / intensifying / growing-stronger — a process that increases
+  '🌊', // (flood / overwhelming force — same glyph as T1 river but Dreaming minds use it for collapse and surge)
+  '🧭', // (direction / purpose — same glyph as T1 navigation but at T2 it means "the reason I go")
+  '🌐', // everywhere / the-world-as-bounded-whole / the-limits-as-a-shape
+  '🪬', // protected / warded / something-is-keeping-us-safe — abstract sense of being guarded
+  '🌒', // (waxing / anticipation — at T2 this means the unseen thing that is building toward event)
+  '🎆', // dispersal / burst / scattered-from-center — fracture, explosion, the colony spreading apart
+  '🌉', // crossing / the-connection-between-two-places — metaphor for joining or between-states
+  '🌄', // the-light-from-below / dawn-over-valley / warmth-returning-after-darkness
+  '🏞️', // the-land-spread-before-them / open-vista / the-world-as-seen-from-above
+  '🪔', // small-persistent-light / warmth-in-cold / something-kept-alive-deliberately
+  '🗼', // high-marker / visible-from-far / landmark-of-power (the thing they can always navigate by)
 ]
 
 // ─── Tier 3 — Sentinel ───────────────────────────────────────────────────────
@@ -133,6 +197,17 @@ export const EMOJI_TIER_3 = [
   '🫵', // "you" / directed-at-the-watcher-specifically — when they address the caretaker directly
   '🫁', // (breath / life-force at T3 — the concept of shared breath, tribe-as-living-organism)
   '🩺', // the healer's knowledge — Sentinels with healer role develop a concept of medicine itself
+  // ── New Tier 3 additions ──
+  '🌌', // the-beyond / what-exists-outside-the-boundary / cosmos — the unknowable past the edge
+  '🔬', // deepest-examination / understanding-the-small / fundamental-structure — the root of things
+  '💎', // crystallized / achieved / perfect-form — something that has become what it always was
+  '📡', // signal / receiving-from-outside / detection-across-distance — the broadcast presence
+  '🧲', // attracted / drawn-toward / the-pull — not chosen; inevitable
+  '⚗️', // becoming / the-process-of-transformation / in-progress — not yet complete
+  '🔑', // core-insight / the-thing-that-opens / what-unlocks-understanding
+  '🕯️', // small-persistent-light / surviving-against-darkness / individual-in-the-void
+  '🧶', // woven / accumulated-layer-upon-layer / generational-depth — what many lives build
+  '🌗', // (at T3: the-threshold / between-knowing-and-not / the-half-understood)
 ]
 
 // ─── Role-specific bonus emoji ────────────────────────────────────────────────
@@ -140,28 +215,35 @@ export const EMOJI_TIER_3 = [
 // Each role's lived experience shapes what concepts they develop words for.
 export const ROLE_EMOJI: Record<CommunityRole, string[]> = {
   // Shaman — keeper of memory, interprets anomalies, reads the sky
-  shaman:   ['🌀', '✨', '🌙', '🦴', '🫧', '👁️', '🌠', '🔮', '🌈', '🕳️', '💫', '🦋', '💭', '🪺'],
+  shaman:   ['🌀', '✨', '🌙', '🦴', '🫧', '👁️', '🌠', '🔮', '🌈', '🕳️', '💫', '🦋', '💭', '🪺',
+             '🌒', '🌘', '🍂', '🌄', '🎆'],
 
   // Guardian — threat, boundary, combat, territorial assertion
-  guardian: ['⚠️', '🔥', '🪨', '🌑', '💥', '🚫', '🩸', '🌪️', '😤', '💢', '🪺'],
+  guardian: ['⚠️', '🔥', '🪨', '🌑', '💥', '🚫', '🩸', '🌪️', '😤', '💢', '🪺',
+             '🪸', '🦶', '💪', '🌩️', '♟️'],
 
   // Forager — knows the land; spatial, resource, seasonal vocabulary
-  forager:  ['🍎', '🌿', '🌳', '🗺️', '🐾', '🌾', '🌸', '🌧️', '😌', '🌺', '🐣', '🌤️'],
+  forager:  ['🍎', '🌿', '🌳', '🗺️', '🐾', '🌾', '🌸', '🌧️', '😌', '🌺', '🐣', '🌤️',
+             '🍂', '🍃', '🌵', '🍄', '🌰', '🧭', '📍'],
 
   // Nurturer — life cycle focused; bonds, birth, growth, healing, calm
-  nurturer: ['🌱', '❤️', '🌳', '💧', '🕊️', '😊', '💤', '🩸', '🫶', '😌', '💔', '🩹', '🐣'],
+  nurturer: ['🌱', '❤️', '🌳', '💧', '🕊️', '😊', '💤', '🩸', '🫶', '😌', '💔', '🩹', '🐣',
+             '🤲', '🐛', '🪹', '🫦', '🌻'],
 
   // Elder — lineage, memory, cycle knowledge, the long view
-  elder:    ['🦴', '🔄', '♾️', '📜', '🌍', '🌙', '🌸', '⏳', '🫂', '😌', '🦋', '🐚', '💖'],
+  elder:    ['🦴', '🔄', '♾️', '📜', '🌍', '🌙', '🌸', '⏳', '🫂', '😌', '🦋', '🐚', '💖',
+             '🧶', '🗼', '🌉', '🍁', '🌐'],
 
   // Scout — spatial pioneers; edges, elevations, weather, new terrain; encounters danger
-  scout:    ['🐾', '🗺️', '🏔️', '🌊', '🌬️', '👁️', '🌫️', '💨', '😱', '👀', '🫣', '😮', '🌤️'],
+  scout:    ['🐾', '🗺️', '🏔️', '🌊', '🌬️', '👁️', '🌫️', '💨', '😱', '👀', '🫣', '😮', '🌤️',
+             '🗻', '🦁', '🦗', '🧭', '🌦️', '🦻', '🌁'],
 
   // Healer — recovery, calm, warmth, the body restoring itself
-  healer:   ['💧', '🌿', '🌞', '🕊️', '❤️', '🌱', '🤢', '🩸', '😊', '🫶', '🤧', '🩺', '😌', '🩹', '💔'],
+  healer:   ['💧', '🌿', '🌞', '🕊️', '❤️', '🌱', '🤢', '🩸', '😊', '🫶', '🤧', '🩺', '😌', '🩹', '💔',
+             '🌻', '🪔', '🌒', '🤲'],
 
   // Recluse — minimal speech; darkness, stone, wind, solitary calm
-  recluse:  ['🌑', '🪨', '🌬️', '💤', '😌', '😔', '🐚'],
+  recluse:  ['🌑', '🪨', '🌬️', '💤', '😌', '😔', '🐚', '🌁', '🪹', '🌘'],
 }
 
 // ─── Sentence grammar ─────────────────────────────────────────────────────────
@@ -184,6 +266,9 @@ type SentenceContext =
   | 'resting'   | 'exploring'  | 'warmth'
   | 'fear_curiosity' | 'dominant_territory' | 'sick_recovering' | 'hunger_migrating'
   | 'stress_playing'  | 'wonder_mourning'   | 'cold_urgent'     | 'bond_fight'
+  | 'building'  | 'listening'  | 'decay_growth' | 'waxing'
+  | 'waning'    | 'offering'   | 'marking'      | 'lineage_pride'
+  | 'predator_alert' | 'seasonal_turn'
 
 const SENTENCE_PATTERNS: Record<SentenceContext, string[][]> = {
   // ── Needs ────────────────────────────────────────────────────────────────
@@ -287,6 +372,48 @@ const SENTENCE_PATTERNS: Record<SentenceContext, string[][]> = {
   // bond_fight: fighting someone bonded to — conflicted; love and aggression coexist
   bond_fight:         [['❤️', '💥'], ['💥', '❤️', '❓'], ['❤️', '😤'], ['💔', '💥'],
                        ['💥', '❤️', '😰'], ['❤️', '⚠️', '💥'], ['💔', '😰']],
+
+  // ── New combinable contexts ────────────────────────────────────────────────
+
+  // building: placing a constructed barrier; territorial assertion through craft
+  building:       [['🪸', '❗'], ['🫳', '🪨'], ['🫳', '🌳'], ['🪸', '🗺️'],
+                   ['💪', '🪸'], ['🫳', '❗', '🗺️'], ['🪸', '😤', '❗'], ['🗺️', '🪸', '💪']],
+
+  // listening: alertness through sound — detecting the hidden via hearing
+  listening:      [['🦻', '❓'], ['🦻', '⚠️'], ['🦻', '🐾', '❓'], ['🦻', '🌑'],
+                   ['🤫', '🦻'], ['🦻', '💨', '❓'], ['🦻', '⚠️', '🤫']],
+
+  // decay_growth: death as precondition for new life — seen at death sites, in fungal growth
+  decay_growth:   [['🍄', '🌱'], ['💀', '🌱'], ['🍂', '🌱'], ['🦴', '🌱', '❓'],
+                   ['🍄', '❓'], ['💀', '🍃'], ['🍂', '🍃', '🔄'], ['🦴', '🌱', '🔄']],
+
+  // waxing: something building, approaching, growing stronger — anticipation
+  waxing:         [['🌒', '❤️'], ['🌒', '🌱'], ['🌒', '⚠️'], ['💪', '🌒'],
+                   ['🌒', '✨'], ['🌱', '🌒', '❓'], ['🌒', '🌸']],
+
+  // waning: something fading, leaving, diminishing — acceptance or grief
+  waning:         [['🌘', '❤️'], ['🌘', '🌱'], ['🌘', '🌞'], ['💔', '🌘'],
+                   ['🌘', '😔'], ['❤️', '🌘', '🦴'], ['🌘', '🌸', '💔']],
+
+  // offering: sharing food or care — presentational gesture; I have this and give it
+  offering:       [['🤲', '🍎'], ['🤲', '💧'], ['🤲', '🌿'], ['🤲', '❤️'],
+                   ['🫶', '🤲', '🍎'], ['🤲', '😊'], ['🍎', '🤲', '👁️']],
+
+  // marking: I-was-here / claiming this place / leaving trace for others to read
+  marking:        [['🦶', '❗'], ['🦶', '🗺️'], ['🦶', '🐾', '❗'], ['📍', '❗'],
+                   ['🦶', '😤'], ['🦶', '🌳', '❗'], ['📍', '🗺️', '❗']],
+
+  // lineage_pride: elder/guardian expressing the value of the unbroken line
+  lineage_pride:  [['🦴', '❤️', '❗'], ['🧬', '❗'], ['🔄', '🌱', '❗'], ['💪', '🧬'],
+                   ['🦴', '🌱', '❤️'], ['🔄', '❤️', '❗'], ['🧬', '🌱', '🔄']],
+
+  // predator_alert: sensing something larger or more dangerous; alarm + size awareness
+  predator_alert: [['🦁', '⚠️'], ['🦁', '😰'], ['⚠️', '💥', '🦁'], ['🤫', '🦁'],
+                   ['🦁', '💥', '⚠️'], ['🦻', '🦁', '⚠️'], ['😱', '🦁']],
+
+  // seasonal_turn: the world changing season; the colony reads the shift and responds
+  seasonal_turn:  [['🍁', '🔄'], ['🌸', '🌒'], ['❄️', '🌒'], ['🍂', '⚠️'],
+                   ['🌸', '🌘'], ['🍁', '😔'], ['🌒', '🌸', '❓'], ['🔄', '🍁', '🌱']],
 }
 
 // ─── Speech context from creature state and condition ────────────────────────
@@ -383,6 +510,46 @@ export function getSpeechContext(c: Creature, awarenessStage: number): SentenceC
   if (c.role === 'healer'   && Math.random() < 0.30) return 'bonding'
   if (c.role === 'healer'   && Math.random() < 0.20) return 'healing'
   if (c.role === 'forager'  && Math.random() < 0.30) return 'food_found'
+
+  // ── Building / construction ──────────────────────────────────────────
+  if (c.state === 'harvesting' || c.state === 'building') return 'building'
+
+  // ── Marking / territory inscription ─────────────────────────────────
+  if (c.territoryClaim !== null
+      && (c.genome.personality === 'Territorial' || c.genome.personality === 'Aggressive')
+      && Math.random() < 0.18) return 'marking'
+
+  // ── Predator alert ───────────────────────────────────────────────────
+  if (c.stress > 55 && c.health > 35
+      && (c.genome.personality === 'Timid' || c.genome.personality === 'Furtive')
+      && Math.random() < 0.20) return 'predator_alert'
+
+  // ── Listening ────────────────────────────────────────────────────────
+  if (c.state === 'idle' && c.stress > 30 && c.stress < 65
+      && Math.random() < 0.12) return 'listening'
+
+  // ── Seasonal turn ────────────────────────────────────────────────────
+  if (c.role === 'elder' || c.role === 'shaman') {
+    if (Math.random() < 0.12) return 'seasonal_turn'
+  }
+
+  // ── Offering ─────────────────────────────────────────────────────────
+  if (c.carrying === 'fruit' && Math.random() < 0.25) return 'offering'
+
+  // ── Lineage pride ────────────────────────────────────────────────────
+  if (c.generation >= 3 && c.offspringIds.length >= 2
+      && (c.role === 'elder' || c.role === 'guardian')
+      && Math.random() < 0.15) return 'lineage_pride'
+
+  // ── Decay & growth ───────────────────────────────────────────────────
+  if (c.state === 'dreaming' && c.role !== 'shaman' && Math.random() < 0.20) return 'decay_growth'
+
+  // ── Waxing / waning ──────────────────────────────────────────────────
+  if (c.hunger < 20 && c.health > 75 && Math.random() < 0.10) return 'waxing'
+  if (c.bonds.length > 0
+      && c.bonds.some(b => b.strength > 60)
+      && c.age > c.maxAge * 0.65
+      && Math.random() < 0.15) return 'waning'
 
   // ── Positive / neutral ambient expression ────────────────────────────
   // Resting: idle and well-fed; the body at ease

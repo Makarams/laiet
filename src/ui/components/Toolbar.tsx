@@ -87,7 +87,11 @@ const AwarenessPips = styled.div`display: flex; gap: 4px; align-items: center; m
 const Pip = styled.span<{ $active: boolean; $level: number }>`
   width: 8px; height: 8px; border-radius: 50%;
   background: ${p => p.$active
-    ? p.$level === 3 ? '#c878f0' : p.$level === 2 ? THEME.water : THEME.alive
+    ? p.$level === 5 ? '#d0eeff'
+    : p.$level === 4 ? '#f0a040'
+    : p.$level === 3 ? '#c878f0'
+    : p.$level === 2 ? THEME.water
+    : THEME.alive
     : THEME.border};
   border: 1px solid ${p => p.$active ? 'transparent' : THEME.borderMid};
 `
@@ -137,9 +141,9 @@ interface ToolbarProps {
   onSave: () => void
   isMuted: boolean
   isPaused: boolean
-  simSpeed: 1 | 2 | 4
+  simSpeed: 1 | 2 | 4 | 8
   onPauseToggle: () => void
-  onSpeedChange: (s: 1 | 2 | 4) => void
+  onSpeedChange: (s: 1 | 2 | 4 | 8) => void
   day: number
   year: number
   season: Season
@@ -241,14 +245,14 @@ export function Toolbar({
         <StatusCell>
           <StatusLabel>Signal</StatusLabel>
           <AwarenessPips>
-            {[1, 2, 3].map(n => <Pip key={n} $active={awarenessStage >= n} $level={n} />)}
+            {[1, 2, 3, 4, 5].map(n => <Pip key={n} $active={awarenessStage >= n} $level={n} />)}
           </AwarenessPips>
         </StatusCell>
       </StatusBlock>
 
       <CtrlBtn $active={isPaused} onClick={onPauseToggle}>{isPaused ? '▶ Resume' : '⏸ Pause'}</CtrlBtn>
       <SpeedGroup>
-        {([1, 2, 4] as const).map(s => (
+        {([1, 2, 4, 8] as const).map(s => (
           <SpeedBtn key={s} $active={simSpeed === s && !isPaused} onClick={() => onSpeedChange(s)}>{s}×</SpeedBtn>
         ))}
       </SpeedGroup>

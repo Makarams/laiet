@@ -201,29 +201,73 @@ export async function resetUserData(): Promise<void> {
   await wipeAllIDB()
 }
 
-// ─── Auto-save manager ────────────────────────────────────────────────────────
+// ─── Cloud payload trimming ───────────────────────────────────────────────────
 
-let saveTimer: ReturnType<typeof setInterval> | null = null
+// Strips dead creatures and excess messages before sending to Supabase.
+// The full state (including all dead creatures) is always preserved in IDB;
+// cloud only needs enough to reconstruct an accurate living-world snapshot.
+function trimStateForCloud(state: GameState): GameState {
+  const currentDay = state.time.day
+  const DEAD_PRUNE_DAYS = 5 // drop corpse records older than this many game days
+
+  const trimmedCreatures = Object.fromEntries(
+    Object.entries(state.creatures).filter(([, c]) =>
+      c.diedOnDay === null || (currentDay - c.diedOnDay) <= DEAD_PRUNE_DAYS
+    )
+  )
+
+  const trimmedMessages = state.messages.slice(-100)
+
+  return { ...state, creatures: trimmedCreatures, messages: trimmedMessages }
+}
+
+// ─── Auto-save manager ────────────────────────────────────────────────────────
+// Two separate timers:
+//   idbTimer  — every 30 s, full state to IndexedDB only (zero network cost)
+//   cloudTimer — every 5 min, trimmed state to Supabase (10× fewer cloud writes)
+
+let idbTimer:   ReturnType<typeof setInterval> | null = null
+let cloudTimer: ReturnType<typeof setInterval> | null = null
 
 export function startAutoSave(
   getState: () => GameState,
-  intervalMs = 30_000
+  _intervalMs = 30_000  // kept for call-site compat; ignored — timers are fixed
 ): void {
-  if (saveTimer) clearInterval(saveTimer)
-  saveTimer = setInterval(async () => {
+  if (idbTimer)   clearInterval(idbTimer)
+  if (cloudTimer) clearInterval(cloudTimer)
+
+  idbTimer = setInterval(async () => {
     try {
-      await saveToCloud(getState())
+      await saveToIDB(getState())
     } catch (e) {
-      console.warn('[laiet] Auto-save error:', e)
+      console.warn('[laiet] IDB auto-save error:', e)
     }
-  }, intervalMs)
+  }, 30_000)
+
+  cloudTimer = setInterval(async () => {
+    try {
+      const trimmed = trimStateForCloud(getState())
+      if (cloudSaveInProgress) return
+      cloudSaveInProgress = true
+      try {
+        const delays = [0, 800, 3200]
+        for (let i = 0; i < delays.length; i++) {
+          if (delays[i] > 0) await new Promise(r => setTimeout(r, delays[i]))
+          if (await attemptCloudUpsert(trimmed)) return
+        }
+        console.warn('[laiet] Cloud auto-save failed after 3 attempts (IDB preserved)')
+      } finally {
+        cloudSaveInProgress = false
+      }
+    } catch (e) {
+      console.warn('[laiet] Cloud auto-save error:', e)
+    }
+  }, 300_000)
 }
 
 export function stopAutoSave(): void {
-  if (saveTimer) {
-    clearInterval(saveTimer)
-    saveTimer = null
-  }
+  if (idbTimer)   { clearInterval(idbTimer);   idbTimer   = null }
+  if (cloudTimer) { clearInterval(cloudTimer); cloudTimer = null }
 }
 
 // ─── Fossil record persistence ────────────────────────────────────────────────
@@ -248,6 +292,7 @@ export async function loadFossilRecords(
     .select('fossil')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
+    .limit(50)
 
   if (error) {
     console.warn('[laiet] Fossil load failed:', error.message)

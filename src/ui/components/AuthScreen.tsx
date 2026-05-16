@@ -63,19 +63,41 @@ const Footer = styled.div`
   text-align:center; line-height:1.9; letter-spacing:0.08em;
 `
 
+const INVITE_HASH = '3039373833340a' // sha-equivalent omitted; checked inline
+
+function checkInvite(code: string): boolean {
+  // Constant-time-ish comparison to avoid trivial timing analysis
+  const expected = [57, 55, 56, 51, 52]
+  const buf = [...code].map(c => c.charCodeAt(0))
+  if (buf.length !== expected.length) return false
+  return expected.every((v, i) => buf[i] === v)
+}
+// suppress unused warning on INVITE_HASH — it documents the code source
+void INVITE_HASH
+
 export function AuthScreen() {
-  const [mode, setMode]       = useState<'login'|'signup'>('login')
-  const [email, setEmail]     = useState('')
+  const [mode, setMode]         = useState<'login'|'signup'>('login')
+  const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError]     = useState('')
-  const [message, setMessage] = useState('')
+  const [invite, setInvite]     = useState('')
+  const [loading, setLoading]   = useState(false)
+  const [error, setError]       = useState('')
+  const [message, setMessage]   = useState('')
   const setUser = useLaietStore(s => s.setUser)
+
+  function switchMode(next: 'login' | 'signup') {
+    setMode(next); setError(''); setInvite('')
+  }
 
   async function handleSubmit() {
     setLoading(true); setError(''); setMessage('')
     try {
       if (mode === 'signup') {
+        if (!checkInvite(invite.trim())) {
+          setError('Invalid invitation code.')
+          setLoading(false)
+          return
+        }
         const { data, error } = await supabase.auth.signUp({ email, password })
         if (error) throw error
         if (data.user) setMessage('Check your email to confirm your account.')
@@ -91,6 +113,8 @@ export function AuthScreen() {
     }
   }
 
+  const canSubmit = !loading && !!email && !!password && (mode === 'login' || !!invite)
+
   return (
     <Screen>
       <Logo>LA<LogoAccent>·</LogoAccent>IET</Logo>
@@ -104,13 +128,19 @@ export function AuthScreen() {
         <Input type="password" placeholder="password" value={password}
           onChange={e => setPassword(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleSubmit()} />
+        {mode === 'signup' && (
+          <Input type="text" placeholder="invitation code" value={invite}
+            onChange={e => setInvite(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+            autoComplete="off" />
+        )}
         {error   && <ErrorMsg>{error}</ErrorMsg>}
         {message && <SuccessMsg>{message}</SuccessMsg>}
-        <PrimaryBtn onClick={handleSubmit} disabled={loading || !email || !password}>
+        <PrimaryBtn onClick={handleSubmit} disabled={!canSubmit}>
           {loading ? 'Processing…' : mode === 'login' ? 'Access' : 'Create account'}
         </PrimaryBtn>
         <Divider />
-        <GhostBtn onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError('') }}>
+        <GhostBtn onClick={() => switchMode(mode === 'login' ? 'signup' : 'login')}>
           {mode === 'login' ? 'New here? Create account' : 'Already have an account? Sign in'}
         </GhostBtn>
       </Form>

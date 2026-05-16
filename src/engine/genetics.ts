@@ -66,6 +66,8 @@ function computeMorphBias(env: EnvContext): MorphBias {
 // or null if conditions don't favour a specific trait.
 export function acquireAdaptation(env: EnvContext): AdaptationTrait | null {
   const { biome, weather, season } = env
+  // Heavy snowfall in winter → broad insulation (stronger than cold_hardy alone)
+  if (season === 'winter' && weather === 'snow')                         return 'thick_pelt'
   if (season === 'winter' || weather === 'snow')                         return 'cold_hardy'
   if (biome === 'wetland')                                               return 'hydro_fins'
   if (biome === 'rocky')                                                 return 'cave_sighted'
@@ -180,26 +182,111 @@ export function inheritRace(
   return { race: expressed, latentAncestry: latency }
 }
 
+// ─── Trait dominance & environmental pressure ─────────────────────────────────
+
+// Dominant traits (value > 0.5) win inheritance competition more often.
+// Models dominant/recessive allele dynamics without full diploid machinery.
+// Assertive, mobile traits spread more readily; passive, shy traits recede.
+const PERSONALITY_DOMINANCE: Record<PersonalityTrait, number> = {
+  Aggressive:  0.62,
+  Territorial: 0.60,
+  Curious:     0.56,
+  Wanderer:    0.55,
+  Social:      0.54,
+  Greedy:      0.53,
+  Nurturing:   0.52,
+  Hoarder:     0.51,
+  Stoic:       0.50,
+  Empath:      0.49,
+  Recluse:     0.48,
+  Furtive:     0.46,
+  Lazy:        0.44,
+  Timid:       0.42,
+}
+
+// Returns a small probability nudge toward a candidate personality given birth conditions.
+// Positive = env favours this trait; negative = env disfavours it.
+// Applied subtly so ecological pressure accumulates over many generations.
+function personalityEnvBonus(env: EnvContext, candidate: PersonalityTrait): number {
+  const { biome, weather, season } = env
+  let bonus = 0
+  if (biome === 'arid') {
+    if (candidate === 'Wanderer' || candidate === 'Stoic' || candidate === 'Greedy') bonus += 0.05
+    else if (candidate === 'Nurturing' || candidate === 'Social' || candidate === 'Lazy') bonus -= 0.04
+  }
+  if (biome === 'wetland') {
+    if (candidate === 'Social' || candidate === 'Nurturing' || candidate === 'Empath') bonus += 0.05
+    else if (candidate === 'Aggressive' || candidate === 'Recluse') bonus -= 0.04
+  }
+  if (biome === 'rocky') {
+    if (candidate === 'Recluse' || candidate === 'Stoic' || candidate === 'Territorial') bonus += 0.05
+    else if (candidate === 'Social' || candidate === 'Empath') bonus -= 0.04
+  }
+  if (biome === 'lush') {
+    if (candidate === 'Curious' || candidate === 'Social' || candidate === 'Nurturing') bonus += 0.04
+  }
+  if (season === 'winter') {
+    if (candidate === 'Hoarder' || candidate === 'Stoic' || candidate === 'Greedy') bonus += 0.04
+    else if (candidate === 'Lazy' || candidate === 'Social') bonus -= 0.04
+  }
+  if (weather === 'drought' || weather === 'heatwave') {
+    if (candidate === 'Wanderer' || candidate === 'Aggressive') bonus += 0.04
+    else if (candidate === 'Lazy') bonus -= 0.04
+  }
+  return bonus
+}
+
 // Sexual inheritance; mix from two parents with mutation chance per slot.
 // mutationChance defaults to the constant but can be overridden by SimModifiers.
 // Optional envCtx applies directional morphology pressure from birth conditions.
-export function inheritGenome(parentA: Genome, parentB: Genome, rng: () => number, mutationChance = MUTATION_CHANCE, envCtx?: EnvContext): Genome {
+// parentBias (0..1): probability of inheriting from parentA; >0.5 = parentA is fitter.
+// Default 0.5 = equal selection; callers pass computed fitness ratio for natural selection.
+export function inheritGenome(parentA: Genome, parentB: Genome, rng: () => number, mutationChance = MUTATION_CHANCE, envCtx?: EnvContext, parentBias = 0.5): Genome {
   const pick = <T>(a: T, b: T, pool: T[]): T => {
-    const base = rng() < 0.5 ? a : b
+    const base = rng() < parentBias ? a : b
     if (rng() < mutationChance) return pool[Math.floor(rng() * pool.length)]
+    return base
+  }
+
+  // Personality inherits with combined fitness bias AND trait dominance, plus env pressure.
+  // This makes natural selection work at the allele level, not just the organismal level.
+  const pickPersonality = (): PersonalityTrait => {
+    const domA = PERSONALITY_DOMINANCE[parentA.personality] ?? 0.5
+    const domB = PERSONALITY_DOMINANCE[parentB.personality] ?? 0.5
+    const domProb = domA / (domA + domB)
+    const combinedBias = (parentBias + domProb) * 0.5  // average of fitness and dominance pressures
+    let base = rng() < combinedBias ? parentA.personality : parentB.personality
+
+    if (rng() < mutationChance) {
+      if (envCtx) {
+        // Env-weighted mutation: sample two random personalities, keep the one better fit to the biome.
+        const c1 = PERSONALITIES[Math.floor(rng() * PERSONALITIES.length)]
+        const c2 = PERSONALITIES[Math.floor(rng() * PERSONALITIES.length)]
+        base = personalityEnvBonus(envCtx, c1) >= personalityEnvBonus(envCtx, c2) ? c1 : c2
+      } else {
+        base = PERSONALITIES[Math.floor(rng() * PERSONALITIES.length)]
+      }
+    } else if (envCtx) {
+      // Non-mutation case: if the chosen personality is env-negative and the other parent's
+      // personality is env-positive, occasionally swap (small nudge, not a forced override).
+      const chosenBonus = personalityEnvBonus(envCtx, base)
+      const otherPersonality = base === parentA.personality ? parentB.personality : parentA.personality
+      const otherBonus = personalityEnvBonus(envCtx, otherPersonality)
+      if (chosenBonus < 0 && otherBonus > 0 && rng() < 0.14) base = otherPersonality
+    }
     return base
   }
 
   // morphSeed still controls per-creature shape asymmetry; it drifts between
   // parents to keep siblings distinguishable within a lineage.
-  const inheritedSeed = rng() < 0.5 ? parentA.morphSeed : parentB.morphSeed
+  const inheritedSeed = rng() < parentBias ? parentA.morphSeed : parentB.morphSeed
   const seedDrift = (rng() - 0.5) * 0.18
   const morphSeed = clamp01(inheritedSeed + seedDrift)
 
   const { race, latentAncestry } = inheritRace(parentA, parentB, rng)
 
   return {
-    personality: pick(parentA.personality, parentB.personality, PERSONALITIES),
+    personality: pickPersonality(),
     body: pick(parentA.body, parentB.body, BODIES),
     mind: pick(parentA.mind, parentB.mind, MINDS),
     morphSeed,
@@ -279,17 +366,18 @@ function randomSyllable(rng: () => number): string {
   return SYLLABLES[Math.floor(rng() * SYLLABLES.length)]
 }
 
+const SYLLABLE_SET = new Set(SYLLABLES)
+
 function normalizeFamilyNameSeed(familyName: string, rng: () => number): string[] {
   const clean = normalizeFamilyName(familyName).toLowerCase()
-  const seed: string[] = []
 
-  if (clean.length >= 2) seed.push(clean.slice(0, 2))
-  else seed.push(randomSyllable(rng))
+  const first2 = clean.slice(0, 2)
+  const last2  = clean.slice(2, 4)
 
-  if (clean.length >= 4) seed.push(clean.slice(2, 4))
-  else seed.push(randomSyllable(rng))
+  const root   = SYLLABLE_SET.has(first2) ? first2 : randomSyllable(rng)
+  const suffix = (clean.length >= 4 && SYLLABLE_SET.has(last2)) ? last2 : randomSyllable(rng)
 
-  return seed
+  return [root, suffix]
 }
 
 function capitalizeName(parts: string[]): string {
@@ -298,11 +386,8 @@ function capitalizeName(parts: string[]): string {
 }
 
 export function generateName(rng: () => number): string {
-  const length = 2 + Math.floor(rng() * 2)
-  let name = ''
-  for (let i = 0; i < length; i++) {
-    name += SYLLABLES[Math.floor(rng() * SYLLABLES.length)]
-  }
+  const name = SYLLABLES[Math.floor(rng() * SYLLABLES.length)]
+             + SYLLABLES[Math.floor(rng() * SYLLABLES.length)]
   return name.charAt(0).toUpperCase() + name.slice(1)
 }
 
@@ -312,13 +397,13 @@ export function mutateFamily(familyName: string, rng: () => number): string {
   const suffix = seed[1]
 
   const mutations = [
-    () => [root, suffix],
-    () => [root, randomSyllable(rng)],
-    () => [root, randomSyllable(rng)],
-    () => [root, suffix],
+    () => [root, suffix],                                 // 30% preserve
+    () => [root, randomSyllable(rng)],                    // 45% drift suffix
+    () => [randomSyllable(rng), suffix],                  // 15% drift root
+    () => [randomSyllable(rng), randomSyllable(rng)],     // 10% full refresh
   ]
 
-  const weights = [0.2, 0.3, 0.3, 0.2]
+  const weights = [0.30, 0.45, 0.15, 0.10]
   const r = rng()
   let cumulative = 0
   let chosen = mutations[mutations.length - 1]

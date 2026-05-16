@@ -58,6 +58,7 @@ const TILE_COLORS: Record<TileType, { top: string; left: string; right: string }
   cliff:      { top: '#524e68', left: '#3c3850', right: '#2c2a3e' },
   bush:       { top: '#1a4016', left: '#112a0e', right: '#0c1e0a' },
   healroot:   { top: '#2c3c1a', left: '#1e2c12', right: '#162008' },
+  fence:      { top: '#5c3e1e', left: '#3e2a12', right: '#2c1e0a' },
 }
 
 // Biome tint ; painted over the top face only, giving each biome a chromatic
@@ -858,6 +859,40 @@ function drawTileDecoration(
       }
       break
     }
+
+    case 'fence': {
+      const hw2 = ISO_TILE_WIDTH / 2
+      const dur = tile.fenceDurability ?? 100
+      const fAlpha = 0.50 + (dur / 100) * 0.50
+      ctx.save()
+      ctx.globalAlpha = fAlpha
+
+      const isStone = tile.fenceType === 'stone'
+      const postColor = isStone ? '#7a7266' : '#8c5c2a'
+      const plankColor = isStone ? '#5e5850' : '#6e4420'
+
+      // Two vertical posts at the left and right edges of the tile top face
+      const postW = Math.max(1.5, ISO_TILE_WIDTH * 0.07)
+      const postH = ISO_TILE_HEIGHT * 1.2
+      ctx.fillStyle = postColor
+      // Left post
+      ctx.fillRect(cx - hw2 * 0.55 - postW / 2, cy - postH * 0.82, postW, postH)
+      // Right post
+      ctx.fillRect(cx + hw2 * 0.55 - postW / 2, cy - postH * 0.82, postW, postH)
+      // Centre post
+      ctx.fillRect(cx - postW / 2, cy - postH * 0.75, postW, postH * 0.85)
+
+      // Horizontal planks connecting the posts
+      ctx.fillStyle = plankColor
+      const plankH = Math.max(1, ISO_TILE_HEIGHT * 0.12)
+      // Upper plank
+      ctx.fillRect(cx - hw2 * 0.55, cy - postH * 0.68, hw2 * 1.10, plankH)
+      // Lower plank
+      ctx.fillRect(cx - hw2 * 0.55, cy - postH * 0.42, hw2 * 1.10, plankH)
+
+      ctx.restore()
+      break
+    }
   }
 
   // Fire overlay ; drawn over ANY burning tile
@@ -866,23 +901,75 @@ function drawTileDecoration(
   }
 
   // ── Snow depth overlay ────────────────────────────────────────────────────
+  // Three-stage accumulation: sparse dusting → building layer → deep pack.
+  // True-white with blue-shadow ambient to read as solid snow rather than haze.
   const snowDepth = tile.snowDepth ?? 0
   if (snowDepth > 0.05 && tile.type !== 'mountain' && tile.type !== 'cliff') {
-    const snowAlpha = Math.min(0.80, snowDepth * 0.95)
-    ctx.fillStyle = `rgba(220, 238, 255, ${snowAlpha})`
-    ctx.beginPath()
-    ctx.moveTo(sx,                         sy + ISO_TILE_HEIGHT * 0.12)
-    ctx.lineTo(sx + ISO_TILE_WIDTH / 2,    sy + ISO_TILE_HEIGHT * 0.5)
-    ctx.lineTo(sx,                         sy + ISO_TILE_HEIGHT * 0.88)
-    ctx.lineTo(sx - ISO_TILE_WIDTH / 2,    sy + ISO_TILE_HEIGHT * 0.5)
-    ctx.closePath()
-    ctx.fill()
-    // Surface highlight at high depths
-    if (snowDepth > 0.55) {
-      ctx.fillStyle = `rgba(255,255,255,${(snowDepth - 0.55) * 0.45})`
+    const d   = Math.min(1.0, snowDepth)
+    const hw2 = ISO_TILE_WIDTH  / 2
+    const hh2 = ISO_TILE_HEIGHT / 2
+
+    if (d < 0.22) {
+      // Stage 1 — sparse dusting: a few scattered white blobs, ground still shows through.
+      const dustAlpha = (d - 0.05) / 0.17 * 0.52
+      ctx.fillStyle = `rgba(242, 250, 255, ${dustAlpha})`
       ctx.beginPath()
-      ctx.ellipse(sx, sy + ISO_TILE_HEIGHT * 0.38, ISO_TILE_WIDTH * 0.2, ISO_TILE_HEIGHT * 0.06, 0, 0, Math.PI * 2)
+      ctx.ellipse(sx - hw2 * 0.20, sy + ISO_TILE_HEIGHT * 0.56, hw2 * 0.38, hh2 * 0.26, 0.2, 0, Math.PI * 2)
       ctx.fill()
+      ctx.beginPath()
+      ctx.ellipse(sx + hw2 * 0.26, sy + ISO_TILE_HEIGHT * 0.38, hw2 * 0.30, hh2 * 0.20, -0.1, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.beginPath()
+      ctx.ellipse(sx, sy + ISO_TILE_HEIGHT * 0.72, hw2 * 0.22, hh2 * 0.16, 0, 0, Math.PI * 2)
+      ctx.fill()
+    } else {
+      // Stage 2+3 — solid cover: near-white blanket, opacity rises steeply with depth.
+      const buildT    = Math.min(1.0, (d - 0.22) / 0.52)   // 0 → 1 between d=0.22 and d=0.74
+      const coverAlpha = 0.58 + buildT * 0.36               // 0.58 → 0.94
+
+      // Main snow face: almost pure white, just barely cool-tinted
+      ctx.fillStyle = `rgba(244, 251, 255, ${coverAlpha})`
+      ctx.beginPath()
+      ctx.moveTo(sx,       sy + ISO_TILE_HEIGHT * 0.12)
+      ctx.lineTo(sx + hw2, sy + hh2)
+      ctx.lineTo(sx,       sy + ISO_TILE_HEIGHT * 0.88)
+      ctx.lineTo(sx - hw2, sy + hh2)
+      ctx.closePath()
+      ctx.fill()
+
+      if (d > 0.42) {
+        // Deep pack — bright specular crown: sun hits the crest of the drift directly.
+        const specT     = Math.min(1.0, (d - 0.42) / 0.44)
+        const specAlpha = specT * 0.82
+        ctx.fillStyle   = `rgba(255, 255, 255, ${specAlpha})`
+        ctx.beginPath()
+        ctx.ellipse(sx - hw2 * 0.08, sy + ISO_TILE_HEIGHT * 0.28,
+          hw2 * 0.32, hh2 * 0.16, 0, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Ambient blue-shadow on the lower diamond half (sky bounce beneath the drift).
+        // Physically: snow faces away from the sun here and reflects blue sky instead.
+        const shadeAlpha = specT * 0.14
+        ctx.fillStyle = `rgba(155, 200, 240, ${shadeAlpha})`
+        ctx.beginPath()
+        ctx.moveTo(sx,       sy + ISO_TILE_HEIGHT * 0.55)
+        ctx.lineTo(sx + hw2, sy + hh2)
+        ctx.lineTo(sx,       sy + ISO_TILE_HEIGHT * 0.88)
+        ctx.lineTo(sx - hw2, sy + hh2)
+        ctx.closePath()
+        ctx.fill()
+
+        // Very thin bright rim at the top crest edge to separate the snowbank from the sky
+        if (specT > 0.4) {
+          ctx.strokeStyle = `rgba(255, 255, 255, ${(specT - 0.4) * 0.6})`
+          ctx.lineWidth = 0.8
+          ctx.beginPath()
+          ctx.moveTo(sx - hw2, sy + hh2)
+          ctx.lineTo(sx, sy + ISO_TILE_HEIGHT * 0.12)
+          ctx.lineTo(sx + hw2, sy + hh2)
+          ctx.stroke()
+        }
+      }
     }
   }
 

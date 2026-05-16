@@ -2,7 +2,7 @@ import { v4 as uuid } from 'uuid'
 import {
   GameState, Creature, GameEvent, EventType, Season, WeatherState,
   ExtinctionRecord, ColonyMessage, SimModifiers, RaceTrait,
-  EnrichmentItem, EnrichmentType, EnvContext,
+  EnrichmentItem, EnrichmentType, EnvContext, CohortPhase,
 } from '@/types'
 import {
   DAY_FRACTION_PER_TICK, DAYS_PER_SEASON, FOOD_REGROW_RATE_BASE,
@@ -12,7 +12,13 @@ import {
   CANNIBAL_HUNGER_THRESHOLD, CANNIBAL_HUNGER_RELIEF,
   CANNIBAL_STRESS_PENALTY, CANNIBAL_WITNESS_STRESS,
   DISEASE_POP_THRESHOLD, DISEASE_POP_SLOPE_RANGE, DISEASE_CONTACT_CHANCE, DISEASE_HEALTH_DRAIN, DISEASE_RECOVERY_HEALTH,
+  DISEASE_IMMUNITY_GAIN, DISEASE_IMMUNITY_PROTECTION, DISEASE_BOND_SPREAD_MULT,
+  RIVER_FOOD_ADJACENT_BONUS,
+  ABSENCE_IMPRINT_STRESS_PER_TICK,
+  RIVAL_PROXIMITY_RADIUS, RIVAL_STRESS_PER_TICK,
+  TRIBE_WAR_FIGHT_CHANCE, TRIBE_WAR_SUSTAIN_DAYS,
   FIRE_DURATION_TICKS, FIRE_SPREAD_CHANCE, FIRE_TICK_DAMAGE,
+  FENCE_INITIAL_DURABILITY, FENCE_STRESS_RADIUS, FENCE_DECAY_BASE, FENCE_DECAY_STORM,
   ASEXUAL_BASE_CHANCE, REPRODUCE_BOND_MIN_STRENGTH,
   AUTO_LIGHTNING_CHANCE, AUTO_LIGHTNING_DAMAGE, CAVE_WARMTH_BONUS,
   WEATHER_DURATION, RAIN_WATER_BONUS, RAIN_THIRST_REDUCTION, RAIN_FOOD_BONUS,
@@ -21,6 +27,8 @@ import {
   HEATWAVE_THIRST_MULT, HEATWAVE_STRESS_PER_TICK, HEATWAVE_FOOD_EXTRA_DECAY,
   FOG_THIRST_REDUCTION, FOG_STRESS_RELIEF,
   HEAT_PLATED_THIRST_BLOCK, STORM_STRESS_PER_TICK, RAIN_WARMTH_DRAIN,
+  THICK_PELT_WARMTH_MULT, THICK_PELT_STORM_STRESS_MULT,
+  HEATWAVE_FIRE_CHANCE,
   // seasonal food sources
   SPRING_BLOOM_CHANCE, SPRING_BLOOM_RAIN_MULT, SPRING_BLOOM_FOOD, SPRING_BLOOM_BIOME_BIAS,
   SUMMER_RIPARIAN_CHANCE, SUMMER_RIPARIAN_FOOD,
@@ -38,7 +46,7 @@ import {
   // vegetation lifecycle
   TREE_PEAK_AGE, TREE_WITHER_AGE, TREE_DECAY_AGE,
   BUSH_WITHER_CHANCE, BUSH_REGROW_CHANCE,
-  VEG_TREE_CAP, VEG_BUSH_CAP,
+  VEG_TREE_CAP, VEG_BUSH_CAP, FOOD_PATCH_CAP,
   RIVER_EROSION_CHANCE, RIVER_DRYING_CHANCE, RIVER_WINTER_FLOOD_CHANCE,
   FRUIT_DECAY_RATE, FRUIT_OVERPRODUCTION_CAP, TREE_SEED_CHANCE,
   // rain / puddles / snow
@@ -67,6 +75,15 @@ import {
   // awareness stage window tracking
   AWARENESS_STAGE_2_ROLES_REQUIRED,
   AWARENESS_STAGE_3_LEXICON_MIN,
+  AWARENESS_STAGE_4_SENTIENCE_MIN,
+  AWARENESS_STAGE_5_SENTIENCE_MIN,
+  AWARENESS_STAGE_5_DREAMING_MIN,
+  COHORT_PHASE_THRESHOLDS,
+  // neglect & legendary
+  NEGLECT_WARMTH_THRESHOLD, NEGLECT_HUNGER_THRESHOLD, NEGLECT_MIN_AFFECTED, NEGLECT_WARNING_COOLDOWN,
+  LEGENDARY_AGE_MULT, LEGENDARY_OFFSPRING_MIN, LEGENDARY_LINEAGE_GEN_MIN,
+  // enrichment idle decay
+  ENRICHMENT_IDLE_DECAY_DAYS,
   // natural enrichment spawning
   NATURAL_ENRICHMENT_SPAWN_CHANCE, NATURAL_ENRICHMENT_ATTEMPTS_PER_TICK,
   NATURAL_ENRICHMENT_MAX_USES, NATURAL_ENRICHMENT_REGEN_RADIUS,
@@ -80,7 +97,7 @@ import {
 } from '@/creatures/behavior'
 import { DEFAULT_MODIFIERS } from '@/engine/profile'
 import { createOffspring, createAsexualOffspring, getColonyStage, computeAwarenessStage } from '@/creatures/factory'
-import { generateMessage, deathMessage, extinctionMessage, boneMemoryMessage, generateRaceRevivalMessage } from './messages'
+import { generateMessage, deathMessage, extinctionMessage, boneMemoryMessage, generateRaceRevivalMessage, neglectWarningMessage, legendaryMessage } from './messages'
 import { createRng, buildTileIndex } from '@/world/worldGen'
 import { getSpeechContext, buildSentence, learnFromNearby, unlockTierEmoji, assignRole } from '@/engine/speech'
 
@@ -109,22 +126,7 @@ export function tickSimulation(state: GameState): GameState {
   next = tickTime(next)
   next = tickWeather(next, mods)
   next = tickTiles(next, mods)
-  // Recompute global snow coverage as a percentage (for UI display)
-  {
-    let snowTiles = 0
-    let totalTiles = 0
-    const sd = next.tiles
-    for (let y = 0; y < sd.length; y++) {
-      for (let x = 0; x < sd[y].length; x++) {
-        const t = sd[y][x]
-        if (t.type !== 'mountain' && t.type !== 'cliff' && t.type !== 'rock') {
-          totalTiles++
-          if ((t.snowDepth ?? 0) > 0.1) snowTiles++
-        }
-      }
-    }
-    next.snowAccumulation = totalTiles > 0 ? Math.round((snowTiles / totalTiles) * 100) : 0
-  }
+  // snowAccumulation is computed inside tickTiles to avoid a redundant tile scan.
   next = tickCreatures(next, _rng, mods)
 
   // Compute population factor again (creatures may have died this tick).
@@ -141,47 +143,151 @@ export function tickSimulation(state: GameState): GameState {
   next = tickEnrichment(next, _rng)
   next = tickNaturalEnrichment(next, _rng)
 
-  const liveCount = Object.values(next.creatures).filter(c => !c.diedOnDay).length
+  // Single alive pass shared by colony stage, awareness tracking, and vocab window.
+  const aliveAfterReproduction = Object.values(next.creatures).filter(c => !c.diedOnDay)
+  const liveCount = aliveAfterReproduction.length
   next.colonyStage = getColonyStage(liveCount) as GameState['colonyStage']
 
-  // ── Awareness stage — emergent window tracking ──────────────────────────────
-  // Stages are permanent milestones: once reached they never regress, because
-  // each stage reflects a historical achievement in the colony's development.
-  //
-  // Stage 1→2 gate: 4 distinct community roles simultaneously alive.
-  //   Window starts when the condition is first met; resets if it lapses.
-  //   Stage advances only after the window has been sustained for 7 in-game days.
-  //
-  // Stage 2→3 gate: colony vocabulary (union of all alive knownEmoji) ≥ 30 symbols.
-  //   Same window pattern — cultural depth must be a persistent state, not a spike.
+  // ── Cohort phase — permanent generational ratchet ──────────────────────────
+  // Derived from totalGenerations (max generation ever born). Never decreases.
+  // Gates signal depth 4 (phase ≥ 4) and depth 5 (phase ≥ 5).
   {
-    const aliveForStage = Object.values(next.creatures).filter(c => !c.diedOnDay)
+    const g = next.totalGenerations
+    const newPhase: CohortPhase =
+      g >= COHORT_PHASE_THRESHOLDS[5] ? 5 :
+      g >= COHORT_PHASE_THRESHOLDS[4] ? 4 :
+      g >= COHORT_PHASE_THRESHOLDS[3] ? 3 :
+      g >= COHORT_PHASE_THRESHOLDS[2] ? 2 : 1
+    next.cohortPhase = Math.max(next.cohortPhase ?? 1, newPhase) as CohortPhase
+  }
 
-    // Role diversity window
+  // ── Awareness stage — emergent window tracking ──────────────────────────────
+  // Windows for stages 1→2 and 2→3 track role diversity and lexicon depth.
+  // Windows for stages 3→4 and 4→5 track sentience depth within the cohort phase.
+  // A sustained window is required for each advance — brief spikes reset the clock.
+  {
+    const aliveForStage = aliveAfterReproduction
+
+    // Stage 1→2: role diversity window
     const distinctRoles = new Set(aliveForStage.map(c => c.role).filter(r => r !== undefined)).size
     const meetsRoles = distinctRoles >= AWARENESS_STAGE_2_ROLES_REQUIRED
     next.roleWindowStart = meetsRoles
-      ? (next.roleWindowStart ?? next.time.day)  // keep start or record today
-      : undefined                                 // lapsed — reset
+      ? (next.roleWindowStart ?? next.time.day)
+      : undefined
 
-    // Colony vocabulary window
+    // Stage 2→3: colony vocabulary window
     const colonyVocab = new Set<string>()
     for (const c of aliveForStage) c.knownEmoji.forEach(e => colonyVocab.add(e))
     const meetsLexicon = colonyVocab.size >= AWARENESS_STAGE_3_LEXICON_MIN
     next.lexiconWindowStart = meetsLexicon
       ? (next.lexiconWindowStart ?? next.time.day)
       : undefined
+
+    // Stage 3→4: ancestral memory window — requires cohort phase 4 and at least
+    // one alive creature whose sentience has reached deep awakening.
+    const meetsAncestral = (next.cohortPhase ?? 1) >= 4
+      && aliveForStage.some(c => c.sentience >= AWARENESS_STAGE_4_SENTIENCE_MIN)
+    next.ancestralWindowStart = meetsAncestral
+      ? (next.ancestralWindowStart ?? next.time.day)
+      : undefined
+
+    // Stage 4→5: transcendence window — requires cohort phase 5 and at least one
+    // Sentinel Elder at sentience ≥ 88 OR a Dreaming Elder at sentience ≥ 95.
+    const meetsTranscendent = (next.cohortPhase ?? 1) >= 5
+      && aliveForStage.some(c =>
+        c.role === 'elder' && (
+          (c.genome.mind === 'Sentinel' && c.sentience >= AWARENESS_STAGE_5_SENTIENCE_MIN) ||
+          (c.genome.mind === 'Dreaming' && c.sentience >= AWARENESS_STAGE_5_DREAMING_MIN)
+        )
+      )
+    next.transcendentWindowStart = meetsTranscendent
+      ? (next.transcendentWindowStart ?? next.time.day)
+      : undefined
   }
 
   const computedStage = computeAwarenessStage(next)
-  // Stages follow conditions — if role diversity collapses or vocabulary drops,
-  // the stage falls with it. The sustained window requirement prevents flicker:
-  // a brief lapse resets the window, so the colony must rebuild the condition
-  // before it can re-enter the higher stage.
   next.awarenessStage = computedStage
 
   next = tickCaretaker(next, mods)
   next = checkEndgame(next, mods)
+
+  // ── Neglect warning ───────────────────────────────────────────────────────────
+  // Fire a system message when multiple creatures are simultaneously in warmth or
+  // hunger crisis, with a cooldown to avoid message spam.
+  {
+    const alive = aliveAfterReproduction
+    if (alive.length >= 2) {
+      const cooldownOk = (next.lastNeglectWarning === undefined)
+        || (next.time.day - next.lastNeglectWarning >= NEGLECT_WARNING_COOLDOWN)
+
+      if (cooldownOk) {
+        const coldCount = alive.filter(c => c.warmth < NEGLECT_WARMTH_THRESHOLD).length
+        const hungryCount = alive.filter(c => c.hunger > NEGLECT_HUNGER_THRESHOLD).length
+
+        if (coldCount >= NEGLECT_MIN_AFFECTED) {
+          next.messages = [...next.messages, neglectWarningMessage('warmth', coldCount, next.time.day)]
+          next.lastNeglectWarning = next.time.day
+        } else if (hungryCount >= NEGLECT_MIN_AFFECTED) {
+          next.messages = [...next.messages, neglectWarningMessage('hunger', hungryCount, next.time.day)]
+          next.lastNeglectWarning = next.time.day
+        }
+      }
+    }
+  }
+
+  // ── Legendary creature events ─────────────────────────────────────────────────
+  // Check alive creatures for longevity, prolific, or last-of-lineage milestones.
+  {
+    const alive = aliveAfterReproduction
+    const fired = new Set<string>(next.legendaryFired ?? [])
+    const legendaryMessages: ColonyMessage[] = []
+
+    for (const c of alive) {
+      // Longevity: still alive past 2.5× their expected lifespan
+      const longevityKey = `${c.id}:longevity`
+      if (!fired.has(longevityKey) && c.age >= c.maxAge * LEGENDARY_AGE_MULT) {
+        legendaryMessages.push(legendaryMessage('longevity', c, next.time.day, c.id))
+        fired.add(longevityKey)
+      }
+
+      // Prolific: 15+ offspring recorded
+      const prolificKey = `${c.id}:prolific`
+      if (!fired.has(prolificKey) && c.offspringIds.length >= LEGENDARY_OFFSPRING_MIN) {
+        legendaryMessages.push(legendaryMessage('prolific', c, next.time.day, c.id))
+        fired.add(prolificKey)
+      }
+    }
+
+    // Last-of-lineage: only living member of a lineage that ran ≥ 20 generations
+    const lineageLiving = new Map<string, { count: number; maxGen: number }>()
+    for (const c of alive) {
+      const root = c.lineageId.includes('_') ? c.lineageId.split('_')[0] : c.lineageId
+      const entry = lineageLiving.get(root) ?? { count: 0, maxGen: 0 }
+      entry.count++
+      if (c.generation > entry.maxGen) entry.maxGen = c.generation
+      lineageLiving.set(root, entry)
+    }
+    for (const [root, { count, maxGen }] of lineageLiving) {
+      if (count === 1 && maxGen >= LEGENDARY_LINEAGE_GEN_MIN) {
+        const lastOne = alive.find(c => {
+          const r = c.lineageId.includes('_') ? c.lineageId.split('_')[0] : c.lineageId
+          return r === root
+        })
+        if (lastOne) {
+          const lastKey = `${lastOne.id}:last_of_line`
+          if (!fired.has(lastKey)) {
+            legendaryMessages.push(legendaryMessage('last_of_line', lastOne, next.time.day, lastOne.id, maxGen))
+            fired.add(lastKey)
+          }
+        }
+      }
+    }
+
+    if (legendaryMessages.length > 0) {
+      next.messages = [...next.messages, ...legendaryMessages]
+      next.legendaryFired = [...fired]
+    }
+  }
 
   // ── Race population tracking & revival detection ──────────────────────────────
   {
@@ -350,13 +456,17 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
   // Pre-count vegetation so growth checks can enforce world-wide caps.
   // This prevents trees, bushes, and healroot from stacking endlessly; new growth only
   // occurs when the count is below the cap, forcing natural turnover.
-  let treeCount = 0, bushCount = 0, healrootCount = 0
+  // Also track anyBurning here to avoid a second full tile scan later.
+  let treeCount = 0, bushCount = 0, healrootCount = 0, foodPatchCount = 0, anyBurning = false
   for (let vy = 0; vy < WORLD_SIZE; vy++) {
     for (let vx = 0; vx < WORLD_SIZE; vx++) {
-      const vt = state.tiles[vy][vx].type
-      if (vt === 'tree' || vt === 'shelter') treeCount++
-      else if (vt === 'bush') bushCount++
-      else if (vt === 'healroot') healrootCount++
+      const vt = state.tiles[vy][vx]
+      const vtType = vt.type
+      if (vtType === 'tree' || vtType === 'shelter') treeCount++
+      else if (vtType === 'bush') bushCount++
+      else if (vtType === 'healroot') healrootCount++
+      else if (vtType === 'food_patch') foodPatchCount++
+      if (!anyBurning && (vt.burning ?? 0) > 0) anyBurning = true
     }
   }
 
@@ -392,11 +502,18 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
           }
         }
         if (hasMatureTree && t.foodAmount < 100) {
-          writeTile(y, x).foodAmount = Math.min(100, t.foodAmount + FOOD_REGROW_RATE_BASE * regrowMod)
+          let riverAdj = false
+          if (srcTiles[y-1]?.[x]?.type === 'river' || srcTiles[y+1]?.[x]?.type === 'river' ||
+              srcTiles[y]?.[x-1]?.type === 'river' || srcTiles[y]?.[x+1]?.type === 'river') {
+            riverAdj = true
+          }
+          const riverMult = riverAdj ? RIVER_FOOD_ADJACENT_BONUS : 1.0
+          writeTile(y, x).foodAmount = Math.min(100, t.foodAmount + FOOD_REGROW_RATE_BASE * regrowMod * riverMult)
         } else if (!hasMatureTree && t.foodAmount <= 0) {
           const wt = writeTile(y, x)
           wt.type = t.biome === 'arid' ? 'barren' : 'grass'
           wt.foodAmount = 0
+          foodPatchCount--
         }
       }
 
@@ -438,6 +555,21 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
             HEALROOT_MAX_AMOUNT,
             amount + HEALROOT_REGROW_RATE * regrowMod
           )
+        }
+      }
+
+      // Fence decay; storms and winter accelerate degradation; fully decayed fences revert to grass
+      if (t.type === 'fence') {
+        const dur = t.fenceDurability ?? 100
+        const decayRate = (weather === 'storm' || season === 'winter') ? FENCE_DECAY_STORM : FENCE_DECAY_BASE
+        const newDur = dur - decayRate
+        if (newDur <= 0) {
+          const wt = writeTile(y, x)
+          wt.type = 'grass'
+          wt.fenceDurability = undefined
+          wt.fenceType = undefined
+        } else {
+          writeTile(y, x).fenceDurability = newDur
         }
       }
 
@@ -523,9 +655,10 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
                   wt.fruitAge = 0  // fresh fruit reset
                   break
                 }
-                if (target.type === 'grass' && Math.random() < 0.18) {
+                if (target.type === 'grass' && Math.random() < 0.18 && foodPatchCount < FOOD_PATCH_CAP) {
                   const wt = writeTile(ty, tx)
                   wt.type = 'food_patch'; wt.foodAmount = 20; wt.fruitAge = 0
+                  foodPatchCount++
                   break
                 }
               }
@@ -571,6 +704,7 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
           const newAmount = t.foodAmount - FRUIT_DECAY_RATE
           if (newAmount <= 0) {
             const wt = writeTile(y, x)
+            foodPatchCount--
             // Seed system: germinate only when below the tree cap; otherwise decay to grass.
             if (treeCount < VEG_TREE_CAP && Math.random() < TREE_SEED_CHANCE) {
               wt.type = 'tree'; wt.treeAge = 0; wt.shelter = false; wt.foodAmount = 0
@@ -593,6 +727,7 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
           if (newFruitAge > FRUIT_MAX_AGE) {
             wt.type = t.biome === 'arid' ? 'barren' : 'grass'
             wt.foodAmount = 0
+            foodPatchCount--
           }
         }
       }
@@ -603,19 +738,29 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
         if (wilted === 0) {
           const wt = writeTile(y, x)
           wt.type = t.biome === 'arid' ? 'barren' : 'grass'; wt.foodAmount = 0
+          foodPatchCount--
         } else {
           writeTile(y, x).foodAmount = wilted
         }
       }
 
+      // ── Heatwave spontaneous fire: extreme summer heat ignites dry vegetation ──
+      if (weather === 'heatwave' && season === 'summer'
+          && (t.type === 'tree' || t.type === 'shelter' || t.type === 'bush')
+          && (t.burning ?? 0) === 0
+          && Math.random() < HEATWAVE_FIRE_CHANCE) {
+        writeTile(y, x).burning = FIRE_DURATION_TICKS
+      }
+
       // ── Seasonal food sources ─────────────────────────────────────────────
       // Spring bloom: wildflower patches on lush/wetland grass during rain or clear
-      if (season === 'spring' && t.type === 'grass') {
+      if (season === 'spring' && t.type === 'grass' && foodPatchCount < FOOD_PATCH_CAP) {
         const biomeBias = SPRING_BLOOM_BIOME_BIAS[t.biome] ?? 1.0
         const weatherMult = (weather === 'rain' || weather === 'fog') ? SPRING_BLOOM_RAIN_MULT : 1.0
         if (Math.random() < SPRING_BLOOM_CHANCE * biomeBias * weatherMult) {
           const wt = writeTile(y, x)
           wt.type = 'food_patch'; wt.foodAmount = SPRING_BLOOM_FOOD; wt.fruitAge = 0
+          foodPatchCount++
         }
       }
 
@@ -629,9 +774,10 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
             adjacentRiver = true; break
           }
         }
-        if (adjacentRiver && Math.random() < SUMMER_RIPARIAN_CHANCE) {
+        if (adjacentRiver && Math.random() < SUMMER_RIPARIAN_CHANCE && foodPatchCount < FOOD_PATCH_CAP) {
           const wt = writeTile(y, x)
           wt.type = 'food_patch'; wt.foodAmount = SUMMER_RIPARIAN_FOOD; wt.fruitAge = 0
+          foodPatchCount++
         }
       }
 
@@ -642,9 +788,10 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
             const tx = x + ddx, ty = y + ddy
             if (tx < 0 || ty < 0 || tx >= WORLD_SIZE || ty >= WORLD_SIZE) continue
             const adj = srcTiles[ty][tx]
-            if (adj.type === 'grass') {
+            if (adj.type === 'grass' && foodPatchCount < FOOD_PATCH_CAP) {
               const wt = writeTile(ty, tx)
               wt.type = 'food_patch'; wt.foodAmount = AUTUMN_WINDFALL_FOOD; wt.fruitAge = 0
+              foodPatchCount++
               break
             } else if (adj.type === 'food_patch' && adj.foodAmount < 80) {
               writeTile(ty, tx).foodAmount = Math.min(100, adj.foodAmount + AUTUMN_WINDFALL_FOOD)
@@ -658,9 +805,13 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
             const tx = x + ddx, ty = y + ddy
             if (tx < 0 || ty < 0 || tx >= WORLD_SIZE || ty >= WORLD_SIZE) continue
             const adj = srcTiles[ty][tx]
-            if (adj.type === 'grass' || (adj.type === 'food_patch' && adj.foodAmount < 50)) {
+            if (adj.type === 'grass' && foodPatchCount < FOOD_PATCH_CAP) {
               const wt = writeTile(ty, tx)
-              wt.type = 'food_patch'; wt.foodAmount = Math.min(100, (adj.foodAmount ?? 0) + AUTUMN_MUSHROOM_FOOD)
+              wt.type = 'food_patch'; wt.foodAmount = AUTUMN_MUSHROOM_FOOD
+              wt.fruitAge = 0; foodPatchCount++; break
+            } else if (adj.type === 'food_patch' && adj.foodAmount < 50) {
+              const wt = writeTile(ty, tx)
+              wt.foodAmount = Math.min(100, (adj.foodAmount ?? 0) + AUTUMN_MUSHROOM_FOOD)
               wt.fruitAge = 0; break
             }
           }
@@ -678,9 +829,10 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
                   && srcTiles[cy][cx].type === 'cave') nearCave = true
             }
           }
-          if (nearCave) {
+          if (nearCave && foodPatchCount < FOOD_PATCH_CAP) {
             const wt = writeTile(y, x)
             wt.type = 'food_patch'; wt.foodAmount = WINTER_LICHEN_FOOD; wt.fruitAge = 0
+            foodPatchCount++
           }
         }
       }
@@ -833,8 +985,7 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
     }
   }
 
-  // Fire spread; only checked when there's any burning. Cheap early exit.
-  const anyBurning = tiles.some(row => row.some(t => (t.burning ?? 0) > 0))
+  // Fire spread; only checked when there's any burning (tracked in pre-count pass).
   if (anyBurning) {
     for (let y = 0; y < WORLD_SIZE; y++) {
       for (let x = 0; x < WORLD_SIZE; x++) {
@@ -938,7 +1089,22 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
     }
   }
 
-  return { ...state, tiles }
+  // Snow accumulation computed here to avoid a separate O(n²) pass in tickSimulation.
+  let snowTiles = 0, totalSnowableTiles = 0
+  for (let sy = 0; sy < WORLD_SIZE; sy++) {
+    for (let sx = 0; sx < WORLD_SIZE; sx++) {
+      const st = tiles[sy][sx]
+      if (st.type !== 'mountain' && st.type !== 'cliff' && st.type !== 'rock') {
+        totalSnowableTiles++
+        if ((st.snowDepth ?? 0) > 0.1) snowTiles++
+      }
+    }
+  }
+  const snowAccumulation = totalSnowableTiles > 0
+    ? Math.round((snowTiles / totalSnowableTiles) * 100)
+    : 0
+
+  return { ...state, tiles, snowAccumulation }
 }
 
 // ─── Creatures ────────────────────────────────────────────────────────────────
@@ -980,31 +1146,48 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
     let c = { ...creatures[id] }
     if (c.diedOnDay !== null) continue
 
+    // Absence imprint: colony is unsettled for several in-game days after a long absence.
+    if ((state.absenceImprint ?? 0) > 0) {
+      c.stress = Math.min(100, c.stress + ABSENCE_IMPRINT_STRESS_PER_TICK)
+    }
+
     const creatureTile = state.tiles[c.y]?.[c.x]
     // Track biome for environmental visual adaptation
     if (creatureTile?.biome) c.dominantBiome = creatureTile.biome
     c = tickNeeds(c, state.time.season, creatureTile?.biome)
 
-    // Night warmth spike; doubles effective warmth decay at night, forcing
-    // creatures toward shelter/caves before conditions become critical.
-    // cave_sighted creatures are adapted to dark environments and skip this penalty.
-    if (state.time.phase === 'night' && !c.genome.adaptations?.includes('cave_sighted')) {
-      const extraDrain = state.time.season === 'winter' ? WARMTH_DECAY_WINTER : WARMTH_DECAY_BASE
-      c.warmth = Math.max(0, c.warmth - extraDrain)
-    }
-
     // Weather thirst/stress correction; rain/storm reduces thirst; drought/heat increases it.
     // Adaptation traits block or reduce specific weather penalties.
     const adaptations = c.genome.adaptations ?? []
+
+    // Night warmth spike; doubles effective warmth decay at night, forcing
+    // creatures toward shelter/caves before conditions become critical.
+    // cave_sighted creatures are adapted to dark environments and skip this penalty.
+    // thick_pelt lineages retain heat even at night (broad insulation).
+    if (state.time.phase === 'night' && !adaptations.includes('cave_sighted')) {
+      const extraDrain = state.time.season === 'winter' ? WARMTH_DECAY_WINTER : WARMTH_DECAY_BASE
+      const peltMult = adaptations.includes('thick_pelt') ? THICK_PELT_WARMTH_MULT : 1.0
+      c.warmth = Math.max(0, c.warmth - extraDrain * peltMult)
+    }
+
     if (weather === 'rain' || weather === 'storm') {
       c.thirst = Math.max(0, c.thirst - THIRST_DECAY * RAIN_THIRST_REDUCTION)
-      // Rain chills exposed creatures; cold_hardy lineages partially resist
-      const rainWarmthDrain = RAIN_WARMTH_DRAIN * (weather === 'storm' ? 1.5 : 1.0)
-        * (adaptations.includes('cold_hardy') ? 0.5 : 1.0)
-      c.warmth = Math.max(0, c.warmth - rainWarmthDrain)
-      // Storm adds baseline stress; storm_braced lineages are immune
+      // Terrain elevation provides storm shelter; rocky biome + high ground reduces exposure
+      const creatureTileForStorm = state.tiles[c.y]?.[c.x]
+      const isElevatedRocky = creatureTileForStorm?.biome === 'rocky'
+        && (creatureTileForStorm?.elevation ?? 0) > 0.3
+      // Stacking trait protection: cold_hardy + thick_pelt compound; elevation is additive
+      let warmthDrainMult = weather === 'storm' ? 1.5 : 1.0
+      if (adaptations.includes('cold_hardy')) warmthDrainMult *= 0.5
+      if (adaptations.includes('thick_pelt')) warmthDrainMult *= THICK_PELT_WARMTH_MULT
+      if (weather === 'storm' && isElevatedRocky) warmthDrainMult *= 0.5
+      c.warmth = Math.max(0, c.warmth - RAIN_WARMTH_DRAIN * warmthDrainMult)
+      // Storm adds baseline stress; storm_braced lineages are immune; others may be reduced
       if (weather === 'storm' && !adaptations.includes('storm_braced')) {
-        c.stress = Math.min(100, c.stress + STORM_STRESS_PER_TICK)
+        let stressMult = 1.0
+        if (adaptations.includes('thick_pelt')) stressMult *= THICK_PELT_STORM_STRESS_MULT
+        if (isElevatedRocky) stressMult *= 0.6
+        c.stress = Math.min(100, c.stress + STORM_STRESS_PER_TICK * stressMult)
       }
     } else if (weather === 'drought') {
       c.thirst = Math.min(100, c.thirst + THIRST_DECAY * DROUGHT_THIRST_PENALTY)
@@ -1038,6 +1221,7 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
       if (c.health >= DISEASE_RECOVERY_HEALTH) {
         c.state = 'idle'
         c.stateTimer = 0
+        c.immunity = Math.min(1, (c.immunity ?? 0) + DISEASE_IMMUNITY_GAIN)
       }
     }
 
@@ -1055,7 +1239,7 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
       if ((c.stateTimer ?? 0) >= 30) { c.state = 'idle'; c.stateTimer = 0 }
     }
 
-    const behaviorChanges = tickBehavior(c, tiles, creatures, state.time.season, aliveCreatures, tileIdx, state.enrichmentItems)
+    const behaviorChanges = tickBehavior(c, tiles, creatures, state.time.season, aliveCreatures, tileIdx, state.enrichmentItems, weather)
     c = { ...c, ...behaviorChanges }
 
     // Playing state; applies stress reduction and times out after PLAY_DURATION_TICKS
@@ -1141,6 +1325,52 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
         }
       }
 
+      // Harvesting — creature has arrived at a tree or rock tile; collect resource
+      if (c.state === 'harvesting' && c.targetX === c.x && c.targetY === c.y) {
+        const isTree = currentTile.type === 'tree' || currentTile.type === 'shelter'
+        const isRock = currentTile.type === 'rock' || currentTile.type === 'cave'
+        if (isTree || isRock) {
+          c = { ...c, carrying: isTree ? 'wood' : 'stone', state: 'idle', targetX: null, targetY: null }
+        } else {
+          // Arrived but tile type changed (e.g. tree burned); abandon this task
+          c = { ...c, state: 'idle', targetX: null, targetY: null }
+        }
+      }
+
+      // Building — creature has arrived at its build target; validate tile and place fence
+      if (c.state === 'building' && c.targetX === c.x && c.targetY === c.y
+          && (c.carrying === 'wood' || c.carrying === 'stone')) {
+        const validBuildTypes = new Set(['grass', 'barren', 'food_patch', 'death_site', 'bush'])
+        let bx = c.x, by = c.y
+        // If current tile is invalid (terrain changed), search for nearest valid alternative
+        if (!validBuildTypes.has(currentTile.type)) {
+          const claim = c.territoryClaim ?? { x: c.x, y: c.y }
+          let bestDist = Infinity
+          outer: for (let dy = -FENCE_STRESS_RADIUS * 2; dy <= FENCE_STRESS_RADIUS * 2; dy++) {
+            for (let dx = -FENCE_STRESS_RADIUS * 2; dx <= FENCE_STRESS_RADIUS * 2; dx++) {
+              const tx = claim.x + dx, ty = claim.y + dy
+              if (tx < 0 || ty < 0 || tx >= 240 || ty >= 240) continue
+              const t = tiles[ty]?.[tx]
+              if (!t || !validBuildTypes.has(t.type)) continue
+              const dist = Math.abs(dx) + Math.abs(dy)
+              if (dist < bestDist) { bestDist = dist; bx = tx; by = ty }
+              if (bestDist <= 1) break outer
+            }
+          }
+        }
+        const buildTile = tiles[by]?.[bx]
+        if (buildTile && validBuildTypes.has(buildTile.type)) {
+          if (!clonedTileRows[by]) { tiles[by] = srcTiles[by].slice(); clonedTileRows[by] = 1 }
+          tiles[by][bx] = {
+            ...buildTile,
+            type: 'fence',
+            fenceDurability: FENCE_INITIAL_DURABILITY,
+            fenceType: c.carrying === 'wood' ? 'wood' : 'stone',
+          }
+        }
+        c = { ...c, carrying: undefined, state: 'idle', targetX: null, targetY: null }
+      }
+
       // Cave warmth and food caching; shelter insulates and slows hunger
       if (currentTile.type === 'cave') {
         c.warmth = Math.min(100, c.warmth + CAVE_WARMTH_BONUS)
@@ -1163,8 +1393,8 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
       // Each bonded neighbour within 1 tile grants a small warmth bonus (capped at 3).
       if (state.time.season === 'winter') {
         let bondedAdjacent = 0
-        for (const other of Object.values(creatures)) {
-          if (other.id === c.id || other.diedOnDay !== null) continue
+        for (const other of aliveCreatures) {
+          if (other.id === c.id) continue
           if (Math.abs(other.x - c.x) <= 1 && Math.abs(other.y - c.y) <= 1) {
             if (c.bonds.some(b => b.targetId === other.id && b.strength >= 20)) {
               bondedAdjacent++
@@ -1336,6 +1566,19 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
           c.targetX = Math.max(0, Math.min(WORLD_SIZE - 1, c.x + dx * 6))
           c.targetY = Math.max(0, Math.min(WORLD_SIZE - 1, c.y + dy * 6))
         }
+
+        // Generational memory: surviving fire encodes a fire symbol into vocabulary.
+        if (c.health > 0 && !c.knownEmoji.includes('🔥')) {
+          c.knownEmoji = [...c.knownEmoji, '🔥']
+        }
+      }
+
+      // Generational memory: lightning and drought encode event symbols.
+      if ((currentTile.lightningFlash ?? 0) > Date.now() - 3000 && !c.knownEmoji.includes('⚡')) {
+        c.knownEmoji = [...c.knownEmoji, '⚡']
+      }
+      if (state.weather === 'drought' && c.thirst > 70 && !c.knownEmoji.includes('🌾')) {
+        c.knownEmoji = [...c.knownEmoji, '🌾']
       }
     }
 
@@ -1346,8 +1589,8 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
       && c.health > 35) {
       // Count adjacent creatures (radius 1) cheaply
       let crowding = 0
-      for (const other of Object.values(creatures)) {
-        if (other.id === c.id || other.diedOnDay !== null) continue
+      for (const other of aliveCreatures) {
+        if (other.id === c.id) continue
         if (Math.abs(other.x - c.x) <= 1 && Math.abs(other.y - c.y) <= 1) {
           crowding++
           if (other.state === 'sick') crowding += 2  // proximity to sick = higher risk
@@ -1355,10 +1598,42 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
         }
       }
       const popPressure = (aliveCount - DISEASE_POP_THRESHOLD) / 30  // 0..ish
-      if (crowding >= 3 && Math.random() < DISEASE_CONTACT_CHANCE * (1 + popPressure) * crowding) {
+      const immunityReduction = 1 - Math.min(DISEASE_IMMUNITY_PROTECTION, (c.immunity ?? 0) * DISEASE_IMMUNITY_PROTECTION)
+      if (crowding >= 3 && Math.random() < DISEASE_CONTACT_CHANCE * (1 + popPressure) * crowding * immunityReduction) {
         c.state = 'sick'
         c.stateTimer = 0
         c.health = Math.max(15, c.health - 6)
+      }
+    }
+
+    // Bond-based spread: sick bonded partners nearby raise contact chance significantly.
+    if (c.state !== 'sick' && c.health > 25) {
+      const hasSickBondedNeighbour = c.bonds.some(b => {
+        const other = creatures[b.targetId]
+        return other && other.diedOnDay === null && other.state === 'sick'
+          && b.strength >= 30
+          && Math.abs(other.x - c.x) <= 2 && Math.abs(other.y - c.y) <= 2
+      })
+      if (hasSickBondedNeighbour) {
+        const bondImmunityReduction = 1 - Math.min(DISEASE_IMMUNITY_PROTECTION, (c.immunity ?? 0) * DISEASE_IMMUNITY_PROTECTION)
+        if (Math.random() < DISEASE_CONTACT_CHANCE * DISEASE_BOND_SPREAD_MULT * bondImmunityReduction) {
+          c.state = 'sick'
+          c.stateTimer = 0
+          c.health = Math.max(15, c.health - 4)
+        }
+      }
+    }
+
+    // Lineage rivalry: diverged lineages cause passive stress when in proximity.
+    if (c.tribeId !== null || c.lineageId) {
+      const hasRival = aliveCreatures.some(other =>
+        other.id !== c.id &&
+        other.lineageId !== c.lineageId &&
+        Math.abs(other.x - c.x) <= RIVAL_PROXIMITY_RADIUS &&
+        Math.abs(other.y - c.y) <= RIVAL_PROXIMITY_RADIUS
+      )
+      if (hasRival) {
+        c.stress = Math.min(100, c.stress + RIVAL_STRESS_PER_TICK)
       }
     }
 
@@ -1428,7 +1703,7 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
     // Sentience messages; stage-3 can be questions; responses acknowledge tool actions
     if (c.sentience > 20) {
       const respondedToQuestion = state.caretaker.respondedToQuestion ?? false
-      const result = generateMessage(c, state.awarenessStage, state.time.day, lastMsgDay, respondedToQuestion, mods.awarenessMessageMult)
+      const result = generateMessage(c, state.awarenessStage, state.time.day, lastMsgDay, respondedToQuestion, mods.awarenessMessageMult, state.caretaker.lastToolUsed)
       if (result) {
         messages.push(result.message)
         lastMsgDay = result.message.day
@@ -1443,20 +1718,21 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
     }
 
     // Q7A: Grief — bonds toward dead creatures fade over ~5 game-days then dissolve.
-    c.bonds = c.bonds
-      .map(b => creatures[b.targetId]?.diedOnDay !== null
-        ? { ...b, strength: b.strength - DEAD_BOND_FADE_PER_TICK }
-        : b
-      )
-      .filter(b => b.strength > 0)
+    if (c.bonds.length > 0 && c.bonds.some(b => creatures[b.targetId]?.diedOnDay !== null)) {
+      c.bonds = c.bonds
+        .map(b => creatures[b.targetId]?.diedOnDay !== null
+          ? { ...b, strength: b.strength - DEAD_BOND_FADE_PER_TICK }
+          : b
+        )
+        .filter(b => b.strength > 0)
+    }
 
     // Bond formation with adjacent creatures + milestone emission.
     // Milestones (35, 70) only emit from the lower-id side of each pair to
     // avoid duplicate flipped messages. Stage is always 1 (mundane social
     // observation) regardless of colony awareness.
-    const nearby = Object.values(creatures).filter(
+    const nearby = aliveCreatures.filter(
       other => other.id !== c.id &&
-      other.diedOnDay === null &&
       Math.abs(other.x - c.x) <= 1 &&
       Math.abs(other.y - c.y) <= 1
     )
@@ -1469,9 +1745,14 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
 
       const prevStrength = existingBond.strength
       const nextStrength = Math.min(100, prevStrength + BOND_STRENGTH_PER_TICK * mods.bondSpeedMult)
-      c.bonds = c.bonds.map(b =>
-        b.targetId === other.id ? { ...b, strength: nextStrength } : b
-      )
+      const bondIdx = c.bonds.indexOf(existingBond)
+      if (bondIdx !== -1) {
+        c.bonds = [
+          ...c.bonds.slice(0, bondIdx),
+          { ...existingBond, strength: nextStrength },
+          ...c.bonds.slice(bondIdx + 1),
+        ]
+      }
 
       // Canonical ordering: only the creature with the smaller id emits the
       // social message, so we don't get "A stays close to B" AND "B stays close to A".
@@ -1849,6 +2130,22 @@ function tickEnrichment(state: GameState, rng: () => number): GameState {
       }
     }
 
+    // Idle decay: player-placed items that haven't been used for ENRICHMENT_IDLE_DECAY_DAYS
+    // lose one use. This prevents abandoned items from cluttering the map indefinitely.
+    if (updatedItems[id] && !updatedItems[id].usedBy && !updatedItems[id].natural) {
+      const idleDays = state.time.day - (updatedItems[id].placedOnDay ?? 0)
+      if (idleDays > 0 && idleDays % ENRICHMENT_IDLE_DECAY_DAYS === 0) {
+        const usesLeft = (updatedItems[id].usesRemaining ?? updatedItems[id].maxUses ?? 40) - 1
+        if (usesLeft <= 0) {
+          delete updatedItems[id]
+          changed = true
+          continue
+        }
+        updatedItems[id] = { ...updatedItems[id], usesRemaining: usesLeft }
+        changed = true
+      }
+    }
+
     // Claim item for creature that is using_enrichment at target id
     if (updatedItems[id] && !updatedItems[id].usedBy) {
       for (const cid in state.creatures) {
@@ -1965,31 +2262,89 @@ function tickNaturalEnrichment(state: GameState, rng: () => number): GameState {
 // ─── Tribes ───────────────────────────────────────────────────────────────────
 
 function tickTribes(state: GameState): GameState {
-  if (Object.keys(state.tribes).length === 0) return state
+  const creatures = state.creatures
+  const alive = Object.values(creatures).filter(c => c.diedOnDay === null)
+
+  if (alive.length < 4) return state  // too early for tribal dynamics
 
   const tribes = { ...state.tribes }
+  const messages: ColonyMessage[] = [...state.messages]
 
+  // Update tribal lexicon for existing tribes
   for (const tribeId in tribes) {
     const tribe = tribes[tribeId]
     const members = tribe.memberIds
-      .map(id => state.creatures[id])
+      .map(id => creatures[id])
       .filter(c => c && c.diedOnDay === null)
-
     if (members.length === 0) continue
-
-    // Merge all member vocab into tribal lexicon; only add, never remove.
-    // This preserves cultural memory even when knowledgeable creatures die.
     const currentLexicon = new Set(tribe.tribalLexicon ?? [])
     for (const member of members) {
-      for (const emoji of member.knownEmoji) {
-        currentLexicon.add(emoji)
-      }
+      for (const emoji of member.knownEmoji) currentLexicon.add(emoji)
     }
-
     tribes[tribeId] = { ...tribe, tribalLexicon: [...currentLexicon] }
   }
 
-  return { ...state, tribes }
+  // Detect inter-lineage conflict: creatures from different lineages in close proximity
+  // Group alive creatures by lineageId
+  const lineageGroups = new Map<string, typeof alive>()
+  for (const c of alive) {
+    const g = lineageGroups.get(c.lineageId) ?? []
+    g.push(c)
+    lineageGroups.set(c.lineageId, g)
+  }
+
+  const lineageIds = [...lineageGroups.keys()]
+  let hasConflict = false
+
+  if (lineageIds.length >= 2) {
+    // Check each pair of lineage groups for territory overlap
+    for (let i = 0; i < lineageIds.length - 1; i++) {
+      const groupA = lineageGroups.get(lineageIds[i])!
+      for (let j = i + 1; j < lineageIds.length; j++) {
+        const groupB = lineageGroups.get(lineageIds[j])!
+
+        // Find members from each group who are near members of the other
+        for (const a of groupA) {
+          for (const b of groupB) {
+            if (Math.abs(a.x - b.x) > 6 || Math.abs(a.y - b.y) > 6) continue
+            hasConflict = true
+
+            // Occasional inter-lineage attack
+            if (Math.random() < TRIBE_WAR_FIGHT_CHANCE) {
+              const attacker = Math.random() < 0.5 ? a : b
+              const defender = attacker === a ? b : a
+              const atkEntry = creatures[attacker.id]
+              const defEntry = creatures[defender.id]
+              if (atkEntry && defEntry && atkEntry.diedOnDay === null && defEntry.diedOnDay === null) {
+                // Tribal attacks: note the event without full fight resolution
+                if (state.time.day - (messages[messages.length - 1]?.day ?? -99) >= 2) {
+                  messages.push({
+                    id: uuid(),
+                    text: `${attacker.name} and ${defender.name} clashed at the boundary between lineages`,
+                    stage: 1 as const,
+                    creatureId: attacker.id,
+                    day: state.time.day,
+                    timestamp: Date.now(),
+                    read: false,
+                  })
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Fracture tracking: sustained inter-lineage conflict moves toward fracture endgame
+  let tribeWarStart = state.tribeWarStart
+  if (hasConflict) {
+    tribeWarStart = tribeWarStart ?? state.time.day
+  } else {
+    tribeWarStart = undefined
+  }
+
+  return { ...state, tribes, messages, tribeWarStart }
 }
 
 // ─── Caretaker ────────────────────────────────────────────────────────────────
@@ -2011,7 +2366,10 @@ function tickCaretaker(state: GameState, mods: SimModifiers): GameState {
     caretaker.lastSeasonRedirect = state.time.season
   }
 
-  return { ...state, caretaker }
+  // Tick down absence imprint one in-game day per tick (approximate)
+  const absenceImprint = Math.max(0, (state.absenceImprint ?? 0) - DAY_FRACTION_PER_TICK)
+
+  return { ...state, caretaker, absenceImprint }
 }
 
 // ─── Endgame ─────────────────────────────────────────────────────────────────
@@ -2051,6 +2409,32 @@ function checkEndgame(state: GameState, _mods: SimModifiers): GameState {
     }
   }
 
+  // Fracture: sustained inter-lineage conflict collapses the colony into separate groups.
+  if (state.tribeWarStart !== undefined && state.endgame === null) {
+    const daysSinceWarStart = state.time.day - state.tribeWarStart
+    if (daysSinceWarStart >= TRIBE_WAR_SUSTAIN_DAYS) {
+      const alive2 = Object.values(state.creatures).filter(c => c.diedOnDay === null)
+      if (alive2.length >= 8) {  // must have enough creatures to actually fracture
+        return {
+          ...state,
+          endgame: 'fracture',
+          messages: [
+            ...state.messages,
+            {
+              id: uuid(),
+              text: 'the colony has fractured. two lineages could not share the territory.',
+              stage: 1 as const,
+              creatureId: null,
+              day: state.time.day,
+              timestamp: Date.now(),
+              read: false,
+            }
+          ]
+        }
+      }
+    }
+  }
+
   return state
 }
 
@@ -2064,18 +2448,18 @@ function createEvent(
 ): GameEvent {
   const titles: Record<EventType, string> = {
     fight: 'Conflict detected',
-    sickness: 'A creature is sick',
+    sickness: 'Subject is sick',
     drought: 'Drought warning',
     stranger: 'Unknown creature spotted',
     tree_needed: 'Colony needs shelter',
-    creature_missing: 'A creature has not moved',
+    creature_missing: 'Subject stationary',
     food_low: 'Food running low',
     flood_warning: 'Flood risk rising',
     bond_formed: 'A bond formed',
-    death: 'A creature has died',
-    new_generation: 'New generation born',
-    tribe_war: 'Tribes are at war',
-    ascension_near: 'Something is shifting',
+    death: 'Subject deceased',
+    new_generation: 'New generation recorded',
+    tribe_war: 'Lineage conflict',
+    ascension_near: 'Signal depth increasing',
   }
 
   return {

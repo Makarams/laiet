@@ -5,6 +5,7 @@ import {
   HUNGER_DECAY, THIRST_DECAY, WARMTH_DECAY_BASE, WARMTH_DECAY_WINTER,
   STRESS_DECAY_BASE, HUNGER_CRITICAL, THIRST_CRITICAL, WARMTH_CRITICAL, STRESS_CRITICAL,
   COLD_HARDY_WARMTH_MULT, DROUGHT_TOUGH_HUNGER_MULT, HYDRO_FINS_THIRST_MULT,
+  THICK_PELT_WARMTH_MULT,
   HUNGER_SEEK_THRESHOLD, THIRST_SEEK_THRESHOLD, WARMTH_SEEK_THRESHOLD,
   FOOD_EAT_AMOUNT,
   MOVE_SPEED_BY_BODY, REPRODUCE_RATE_BY_BODY, FIGHT_POWER_BY_BODY,
@@ -12,16 +13,60 @@ import {
   TILE_MOVE_MODIFIER, BIOME_THIRST_EXTRA, REPRODUCE_BOND_MIN_STRENGTH,
   RECLUSE_CROWD_RADIUS, RECLUSE_CROWD_THRESHOLD,
   PLAY_TRIGGER_SATISFACTION, PLAY_PARTNER_RADIUS,
-  ENRICHMENT_USE_RADIUS, ENRICHMENT_EFFECTS, ENRICHMENT_COOLDOWN_TICKS,
+  ENRICHMENT_USE_RADIUS, ENRICHMENT_SEEK_RADIUS, ENRICHMENT_EFFECTS, ENRICHMENT_COOLDOWN_TICKS,
   HEALROOT_SEEK_HEALTH, HEALROOT_HEAL_PER_USE, HEALROOT_CONSUME_AMOUNT,
   EARLY_GEN_MAX, EARLY_GEN_COHESION_RADIUS,
   CROWD_DISPERSE_THRESHOLD, CROWD_DISPERSE_RADIUS,
   CROWD_DISPERSE_DISTANCE_MIN, CROWD_DISPERSE_DISTANCE_MAX,
   WEATHER_BREED_MULT,
   PUDDLE_MOVE_MODIFIER, PUDDLE_MOVE_THRESHOLD,
+  HARVEST_TRIGGER_SATISFACTION, HARVEST_RADIUS, BUILD_TERRITORY_RADIUS,
+  FOOD_SEEK_MIN_AMOUNT, FOOD_SEEK_FALLBACK_RADIUS, PUDDLE_DRINK_RADIUS,
+  TIDE_WATER_SEEK_RADIUS, BLOOM_HUNGER_THRESHOLD,
 } from '@/engine/constants'
 import { findNearestTileOfType, findNearestInIndex, getTile, isTilePassable, TileTypeIndex } from '@/world/worldGen'
 import { tickSentience } from './factory'
+
+// ─── Build terrain validation ────────────────────────────────────────────────
+
+// Flat open ground that can accept a fence. Rivers, mountains, cliffs, trees,
+// existing rock/cave/fence, healroot, and flooded tiles are all excluded.
+function isValidBuildTile(tile: Tile): boolean {
+  switch (tile.type) {
+    case 'grass':
+    case 'barren':
+    case 'food_patch':
+    case 'death_site':
+    case 'bush':
+      return true
+    default:
+      return false
+  }
+}
+
+// Search outward from the territory claim center for the nearest valid build spot.
+// Auto-reroutes past blocked tiles (river, tree, mountain, etc.) without the
+// creature needing to know why those tiles are invalid.
+function findNearestValidBuildSpot(
+  claim: { x: number; y: number },
+  tiles: Tile[][],
+  radius: number
+): { x: number; y: number } | null {
+  let bestDist = Infinity
+  let best: { x: number; y: number } | null = null
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      const tx = claim.x + dx
+      const ty = claim.y + dy
+      if (tx < 0 || ty < 0 || tx >= WORLD_SIZE || ty >= WORLD_SIZE) continue
+      const tile = tiles[ty]?.[tx]
+      if (!tile || !isValidBuildTile(tile)) continue
+      const dist = Math.abs(dx) + Math.abs(dy)
+      if (dist < bestDist) { bestDist = dist; best = { x: tx, y: ty } }
+    }
+  }
+  return best
+}
 
 // ─── Needs decay ─────────────────────────────────────────────────────────────
 
@@ -31,7 +76,9 @@ export function tickNeeds(creature: Creature, season: Season, biome?: string): C
   const adaptations = c.genome.adaptations ?? []
 
   // Adaptation modifiers on base needs decay
-  const warmthMult  = adaptations.includes('cold_hardy')    ? COLD_HARDY_WARMTH_MULT  : 1.0
+  // thick_pelt stacks multiplicatively with cold_hardy for maximum insulation
+  const warmthMult  = (adaptations.includes('cold_hardy') ? COLD_HARDY_WARMTH_MULT : 1.0)
+    * (adaptations.includes('thick_pelt') ? THICK_PELT_WARMTH_MULT : 1.0)
   const hungerMult  = adaptations.includes('drought_tough') ? DROUGHT_TOUGH_HUNGER_MULT : 1.0
   // hydro_fins reduces thirst on wetland and river tiles
   const thirstMult  = (adaptations.includes('hydro_fins') && (biome === 'wetland' || biome === 'river'))
@@ -142,6 +189,7 @@ function pickThought(c: Creature): ThoughtSymbol {
   if (c.state === 'fleeing' || (c.health < 25 && c.stress > 55)) return 'stressed'
   if (c.state === 'mourning')                    return 'mourning'
   if (c.state === 'grooming')                    return 'grooming'
+  if (c.state === 'harvesting' || c.state === 'building') return 'building'
   if (c.state === 'playing' || c.state === 'using_enrichment') return 'playing'
   // observing: Sentinel actively patrolling the boundary — show 'watching' only when in that state
   if (c.state === 'observing')                   return 'watching'
@@ -170,7 +218,8 @@ export function tickBehavior(
   season: Season,
   aliveCreatures: Creature[],       // pre-filtered alive array; avoids repeated Object.values
   tileIdx?: TileTypeIndex,          // pre-built index; avoids O(d²) tile scans
-  enrichmentItems?: Record<string, EnrichmentItem>
+  enrichmentItems?: Record<string, EnrichmentItem>,
+  weather?: WeatherState
 ): Partial<Creature> {
   const c = creature
   const changes: Partial<Creature> = {}
@@ -245,12 +294,26 @@ export function tickBehavior(
 
   // ── 3. Critical survival (pre-emptive; seek before truly desperate) ──
   if (c.hunger > HUNGER_SEEK_THRESHOLD) {
+    // Bloom race (season-sensitive, reproduction-amplified) seeks food more eagerly.
+    const effectiveHungerMin = c.genome.race === 'Bloom' ? BLOOM_HUNGER_THRESHOLD : FOOD_SEEK_MIN_AMOUNT
     const foodTile = findNearest(['food_patch', 'bush'], 20)
-    if (foodTile && foodTile.foodAmount > 0) {
+    if (foodTile && foodTile.foodAmount > effectiveHungerMin) {
       changes.state = 'seeking_food'
       changes.targetX = foodTile.x
       changes.targetY = foodTile.y
       return changes
+    }
+
+    // Wider fallback before committing to migration — cheaper than crossing the map.
+    // Bridges the gap between the 20-tile normal scan and hunger > 55 migration trigger.
+    if (!foodTile || foodTile.foodAmount <= effectiveHungerMin) {
+      const widerTile = findNearest(['food_patch', 'bush'], FOOD_SEEK_FALLBACK_RADIUS)
+      if (widerTile && widerTile.foodAmount > FOOD_SEEK_MIN_AMOUNT) {
+        changes.state = 'seeking_food'
+        changes.targetX = widerTile.x
+        changes.targetY = widerTile.y
+        return changes
+      }
     }
 
     // No food found locally; migrate. Pick a distant spot to scout.
@@ -280,7 +343,18 @@ export function tickBehavior(
   }
 
   if (c.thirst > THIRST_SEEK_THRESHOLD) {
-    const waterTile = findNearest(['river'], 24)
+    // Check for puddle/mud tiles first — closer water that's already available.
+    // Puddle drinking happens at tile level in tick.ts; here we just direct the creature toward it.
+    const puddleTile = findNearest(['mud'], PUDDLE_DRINK_RADIUS)
+    if (puddleTile) {
+      changes.state = 'seeking_water'
+      changes.targetX = puddleTile.x
+      changes.targetY = puddleTile.y
+      return changes
+    }
+    // Tide race (riparian specialist) can detect rivers from farther away.
+    const waterRadius = c.genome.race === 'Tide' ? TIDE_WATER_SEEK_RADIUS : 24
+    const waterTile = findNearest(['river'], waterRadius)
     if (waterTile) {
       changes.state = 'seeking_water'
       changes.targetX = waterTile.x
@@ -297,6 +371,17 @@ export function tickBehavior(
       changes.state = 'seeking_shelter'
       changes.targetX = shelterTile.x
       changes.targetY = shelterTile.y
+      return changes
+    }
+  }
+
+  // Storm shelter-seeking; exposed creatures flee to caves during storms before warmth crises
+  if (weather === 'storm' && c.warmth < WARMTH_SEEK_THRESHOLD + 10) {
+    const caveTile = findNearest(['cave'], 18)
+    if (caveTile) {
+      changes.state = 'seeking_shelter'
+      changes.targetX = caveTile.x
+      changes.targetY = caveTile.y
       return changes
     }
   }
@@ -654,6 +739,46 @@ export function tickBehavior(
       break
   }
 
+  // ── 5.4. Harvesting & construction; Territorial/Aggressive creatures build fences ──
+  // Only triggers when needs are satisfied — building is an expression of security,
+  // not a survival response. Requires an active territory claim.
+  if (!targetSet
+      && (c.genome.personality === 'Territorial' || c.genome.personality === 'Aggressive')
+      && c.territoryClaim !== null
+      && c.needSatisfaction >= HARVEST_TRIGGER_SATISFACTION
+      && c.hunger < 45
+      && c.health > 50
+      && c.state !== 'harvesting'
+      && c.state !== 'building') {
+
+    if (!c.carrying) {
+      // Phase 1: find a nearby resource to harvest (tree → wood, rock → stone)
+      const resourceTile = findNearest(['tree', 'shelter', 'rock', 'cave'], HARVEST_RADIUS)
+      if (resourceTile && Math.random() < 0.04) {
+        changes.state = 'harvesting'
+        changes.targetX = resourceTile.x
+        changes.targetY = resourceTile.y
+        changes.currentThought = 'building'
+        changes.thoughtTimer = 30
+        targetSet = true
+      }
+    } else if (c.carrying === 'wood' || c.carrying === 'stone') {
+      // Phase 2: find a valid build location near territory claim
+      const buildSpot = findNearestValidBuildSpot(c.territoryClaim, tiles, BUILD_TERRITORY_RADIUS)
+      if (buildSpot) {
+        changes.state = 'building'
+        changes.targetX = buildSpot.x
+        changes.targetY = buildSpot.y
+        changes.currentThought = 'building'
+        changes.thoughtTimer = 30
+        targetSet = true
+      } else {
+        // No valid build spot — drop the material and stop trying this tick
+        changes.carrying = undefined
+      }
+    }
+  }
+
   // ── 5.5. Terrain affinity; body type draws creatures toward their preferred environment ──
   // Wisp body → water; Shell body → shelter/cave; Spore body → food; Spike body → open ground.
   // Produces emergent ecological niches and spreads the population across different terrain.
@@ -838,7 +963,7 @@ export function tickBehavior(
         const dx = Math.abs(item.x - c.x)
         const dy = Math.abs(item.y - c.y)
         const dist = dx + dy
-        if (dist > 10) continue
+        if (dist > ENRICHMENT_SEEK_RADIUS) continue
         // Skip items occupied by someone else unless Aggressive (can displace)
         if (item.usedBy && item.usedBy !== c.id && c.genome.personality !== 'Aggressive') continue
 
@@ -860,25 +985,42 @@ export function tickBehavior(
         if (c.genome.personality === 'Aggressive' && item.type === 'burrow')          score = 0.3
         if (c.genome.mind === 'Sentinel'          && item.type === 'warm_stone')      score *= 2.0
         if (c.genome.mind === 'Dreaming'          && item.type === 'resting_spot')    score *= 1.5
+        // Cold creatures prioritize thermal enrichment
+        if (c.warmth < 35) {
+          if (item.type === 'warm_stone') score *= 3.0
+          if (item.type === 'burrow') score *= 2.0
+        }
+        // Thirsty creatures prioritize mud_pool for hydration
+        if (c.thirst > 50) {
+          if (item.type === 'mud_pool') score *= 3.0
+        }
+        // Hungry creatures avoid items that increase hunger further
+        if (c.hunger > 55) {
+          if (item.type === 'springy_moss') continue
+        }
         // Prefer closer items
-        score *= (11 - dist) / 10
+        score *= (ENRICHMENT_SEEK_RADIUS + 1 - dist) / ENRICHMENT_SEEK_RADIUS
 
         if (score > bestScore) { bestScore = score; bestItem = item }
       }
 
-      if (bestItem && Math.random() < 0.06 * bestScore) {
+      if (bestItem) {
         const atItem = Math.abs(bestItem.x - c.x) <= ENRICHMENT_USE_RADIUS
           && Math.abs(bestItem.y - c.y) <= ENRICHMENT_USE_RADIUS
-        if (atItem) {
-          changes.state = 'using_enrichment'
-          changes.enrichmentTarget = bestItem.id
-          changes.lastEnrichmentTick = c.age
-          targetSet = true
-        } else {
-          changes.state = 'wandering'
-          changes.targetX = bestItem.x
-          changes.targetY = bestItem.y
-          targetSet = true
+        // At the item: high probability to use; navigating toward it: low probability
+        const useProb = atItem ? 0.80 : 0.06 * Math.min(bestScore, 3.0)
+        if (Math.random() < useProb) {
+          if (atItem) {
+            changes.state = 'using_enrichment'
+            changes.enrichmentTarget = bestItem.id
+            changes.lastEnrichmentTick = c.age
+            targetSet = true
+          } else {
+            changes.state = 'wandering'
+            changes.targetX = bestItem.x
+            changes.targetY = bestItem.y
+            targetSet = true
+          }
         }
       }
     }

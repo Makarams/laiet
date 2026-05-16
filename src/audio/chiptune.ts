@@ -504,7 +504,7 @@ function startWeatherAmbient(weather: string): Handle {
 
 export function computeMusicKey(gs: GameState): string {
   if (gs.colonyStage === 'ascendant') return 'ascendant'
-  if (gs.awarenessStage === 3) return 'awareness_3'
+  if (gs.awarenessStage >= 3) return 'awareness_3'
   if (gs.awarenessStage === 2)
     return gs.time.phase === 'night' ? 'awareness_2_night' : 'awareness_2_day'
 

@@ -1,4 +1,4 @@
-import { Creature, DayPhase } from '@/types'
+import { Creature, DayPhase, WeatherState } from '@/types'
 import { ISO_TILE_WIDTH, ISO_TILE_HEIGHT, CAVE_CREATURE_ALPHA, MUTATION_DISPLAY_DAYS } from '@/engine/constants'
 import { genomeColor, mindGlow } from '@/engine/genetics'
 import { lighten, darken, adjustBrightness } from './utils'
@@ -23,7 +23,8 @@ export function drawCreature(
   selected: boolean,
   phase: DayPhase,
   isInCave = false,
-  currentDay = 0
+  currentDay = 0,
+  weather?: WeatherState
 ): void {
   if (creature.diedOnDay !== null) return
 
@@ -400,7 +401,7 @@ export function drawCreature(
   }
 
   // ── Environmental adaptation overlays ─────────────────────────────────────
-  drawAdaptationOverlays(ctx, creature, cx, cy, r)
+  drawAdaptationOverlays(ctx, creature, cx, cy, r, weather)
 
   // ── Stress stress marks ; visible wear at high stress ─────────────────────
   // Jagged micro-cracks across the body surface indicate chronic stress
@@ -436,8 +437,11 @@ export function drawCreature(
     // Eye position shifts upward slightly in evolved lineages (cranial development)
     const eyeY = cy - r * (0.24 + genFactor * 0.04)
 
+    // cave_sighted adaptation gives eyes a pale teal tint — tapetum-like low-light sheen.
+    const hasCaveSighted = creature.genome.adaptations?.includes('cave_sighted') ?? false
     const eyeColor = creature.genome.mind === 'Sentinel' ? '#ff7038'
       : creature.genome.mind === 'Dreaming' ? '#a098ff'
+      : hasCaveSighted ? '#80dcc0'
       : '#f4eecc'
 
     ctx.fillStyle = eyeColor
@@ -515,6 +519,92 @@ export function drawCreature(
     ctx.globalAlpha = baseAlpha
   }
 
+  // Carried item indicator — small icon above the creature's head for every carry type
+  if (creature.carrying) {
+    const itemY = cy - r * 1.8
+    ctx.save()
+    ctx.globalAlpha = 0.90
+    switch (creature.carrying) {
+      case 'wood':
+        ctx.fillStyle = '#8c5c2a'
+        ctx.beginPath()
+        ctx.ellipse(cx, itemY, r * 0.42, r * 0.22, 0, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.strokeStyle = '#5c3412'
+        ctx.lineWidth = 0.8
+        ctx.stroke()
+        break
+      case 'stone':
+        ctx.fillStyle = '#7a7870'
+        ctx.beginPath()
+        ctx.arc(cx, itemY, r * 0.30, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.strokeStyle = '#504e48'
+        ctx.lineWidth = 0.8
+        ctx.stroke()
+        break
+      case 'healroot': {
+        // Green herb circle with medicinal cross
+        ctx.fillStyle = '#4caa60'
+        ctx.beginPath()
+        ctx.arc(cx, itemY, r * 0.28, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.strokeStyle = '#2a7040'
+        ctx.lineWidth = 0.7
+        ctx.stroke()
+        ctx.strokeStyle = '#d8ffd0'
+        ctx.lineWidth = 0.9
+        ctx.beginPath()
+        ctx.moveTo(cx - r * 0.14, itemY)
+        ctx.lineTo(cx + r * 0.14, itemY)
+        ctx.moveTo(cx, itemY - r * 0.14)
+        ctx.lineTo(cx, itemY + r * 0.14)
+        ctx.stroke()
+        break
+      }
+      case 'fruit': {
+        // Red-orange berry with specular highlight
+        ctx.fillStyle = '#d84040'
+        ctx.beginPath()
+        ctx.arc(cx, itemY, r * 0.26, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.strokeStyle = '#941818'
+        ctx.lineWidth = 0.7
+        ctx.stroke()
+        ctx.fillStyle = 'rgba(255, 180, 160, 0.38)'
+        ctx.beginPath()
+        ctx.arc(cx - r * 0.08, itemY - r * 0.08, r * 0.10, 0, Math.PI * 2)
+        ctx.fill()
+        break
+      }
+      case 'pebble':
+        ctx.fillStyle = '#686660'
+        ctx.beginPath()
+        ctx.arc(cx, itemY, r * 0.20, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.strokeStyle = '#3e3c38'
+        ctx.lineWidth = 0.6
+        ctx.stroke()
+        break
+    }
+    ctx.restore()
+  }
+
+  // Building state: animated dust ring
+  if (creature.state === 'building') {
+    const t2 = (Date.now() / 300 + creature.id.charCodeAt(0)) % (Math.PI * 2)
+    ctx.save()
+    ctx.globalAlpha = 0.40 + Math.sin(t2) * 0.20
+    ctx.strokeStyle = '#c8a060'
+    ctx.lineWidth = 1.2
+    ctx.setLineDash([2, 3])
+    ctx.beginPath()
+    ctx.ellipse(cx, cy + r * 0.4, r * 1.4, r * 0.55, 0, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.setLineDash([])
+    ctx.restore()
+  }
+
   ctx.restore()
 }
 
@@ -528,6 +618,7 @@ function drawAdaptationOverlays(
   cx: number,
   cy: number,
   r: number,
+  weather?: WeatherState,
 ): void {
   const adaptations = creature.genome.adaptations
   if (!adaptations || adaptations.length === 0) return
@@ -555,6 +646,33 @@ function drawAdaptationOverlays(
       ctx.arc(cx + Math.cos(ang) * (r + 3.5), cy + Math.sin(ang) * (r + 3.5), Math.max(0.8, r * 0.08), 0, Math.PI * 2)
       ctx.fill()
     }
+  }
+
+  if (adaptations.includes('thick_pelt')) {
+    // Dense woolly coat: warm amber body glow + ring of close-packed bristle dots.
+    // Stacks with cold_hardy (ice dots at r+3.5 stay visible outside the fur ring at r+1.5).
+    const peltAlpha = 0.13 + Math.sin(now / 1400 + seed) * 0.04
+    ctx.fillStyle = `rgba(170, 90, 35, ${peltAlpha})`
+    ctx.beginPath()
+    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+    ctx.fill()
+    for (let i = 0; i < 12; i++) {
+      const ang = i * (Math.PI * 2 / 12) + seed * 0.08
+      const bAlpha = 0.20 + Math.sin(now / 900 + i * 0.8) * 0.07
+      ctx.fillStyle = `rgba(155, 70, 22, ${bAlpha})`
+      ctx.beginPath()
+      ctx.arc(
+        cx + Math.cos(ang) * (r + 1.5),
+        cy + Math.sin(ang) * (r + 1.5),
+        Math.max(0.6, r * 0.085), 0, Math.PI * 2,
+      )
+      ctx.fill()
+    }
+    ctx.strokeStyle = 'rgba(195, 130, 60, 0.16)'
+    ctx.lineWidth = 1.6
+    ctx.beginPath()
+    ctx.arc(cx, cy, r + 2.8, 0, Math.PI * 2)
+    ctx.stroke()
   }
 
   if (adaptations.includes('drought_tough')) {
@@ -622,22 +740,45 @@ function drawAdaptationOverlays(
     ctx.beginPath()
     ctx.arc(cx, cy, r, 0, Math.PI * 2)
     ctx.fill()
+    // Heatwave active: shimmering gold aura marks the resistance in action
+    if (weather === 'heatwave') {
+      const heatAlpha = 0.13 + Math.sin(now / 350 + seed) * 0.07
+      ctx.strokeStyle = `rgba(255, 190, 20, ${heatAlpha})`
+      ctx.lineWidth = 1.8
+      ctx.beginPath()
+      ctx.arc(cx, cy, r + 3.5, 0, Math.PI * 2)
+      ctx.stroke()
+      const innerAlpha = 0.055 + Math.sin(now / 220 + seed + 1) * 0.025
+      ctx.fillStyle = `rgba(255, 160, 10, ${innerAlpha})`
+      ctx.beginPath()
+      ctx.arc(cx, cy, r * 1.08, 0, Math.PI * 2)
+      ctx.fill()
+    }
   }
 
   if (adaptations.includes('storm_braced')) {
-    // Dark metallic border + slow-cycling electric dots
-    ctx.strokeStyle = 'rgba(55, 75, 120, 0.28)'
+    // Metallic border + electric arc dots; both intensify when a storm is active.
+    const inStorm = weather === 'storm'
+    ctx.strokeStyle = inStorm ? 'rgba(80, 115, 190, 0.42)' : 'rgba(55, 75, 120, 0.28)'
     ctx.lineWidth = Math.max(1.2, r * 0.14)
     ctx.beginPath()
     ctx.arc(cx, cy, r + 0.6, 0, Math.PI * 2)
     ctx.stroke()
-    // Crackling arc dots cycling around the silhouette
-    const crackAlpha = 0.22 + Math.sin(now / 220 + seed) * 0.14
-    for (let i = 0; i < 3; i++) {
-      const ang = creature.genome.morphSeed * 6.28 + i * 2.094 + now / 1800
-      ctx.fillStyle = `rgba(130, 175, 255, ${crackAlpha})`
+    // Crackling arc dots: 3 at rest, 6 during a live storm, cycling much faster
+    const dotCount  = inStorm ? 6 : 3
+    const dotSpread = inStorm ? 1.047 : 2.094
+    const crackSpeed = inStorm ? 300 : 1800
+    const crackAlpha = (inStorm ? 0.36 : 0.22) + Math.sin(now / 220 + seed) * 0.14
+    const dotColor   = inStorm ? `rgba(165, 215, 255, ${crackAlpha})` : `rgba(130, 175, 255, ${crackAlpha})`
+    for (let i = 0; i < dotCount; i++) {
+      const ang = creature.genome.morphSeed * 6.28 + i * dotSpread + now / crackSpeed
+      ctx.fillStyle = dotColor
       ctx.beginPath()
-      ctx.arc(cx + Math.cos(ang) * r * 0.82, cy + Math.sin(ang) * r * 0.82, Math.max(0.9, r * 0.10), 0, Math.PI * 2)
+      ctx.arc(
+        cx + Math.cos(ang) * r * 0.82,
+        cy + Math.sin(ang) * r * 0.82,
+        Math.max(0.9, r * (inStorm ? 0.12 : 0.10)), 0, Math.PI * 2,
+      )
       ctx.fill()
     }
   }

@@ -13,6 +13,7 @@ const STATE_LABELS: Record<CreatureState, string> = {
   migrating:'migrating', scavenging:'scavenging', dying:'critical',
   playing:'play behaviour', using_enrichment:'using enrichment',
   seeking_healroot:'seeking remedy', grooming:'grooming',
+  harvesting:'harvesting', building:'constructing',
 }
 
 const Panel = styled.div`
@@ -139,9 +140,10 @@ function StatBarRow({ label, value, barColor, accent }:
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function DossierPanel() {
-  const gameState    = useLaietStore(s => s.gameState)
-  const selectedId   = useLaietStore(s => s.selectedCreatureId)
-  const healCreature = useLaietStore(s => s.healCreature)
+  const gameState      = useLaietStore(s => s.gameState)
+  const selectedId     = useLaietStore(s => s.selectedCreatureId)
+  const healCreature   = useLaietStore(s => s.healCreature)
+  const selectCreature = useLaietStore(s => s.selectCreature)
 
   const creature  = selectedId ? gameState?.creatures[selectedId] : null
   const caretaker = gameState?.caretaker
@@ -219,11 +221,16 @@ export function DossierPanel() {
               if (!parent) return null
               const pColor = creatureColor(parent.genome.body)
               const dead   = parent.diedOnDay !== null
+              const parentId = creature.parentIds[idx]
               return (
                 <Row key={idx}>
                   <Label>{idx === 0 ? 'Parent A' : 'Parent B'}</Label>
                   <div style={{ display:'flex', alignItems:'baseline', gap:5 }}>
-                    <Value $color={dead ? THEME.textTertiary : pColor}>
+                    <Value
+                      $color={dead ? THEME.textTertiary : pColor}
+                      onClick={dead ? undefined : () => parentId && selectCreature(parentId)}
+                      style={dead ? undefined : { cursor:'pointer', textDecoration:'underline', textDecorationStyle:'dotted', textUnderlineOffset:3 }}
+                    >
                       {parent.name} {parent.familyName}
                     </Value>
                     <span style={{ fontSize:9, color:THEME.textTertiary, letterSpacing:'0.05em' }}>
@@ -295,6 +302,13 @@ export function DossierPanel() {
           accent={creature.stress > 70 ? THEME.death : undefined} />
         <StatBarRow label="Sentience" value={creature.sentience}
           barColor="#c878f044" accent="#c878f0" />
+        {creature.sentience >= 80 && (
+          <div style={{ marginTop:6, padding:'3px 8px',
+            background:'rgba(200,120,240,0.08)', border:'1px solid #c878f044',
+            borderRadius:4, fontSize:10, color:'#c878f0', letterSpacing:'0.1em', fontWeight:600 }}>
+            approaching deep awareness
+          </div>
+        )}
       </Section>
 
       {/* ── Bonds ───────────────────────────────────────────────────────── */}

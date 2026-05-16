@@ -96,7 +96,11 @@ const AwarenessTrack = styled.div`display: flex; align-items: center; gap: 6px; 
 const AwDot = styled.div<{ $active: boolean; $level: number }>`
   width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0;
   background: ${p => p.$active
-    ? p.$level === 3 ? '#c878f0' : p.$level === 2 ? THEME.water : THEME.alive
+    ? p.$level === 5 ? '#d0eeff'
+    : p.$level === 4 ? '#f0a040'
+    : p.$level === 3 ? '#c878f0'
+    : p.$level === 2 ? THEME.water
+    : THEME.alive
     : THEME.bgDeep};
   border: 2px solid ${p => p.$active ? 'transparent' : THEME.borderMid};
 `
@@ -146,7 +150,17 @@ const STAGE_THRESHOLDS: Record<ColonyStage, number> = {
   genesis:0, nascent:6, growing:16, established:31, thriving:51, ascendant:80,
 }
 const STAGES: ColonyStage[] = ['genesis','nascent','growing','established','thriving','ascendant']
-const AWARENESS_PROSE = ['', 'anomalous behaviour detected', 'direct address confirmed']
+const AWARENESS_PROSE = [
+  '',
+  'anomalous behaviour detected',   // 1
+  'direct address confirmed',        // 2
+  'watcher identified',              // 3
+  'ancestral memory active',         // 4
+  'pattern transcends generation',   // 5
+]
+const COHORT_PHASE_NAMES: Record<number, string> = {
+  1: 'Primal', 2: 'Clan', 3: 'Lineage', 4: 'Ancestral', 5: 'Eternal',
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -154,8 +168,8 @@ export function ColonyStatsPanel() {
   const gameState = useLaietStore(s => s.gameState)
   if (!gameState) return null
 
-  const { creatures, colonyStage, awarenessStage, totalDeaths, totalCreaturesEver,
-          weather, weatherTimer, caretaker, time } = gameState
+  const { creatures, colonyStage, awarenessStage, cohortPhase, totalDeaths, totalCreaturesEver,
+          totalGenerations, weather, weatherTimer, caretaker, time } = gameState
 
   const maxHealCharges = HEAL_CHARGES_PER_DAY
   const alive = Object.values(creatures).filter(c => c.diedOnDay === null)
@@ -177,6 +191,19 @@ export function ColonyStatsPanel() {
     ? Math.min(100, ((alive.length - STAGE_THRESHOLDS[colonyStage]) /
         (STAGE_THRESHOLDS[nextStage] - STAGE_THRESHOLDS[colonyStage])) * 100)
     : 100
+
+  // Dynasty tracking: top 3 lineage roots by deepest generation reached
+  const dynastyMap = new Map<string, { count: number; maxGen: number; familyName: string }>()
+  for (const c of alive) {
+    const root = c.lineageId.includes('_') ? c.lineageId.split('_')[0] : c.lineageId
+    const entry = dynastyMap.get(root) ?? { count: 0, maxGen: 0, familyName: c.familyName }
+    entry.count++
+    if (c.generation > entry.maxGen) { entry.maxGen = c.generation; entry.familyName = c.familyName }
+    dynastyMap.set(root, entry)
+  }
+  const topDynasties = [...dynastyMap.values()]
+    .sort((a, b) => b.maxGen - a.maxGen || b.count - a.count)
+    .slice(0, 3)
 
   const currentWeather = (weather ?? 'clear') as WeatherState
   // snowAccumulation is optional on GameState (new feature)
@@ -275,13 +302,32 @@ export function ColonyStatsPanel() {
       <Section>
         <SectionTitle>Signal Depth</SectionTitle>
         <AwarenessTrack>
-          {[1,2,3].map(n => <AwDot key={n} $active={awarenessStage >= n} $level={n} />)}
+          {[1,2,3,4,5].map(n => <AwDot key={n} $active={awarenessStage >= n} $level={n} />)}
           <span style={{ fontSize:9, color: THEME.textTertiary, marginLeft:4, letterSpacing:'0.1em' }}>
-            stage {awarenessStage} / 3
+            depth {awarenessStage} / 5
           </span>
         </AwarenessTrack>
         <AwarenessLabel>{AWARENESS_PROSE[awarenessStage]}</AwarenessLabel>
+        <Row style={{ marginTop: 6 }}>
+          <Label>Cohort Phase</Label>
+          <Value>{COHORT_PHASE_NAMES[cohortPhase ?? 1]} · gen {totalGenerations}</Value>
+        </Row>
       </Section>
+
+      {topDynasties.length > 0 && (
+        <Section>
+          <SectionTitle>Dynasties</SectionTitle>
+          {topDynasties.map((d, i) => (
+            <Row key={i}>
+              <Label style={{ fontStyle:'italic' }}>{d.familyName}</Label>
+              <span style={{ fontSize:11, color:THEME.textTertiary }}>
+                <span style={{ color:THEME.amber, fontWeight:700 }}>gen {d.maxGen}</span>
+                {' · '}{d.count} alive
+              </span>
+            </Row>
+          ))}
+        </Section>
+      )}
 
       <Section>
         <SectionTitle>Operator</SectionTitle>
@@ -298,6 +344,23 @@ export function ColonyStatsPanel() {
           </Value>
         </Row>
       </Section>
+
+      {gameState.fossilRecord && gameState.fossilRecord.length > 0 && (
+        <Section>
+          <SectionTitle>Past Extinctions</SectionTitle>
+          {gameState.fossilRecord.slice(-3).map(record => (
+            <div key={record.id} style={{ marginBottom: 8 }}>
+              <Row>
+                <Label>Day {record.extinctionDay}</Label>
+                <Value $color={THEME.death}>{record.extinctionCause}</Value>
+              </Row>
+              <div style={{ fontSize:10, color: THEME.textTertiary, lineHeight:1.5 }}>
+                gen {record.generationsReached} · {record.peakPopulation} recorded
+              </div>
+            </div>
+          ))}
+        </Section>
+      )}
     </Panel>
   )
 }

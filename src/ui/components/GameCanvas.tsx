@@ -411,8 +411,9 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
         drawEnrichmentItem(ctx, item, esx, esy)
       }
 
-      // Creatures ; depth sorted — rendered above enrichment layer
-      const alive = Object.values(gs.creatures)
+      // Pre-compute alive creature interpolated/rotated positions once;
+      // reused for both depth-sorted rendering and off-screen arrow logic.
+      const aliveWithPos = Object.values(gs.creatures)
         .filter(c => c.diedOnDay === null)
         .map(c => {
           const prev = prevPositionsRef.current[c.id]
@@ -423,7 +424,7 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
           const r  = rotateGrid(lx, ly, rot, WORLD_SIZE)
           return { c, r }
         })
-        .sort((a, b) => (a.r.x + a.r.y) - (b.r.x + b.r.y))
+      const alive = [...aliveWithPos].sort((a, b) => (a.r.x + a.r.y) - (b.r.x + b.r.y))
 
       for (const { c, r } of alive) {
         const orig = unrotateGrid(Math.round(r.x), Math.round(r.y), rot, WORLD_SIZE)
@@ -431,7 +432,7 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
         const iso = gridToIso(r.x, r.y)
         const sx = origin.x + iso.x
         const sy = origin.y + iso.y
-        drawCreature(ctx, c, sx, sy, c.id === selectedIdRef.current, phase, isInCave, gs.time.day)
+        drawCreature(ctx, c, sx, sy, c.id === selectedIdRef.current, phase, isInCave, gs.time.day, gs.weather)
       }
 
       ctx.restore()
@@ -475,13 +476,7 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
         const hits: typeof arrowHitAreasRef.current = []
         const offscr: Array<{ sx: number; sy: number; canvasX: number; canvasY: number; dist: number; color: string }> = []
 
-        for (const creature of Object.values(gs.creatures)) {
-          if (creature.diedOnDay !== null) continue
-          const prev = prevPositionsRef.current[creature.id]
-          const ipx = prev?.x ?? creature.x, ipy = prev?.y ?? creature.y
-          const lx_ = ipx + (creature.x - ipx) * t
-          const ly_ = ipy + (creature.y - ipy) * t
-          const rr  = rotateGrid(lx_, ly_, rot, WORLD_SIZE)
+        for (const { c: creature, r: rr } of aliveWithPos) {
           const aIso = gridToIso(rr.x, rr.y)
           const canvX = origin.x + aIso.x
           const canvY = origin.y + aIso.y

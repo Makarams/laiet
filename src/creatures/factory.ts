@@ -1,16 +1,20 @@
 import { v4 as uuid } from 'uuid'
-import { Creature, Genome, GameState, PersonalityTrait, BodyTrait, MindTrait, EnvContext } from '@/types'
+import { Creature, Genome, GameState, PersonalityTrait, BodyTrait, MindTrait, EnvContext, MessageStage } from '@/types'
 import {
   MAX_AGE_BY_BODY,
   SENTIENCE_GROWTH_BY_MIND,
   WORLD_SIZE,
   ASEXUAL_MUTATION_CHANCE,
+  MUTATION_CHANCE,
+  MUTATION_CRISIS_BOOST_MAX,
   STARTER_BOND_STRENGTH,
   REPRODUCE_BOND_MIN_STRENGTH,
   AWARENESS_STAGE_2_ROLES_REQUIRED,
   AWARENESS_STAGE_2_WINDOW_DAYS,
   AWARENESS_STAGE_3_LEXICON_MIN,
   AWARENESS_STAGE_3_WINDOW_DAYS,
+  AWARENESS_STAGE_4_WINDOW_DAYS,
+  AWARENESS_STAGE_5_WINDOW_DAYS,
   LINEAGE_FORK_GENERATION,
 } from '@/engine/constants'
 import {
@@ -86,6 +90,17 @@ export function spawnCreature(
   }
 }
 
+// ─── Parent fitness ───────────────────────────────────────────────────────────
+
+// Returns a 0..1 fitness score for a parent creature.
+// Used to weight which parent's traits are more likely to be inherited.
+// Health is the primary signal; hunger and stress provide secondary pressure.
+function computeParentFitness(c: Creature): number {
+  return (c.health / 100) * 0.50
+    + Math.max(0, 1 - c.hunger / 100) * 0.30
+    + Math.max(0, 1 - c.stress / 100) * 0.20
+}
+
 // Detect which genome slots in offspring differ from BOTH parents; true mutation.
 // Returns list of slot names that changed vs. both parents.
 // Also detects significant morphology threshold crossings (new features appearing).
@@ -159,7 +174,22 @@ export function createOffspring(
   tribalLexicon: string[] = [],
   envCtx?: EnvContext,
 ): Creature {
-  const baseGenome = inheritGenome(parentA.genome, parentB.genome, rng, mutationChance, envCtx)
+  // Fitness-weighted inheritance: healthier, less-stressed parents pass on more traits.
+  // The probability of inheriting parentA's trait rises with parentA's relative fitness.
+  const fitnessA = computeParentFitness(parentA)
+  const fitnessB = computeParentFitness(parentB)
+  const parentBias = (fitnessA + 0.01) / (fitnessA + fitnessB + 0.02)  // avoids div-by-zero
+
+  // Adaptive mutation: parental crisis (high joint stress, low health) nudges the
+  // offspring mutation rate upward — a realistic response to environmental pressure.
+  const avgParentStress = (parentA.stress + parentB.stress) / 2
+  const crisisBoost = avgParentStress > 70
+    ? MUTATION_CRISIS_BOOST_MAX * ((avgParentStress - 70) / 30)
+    : 0
+  const baseMutation = mutationChance ?? MUTATION_CHANCE
+  const effectiveMutation = Math.min(0.28, baseMutation + crisisBoost)
+
+  const baseGenome = inheritGenome(parentA.genome, parentB.genome, rng, effectiveMutation, envCtx, parentBias)
   const newAdaptation = envCtx ? acquireAdaptation(envCtx) : null
   const genome = {
     ...baseGenome,
@@ -357,13 +387,11 @@ export function getColonyStage(population: number) {
 
 // ─── Awareness stage ─────────────────────────────────────────────────────────
 
-export function computeAwarenessStage(state: GameState): 1 | 2 | 3 {
+export function computeAwarenessStage(state: GameState): MessageStage {
   const alive = Object.values(state.creatures).filter(c => c.diedOnDay === null)
 
   // Stage 1→2: behavioral specialization — 4 distinct community roles held
   // simultaneously by alive creatures, sustained for 7 consecutive in-game days.
-  // Roles are emergent (assigned in tickTribes from personality+body+mind+history),
-  // so this gate fires only when the colony has genuinely diversified its behavior.
   const liveRoles = new Set(alive.map(c => c.role).filter(r => r !== undefined))
   const rolesMet = liveRoles.size >= AWARENESS_STAGE_2_ROLES_REQUIRED
     && state.roleWindowStart !== undefined
@@ -371,15 +399,29 @@ export function computeAwarenessStage(state: GameState): 1 | 2 | 3 {
 
   if (!rolesMet) return 1
 
-  // Stage 2→3: cultural depth — the union of all alive creatures' known emoji
-  // reaches a threshold, sustained for 7 consecutive in-game days.
-  // 30 distinct symbols represents significant Tier 1 penetration across the colony,
-  // requiring multiple generations of learning, inheritance, and vocal exchange.
+  // Stage 2→3: cultural depth — colony vocabulary union ≥ 30 symbols, 7-day window.
   const colonyVocab = new Set<string>()
   for (const c of alive) c.knownEmoji.forEach(e => colonyVocab.add(e))
   const lexiconMet = colonyVocab.size >= AWARENESS_STAGE_3_LEXICON_MIN
     && state.lexiconWindowStart !== undefined
     && state.time.day - state.lexiconWindowStart >= AWARENESS_STAGE_3_WINDOW_DAYS
 
-  return lexiconMet ? 3 : 2
+  if (!lexiconMet) return 2
+
+  // Stage 3→4: ancestral memory — cohort phase 4 (gen ≥ 30) with at least one
+  // creature at sentience ≥ 80, sustained for 14 consecutive in-game days.
+  // The window is tracked in tick.ts; here we only read whether it was satisfied.
+  const ancestralMet = (state.cohortPhase ?? 1) >= 4
+    && state.ancestralWindowStart !== undefined
+    && state.time.day - state.ancestralWindowStart >= AWARENESS_STAGE_4_WINDOW_DAYS
+
+  if (!ancestralMet) return 3
+
+  // Stage 4→5: transcendence — cohort phase 5 (gen ≥ 60) with at least one Elder
+  // at sentience ≥ 95, sustained for 21 consecutive in-game days.
+  const transcendentMet = (state.cohortPhase ?? 1) >= 5
+    && state.transcendentWindowStart !== undefined
+    && state.time.day - state.transcendentWindowStart >= AWARENESS_STAGE_5_WINDOW_DAYS
+
+  return transcendentMet ? 5 : 4
 }

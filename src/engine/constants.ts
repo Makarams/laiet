@@ -155,6 +155,18 @@ export const COLONY_STAGE_THRESHOLDS = {
   ascendant:  80,
 } as const
 
+// ─── Cohort phases ────────────────────────────────────────────────────────────
+// Derived from totalGenerations (max generation ever born in the colony).
+// Cohort phase is a permanent ratchet — it never decreases.
+// Phases gate the upper signal-depth levels: depth 4 requires phase 4, etc.
+export const COHORT_PHASE_THRESHOLDS: Record<number, number> = {
+  1: 0,   // Primal   — gen 0-4
+  2: 5,   // Clan     — gen 5-14
+  3: 15,  // Lineage  — gen 15-29
+  4: 30,  // Ancestral— gen 30-59
+  5: 60,  // Eternal  — gen 60+
+}
+
 // ─── Awareness — emergent stage conditions ────────────────────────────────────
 // Stage 1→2: behavioral specialization via role diversity.
 // At least this many distinct community roles must be simultaneously held by
@@ -167,6 +179,19 @@ export const AWARENESS_STAGE_2_WINDOW_DAYS    = 7   // in-game days conditions m
 // sustained for the window duration. Represents a mature shared language.
 export const AWARENESS_STAGE_3_LEXICON_MIN    = 30
 export const AWARENESS_STAGE_3_WINDOW_DAYS    = 7
+
+// Stage 3→4: ancestral memory — cohort phase 4 (gen ≥ 30) and at least one
+// creature whose sentience has reached deep awakening, sustained for the window.
+export const AWARENESS_STAGE_4_SENTIENCE_MIN  = 80   // at least one alive creature must reach this
+export const AWARENESS_STAGE_4_WINDOW_DAYS    = 14   // longer window; generational depth is hard-won
+
+// Stage 4→5: transcendence — cohort phase 5 (gen ≥ 60) and at least one Sentinel
+// Elder whose sentience is fully realised, or a Dreaming Elder at ≥ 95, sustained
+// for the window. Sentinel path lowered to 88 to be reachable; Dreaming path
+// remains at 95 as a harder alternate when no Sentinel Elders are present.
+export const AWARENESS_STAGE_5_SENTIENCE_MIN  = 88   // Sentinel Elder threshold (was 95)
+export const AWARENESS_STAGE_5_DREAMING_MIN   = 95   // Dreaming Elder alternate path
+export const AWARENESS_STAGE_5_WINDOW_DAYS    = 21
 
 // ─── Sentience growth ────────────────────────────────────────────────────────
 export const SENTIENCE_GROWTH_BY_MIND: Record<string, number> = {
@@ -219,6 +244,7 @@ export const DROUGHT_FOOD_FACTOR    = 0.45   // food regrowth multiplier in drou
 export const HEATWAVE_THIRST_MULT       = 2.2   // thirst decays this many times faster
 export const HEATWAVE_STRESS_PER_TICK   = 0.06  // passive stress per tick even when satisfied
 export const HEATWAVE_FOOD_EXTRA_DECAY  = 0.12  // extra food wilt per tick on all food_patches (heat)
+export const HEATWAVE_FIRE_CHANCE       = 0.00008 // per tree/shelter/bush tile per tick during summer heatwave
 
 // ─── Fog ─────────────────────────────────────────────────────────────────────
 // Spring/autumn moisture haze. Mild; calming; slight thirst and stress relief.
@@ -230,7 +256,7 @@ export const FOG_STRESS_RELIEF          = 0.04  // passive stress removed per ti
 
 // Spring bloom: ephemeral wildflower patches on grass tiles during rain or clear spring
 export const SPRING_BLOOM_CHANCE        = 0.00012  // was 0.00025; FRUIT_MAX_AGE limits steady-state
-export const SPRING_BLOOM_RAIN_MULT     = 3.5      // multiplied during rain/fog
+export const SPRING_BLOOM_RAIN_MULT     = 2.0      // multiplied during rain/fog
 export const SPRING_BLOOM_FOOD          = 35       // initial food amount on new bloom patch
 export const SPRING_BLOOM_BIOME_BIAS: Record<string, number> = {
   lush: 3.0, wetland: 2.0, temperate: 1.0, rocky: 0.2, arid: 0.05,
@@ -263,6 +289,8 @@ export const DROUGHT_TOUGH_HUNGER_MULT     = 0.78   // hunger decay multiplier (
 export const HYDRO_FINS_THIRST_MULT        = 0.55   // thirst decay mult on wetland/river (hydro_fins)
 export const HEAT_PLATED_THIRST_BLOCK      = 0.50   // fraction of heatwave extra thirst blocked
 export const STORM_STRESS_PER_TICK         = 0.08   // base stress from storm weather (storm_braced blocks this entirely)
+export const THICK_PELT_WARMTH_MULT        = 0.60   // broad warmth-drain mult for thick_pelt in cold/wet weather (stacks with cold_hardy)
+export const THICK_PELT_STORM_STRESS_MULT  = 0.50   // storm stress multiplier for thick_pelt lineages
 
 // ─── Biome thirst modifiers (applied as extra fraction of THIRST_DECAY) ──────
 export const BIOME_THIRST_EXTRA: Record<string, number> = {
@@ -290,6 +318,7 @@ export const TILE_MOVE_MODIFIER: Record<string, number> = {
   cliff:      0.00,
   bush:       0.80,  // low shrub slows movement slightly
   healroot:   0.90,  // low herb growth; slight tangle underfoot
+  fence:      0.72,  // constructed barrier slows movement slightly
 }
 
 // ─── Night warmth penalty ────────────────────────────────────────────────────
@@ -340,9 +369,11 @@ export const PLAY_STRESS_REDUCTION = 0.8       // stress drop per tick while pla
 
 // ─── Enrichment system ───────────────────────────────────────────────────────
 export const ENRICHMENT_USE_RADIUS = 1         // tiles to trigger use
+export const ENRICHMENT_SEEK_RADIUS = 20       // tiles to scan for enrichment items during behavior
 export const ENRICHMENT_MAX_PER_TILE = 1       // one item per tile
 export const ENRICHMENT_COOLDOWN_TICKS = 80    // sim ticks before creature can use enrichment again
 export const ENRICHMENT_MAX_USES = 40          // item degrades and disappears after this many uses
+export const ENRICHMENT_IDLE_DECAY_DAYS = 20   // game days idle before player-placed item loses one use
 
 // Effects per enrichment type; stat delta per tick while in use.
 export const ENRICHMENT_EFFECTS: Record<string, {
@@ -364,8 +395,8 @@ export const NATURAL_ENRICHMENT_SPAWN_CHANCE     = 0.003  // base chance per til
 export const NATURAL_ENRICHMENT_ATTEMPTS_PER_TICK = 3     // tile sample attempts per tickNaturalEnrichment call
 export const NATURAL_ENRICHMENT_MAX_USES         = 80     // natural items are more durable than player-placed
 export const NATURAL_ENRICHMENT_REGEN_RADIUS     = 12     // tile radius for respawn after depletion
-export const NATURAL_ENRICHMENT_CAP_BASE         = 4      // minimum natural item slots in the world
-export const NATURAL_ENRICHMENT_CAP_PER_N_ALIVE  = 10    // alive creatures per extra slot (+1 per 10)
+export const NATURAL_ENRICHMENT_CAP_BASE         = 8      // minimum natural item slots in the world
+export const NATURAL_ENRICHMENT_CAP_PER_N_ALIVE  = 5     // alive creatures per extra slot (+1 per 5)
 export const NATURAL_ENRICHMENT_CAP_MAX          = 20    // absolute ceiling
 
 // Which enrichment types can appear naturally in each biome
@@ -415,10 +446,10 @@ export const HEALROOT_CARRY_HEAL      = 15   // health restored when a carried h
 // Healroot lifecycle: depleted patches can wither back to grass/barren.
 // Rate doubles in drought and winter (harsh seasons stress the herb).
 export const HEALROOT_WITHER_THRESHOLD = 8      // potency below which wither can occur
-export const HEALROOT_WITHER_CHANCE    = 0.0008 // per tick when below threshold
+export const HEALROOT_WITHER_CHANCE    = 0.0014 // per tick when below threshold
 
 // Global cap prevents death-site accumulation from saturating the map.
-export const HEALROOT_CAP              = 60     // max healroot tiles world-wide
+export const HEALROOT_CAP              = 35     // max healroot tiles world-wide
 
 // How close to a death site healroot can spontaneously spawn (memorial growth)
 export const HEALROOT_DEATH_SITE_RADIUS = 3
@@ -457,8 +488,9 @@ export const CANVAS_PADDING_Y = 55
 // ─── Vegetation caps ──────────────────────────────────────────────────────────
 // Prevent runaway tree/bush stacking. New growth only occurs when the world
 // is below these counts, so older plants must die before new ones can take root.
-export const VEG_TREE_CAP  = 250   // max (tree + shelter) tiles world-wide
-export const VEG_BUSH_CAP  = 400   // max bush tiles world-wide
+export const VEG_TREE_CAP      = 250   // max (tree + shelter) tiles world-wide
+export const VEG_BUSH_CAP      = 400   // max bush tiles world-wide
+export const FOOD_PATCH_CAP    = 150   // max food_patch tiles world-wide; caps seasonal spawning
 
 // ─── River erosion ────────────────────────────────────────────────────────────
 // Very slow terrain shift over long play sessions. During storms, rivers
@@ -591,3 +623,72 @@ export const LATENT_REVIVAL_BASE    = 0.025  // 2.5% base revival chance per lat
 export const LATENT_DEPTH_BONUS     = 0.003  // +0.3% per extra generation dormant
 export const LATENT_MAX_DEPTH       = 25     // prune ancestry beyond this depth
 export const LATENT_DOMINANT_WEIGHT = 0.70   // probability offspring expresses dominant parent's race
+
+// ─── Disease immunity ─────────────────────────────────────────────────────────
+export const DISEASE_IMMUNITY_GAIN = 0.40        // immunity gained after recovering from sick state
+export const DISEASE_IMMUNITY_PROTECTION = 0.80  // max fractional reduction of contact chance from immunity
+export const DISEASE_BOND_SPREAD_MULT = 2.0      // contact-chance multiplier when adjacent bonded creature is sick
+
+// ─── River-adjacent food bonus ────────────────────────────────────────────────
+export const RIVER_FOOD_ADJACENT_BONUS = 1.5     // food regrowth multiplier for patches adjacent to a river tile
+
+// ─── Absence imprint ──────────────────────────────────────────────────────────
+export const ABSENCE_IMPRINT_DAYS = 5            // in-game days the imprint stress persists on return
+export const ABSENCE_IMPRINT_STRESS_PER_TICK = 0.22  // extra stress per tick during imprint window
+
+// ─── Lineage rivalry ──────────────────────────────────────────────────────────
+export const RIVAL_PROXIMITY_RADIUS = 5          // tile radius to detect rival-lineage creature
+export const RIVAL_STRESS_PER_TICK = 0.14        // stress per tick when rival lineage is nearby
+
+// ─── Tribal fracture ─────────────────────────────────────────────────────────
+export const TRIBE_BORDER_STRESS_PER_TICK = 0.28 // stress/tick when near an enemy-lineage cluster
+export const TRIBE_WAR_FIGHT_CHANCE = 0.0025     // per-tick chance of inter-lineage attack when adjacent
+export const TRIBE_WAR_SUSTAIN_DAYS = 8          // in-game days of continuous conflict before fracture fires
+
+// ─── Neglect warning ──────────────────────────────────────────────────────────
+export const NEGLECT_WARMTH_THRESHOLD  = 22    // avg warmth below which warning fires
+export const NEGLECT_HUNGER_THRESHOLD  = 78    // avg hunger above which warning fires
+export const NEGLECT_MIN_AFFECTED      = 2     // minimum creatures in crisis to trigger warning
+export const NEGLECT_WARNING_COOLDOWN  = 5     // in-game days between neglect warnings
+
+// ─── Legendary creature thresholds ───────────────────────────────────────────
+export const LEGENDARY_AGE_MULT        = 2.5   // age multiple of maxAge for longevity event
+export const LEGENDARY_OFFSPRING_MIN   = 15    // offspring count for prolific event
+export const LEGENDARY_LINEAGE_GEN_MIN = 20    // generation depth for last-of-lineage event
+
+// ─── Construction system ──────────────────────────────────────────────────────
+// Creatures with Territorial or Nurturing personality will harvest materials
+// from trees (wood) and rocks (stone), then build fence tiles near their
+// territory claim. Fences decay over time and creatures rebuild them.
+export const HARVEST_TRIGGER_SATISFACTION = 72  // min needSatisfaction to start harvesting
+export const HARVEST_RADIUS = 3                 // tile radius to search for harvestable resources
+export const BUILD_TERRITORY_RADIUS = 5         // tile radius from territoryClaim to place fence
+export const FENCE_INITIAL_DURABILITY = 100     // durability on placement
+export const FENCE_DECAY_BASE = 0.012           // durability lost per tick (normal)
+export const FENCE_DECAY_STORM = 0.055          // durability lost per tick during storm/winter
+export const FENCE_STRESS_RADIUS = 3            // tile radius of fence stress-reduction effect
+export const FENCE_STRESS_REDUCTION = 0.22      // stress removed per tick when near own fence
+
+// ─── Mutation refinements ──────────────────────────────────────────────────────
+// Adaptive mutation: when parents are under crisis (high stress), offspring mutation
+// rate rises slightly — pressure drives variation, which can rescue collapsing lineages.
+export const MUTATION_CRISIS_BOOST_MAX  = 0.06  // max extra mutation rate at 100% parental stress
+// Fitness inheritance weight: proportion by which the healthier parent biases trait selection.
+// 0 = pure 50/50; 0.35 = fitter parent's traits are meaningfully more likely to be inherited.
+export const MUTATION_FITNESS_WEIGHT    = 0.35
+
+// ─── Resource seeking refinements ─────────────────────────────────────────────
+// Minimum food amount for a food_patch to be worth committing a path toward.
+// Prevents creatures from darting toward nearly-empty patches and staying hungry.
+export const FOOD_SEEK_MIN_AMOUNT       = 6
+// Wider food scan tried before the creature resorts to long-distance migration.
+// The gap between the normal 20-tile scan and migration at hunger>55 left creatures
+// idle in food deserts; this bridges it with a cheaper fallback before committing to migration.
+export const FOOD_SEEK_FALLBACK_RADIUS  = 34
+// Radius to find mud/puddle tiles as a close alternative to distant rivers.
+// Puddle drinking already exists at the tile level; this gates behavior seeking toward them.
+export const PUDDLE_DRINK_RADIUS        = 6
+// Tide race (riparian specialist) senses water from farther away.
+export const TIDE_WATER_SEEK_RADIUS     = 30
+// Bloom race (reproduction-amplified, season-sensitive) begins food-seeking earlier.
+export const BLOOM_HUNGER_THRESHOLD     = 22
