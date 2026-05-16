@@ -408,6 +408,174 @@ export function tickBehavior(
     }
   }
 
+  // ── 4.8. Role-driven behaviors — role shapes what a creature actually does ──
+  // Roles earned from behavioral history now feed back into future behavior,
+  // creating a self-reinforcing loop: a guardian patrols and fights, which keeps
+  // them a guardian; a healer seeks the sick, which deepens their bonds and role.
+  // This is the bridge that was missing: roles were labels, now they drive action.
+  {
+    const role = c.role
+    if (role && c.health > 35) {
+      switch (role) {
+        case 'guardian': {
+          // Guardians actively patrol the colony's perimeter and intercept threats
+          if (Math.random() < 0.08 && c.territoryClaim) {
+            const intruder = aliveCreatures.find(
+              o => o.id !== c.id
+                && o.lineageId !== c.lineageId
+                && Math.abs(o.x - c.territoryClaim!.x) <= 8
+                && Math.abs(o.y - c.territoryClaim!.y) <= 8
+            )
+            if (intruder) {
+              changes.state = 'fighting'
+              changes.targetX = intruder.x
+              changes.targetY = intruder.y
+            }
+          }
+          // Rally toward any bonded ally who is fighting
+          if (!changes.state && Math.random() < 0.12) {
+            const fightingAlly = aliveCreatures.find(
+              o => o.id !== c.id
+                && o.state === 'fighting'
+                && c.bonds.some(b => b.targetId === o.id && b.strength > 20)
+                && Math.abs(o.x - c.x) <= 20 && Math.abs(o.y - c.y) <= 20
+            )
+            if (fightingAlly) {
+              changes.state = 'fighting'
+              changes.targetX = fightingAlly.x
+              changes.targetY = fightingAlly.y
+            }
+          }
+          break
+        }
+
+        case 'healer': {
+          // Healers actively seek sick or injured tribemates and move to groom them
+          if (Math.random() < 0.10) {
+            const patient = aliveCreatures.find(
+              o => o.id !== c.id
+                && (o.state === 'sick' || o.health < 45 || o.stress > 70)
+                && Math.abs(o.x - c.x) <= 18 && Math.abs(o.y - c.y) <= 18
+            )
+            if (patient) {
+              changes.state = c.carrying === 'healroot' ? 'bonding' : 'grooming'
+              changes.targetX = patient.x
+              changes.targetY = patient.y
+            }
+          }
+          // Carry healroot to sick creatures if nearby
+          if (!changes.state && !c.carrying && Math.random() < 0.06) {
+            const hrTile = findNearest(['healroot'], 14)
+            if (hrTile && (hrTile.healrootAmount ?? 0) > 10) {
+              changes.state = 'seeking_healroot'
+              changes.targetX = hrTile.x
+              changes.targetY = hrTile.y
+            }
+          }
+          break
+        }
+
+        case 'forager': {
+          // Foragers pre-emptively seek food and share by carrying fruit to bonded creatures
+          if (!c.carrying && c.hunger < 50 && Math.random() < 0.07) {
+            const richPatch = findNearest(['food_patch', 'bush'], 24)
+            if (richPatch && richPatch.foodAmount > 40) {
+              changes.state = 'seeking_food'
+              changes.targetX = richPatch.x
+              changes.targetY = richPatch.y
+            }
+          }
+          // Carry fruit to a bonded hungry partner
+          if (c.carrying === 'fruit' && c.carryingTargetId && Math.random() < 0.12) {
+            const target = aliveCreatures.find(o => o.id === c.carryingTargetId)
+            if (target) {
+              changes.state = 'bonding'
+              changes.targetX = target.x
+              changes.targetY = target.y
+            }
+          } else if (!c.carrying && Math.random() < 0.04) {
+            // Find a hungry bonded creature to bring food to
+            const hungryBonded = aliveCreatures.find(
+              o => o.id !== c.id && o.hunger > 60
+                && c.bonds.some(b => b.targetId === o.id && b.strength > 30)
+                && Math.abs(o.x - c.x) <= 20 && Math.abs(o.y - c.y) <= 20
+            )
+            if (hungryBonded) {
+              changes.carryingTargetId = hungryBonded.id
+            }
+          }
+          break
+        }
+
+        case 'scout': {
+          // Scouts range further and return with territory knowledge
+          if (Math.random() < 0.05) {
+            const farDist = 35 + Math.floor(Math.random() * 30)
+            const angle = Math.random() * Math.PI * 2
+            const tx = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(c.x + Math.cos(angle) * farDist)))
+            const ty = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(c.y + Math.sin(angle) * farDist)))
+            const destTile = tiles[ty]?.[tx]
+            if (destTile && isTilePassable(destTile)) {
+              changes.state = 'migrating'
+              changes.targetX = tx
+              changes.targetY = ty
+            }
+          }
+          break
+        }
+
+        case 'nurturer': {
+          // Nurturers move toward offspring or juveniles and groom them
+          if (Math.random() < 0.08) {
+            const juvenile = aliveCreatures.find(
+              o => o.id !== c.id && o.age < 15
+                && Math.abs(o.x - c.x) <= 16 && Math.abs(o.y - c.y) <= 16
+            )
+            if (juvenile) {
+              changes.state = 'bonding'
+              changes.targetX = juvenile.x
+              changes.targetY = juvenile.y
+            }
+          }
+          break
+        }
+
+        case 'shaman': {
+          // Shamans seek death sites and rivers to dream; they also initiate speech near elders
+          if (Math.random() < 0.025) {
+            const sacredTile = findNearest(['death_site', 'river'], 22)
+            if (sacredTile) {
+              changes.state = 'dreaming'
+              changes.targetX = sacredTile.x
+              changes.targetY = sacredTile.y
+            }
+          }
+          break
+        }
+
+        case 'elder': {
+          // Elders move slowly toward younger creatures and groom/teach (socialise)
+          if (Math.random() < 0.04) {
+            const youngCreature = aliveCreatures.find(
+              o => o.id !== c.id && o.generation > c.generation
+                && Math.abs(o.x - c.x) <= 12 && Math.abs(o.y - c.y) <= 12
+            )
+            if (youngCreature) {
+              changes.state = 'grooming'
+              changes.targetX = youngCreature.x
+              changes.targetY = youngCreature.y
+            }
+          }
+          break
+        }
+
+        // recluse: no additional behavior; isolation already handled in personality section
+        default:
+          break
+      }
+    }
+  }
+
   // ── 5. Personality-driven behaviors ──
   let targetSet = changes.targetX !== undefined
 
@@ -779,22 +947,76 @@ export function tickBehavior(
     }
   }
 
-  // ── 5.5. Terrain affinity; body type draws creatures toward their preferred environment ──
-  // Wisp body → water; Shell body → shelter/cave; Spore body → food; Spike body → open ground.
-  // Produces emergent ecological niches and spreads the population across different terrain.
-  if (!targetSet && Math.random() < 0.07) {
-    if (c.genome.body === 'Wisp') {
-      const t = findNearest(['river', 'mud'], 20)
-      if (t) { changes.state = 'wandering'; changes.targetX = t.x; changes.targetY = t.y; targetSet = true }
-    } else if (c.genome.body === 'Shell') {
-      const t = findNearest(['cave', 'shelter'], 20)
-      if (t) { changes.state = 'wandering'; changes.targetX = t.x; changes.targetY = t.y; targetSet = true }
-    } else if (c.genome.body === 'Spore') {
-      const t = findNearest(['food_patch', 'bush', 'mud'], 20)
-      if (t) { changes.state = 'wandering'; changes.targetX = t.x; changes.targetY = t.y; targetSet = true }
-    } else if (c.genome.body === 'Spike') {
-      const t = findNearest(['food_patch', 'barren'], 20)
-      if (t) { changes.state = 'wandering'; changes.targetX = t.x; changes.targetY = t.y; targetSet = true }
+  // ── 5.5. Terrain preference — learned, not random ──────────────────────────
+  // Each creature tracks how satisfying each tile type has been for its needs.
+  // Positive preference → more likely to seek that type when needs are low.
+  // Negative → actively avoids (unless desperate).
+  // This replaces the flat 7% random nudge with a feedback loop that compounds.
+  if (!targetSet) {
+    const memory = c.terrainMemory ?? {}
+    const myTile = tiles[c.y]?.[c.x]
+
+    // Update terrain memory based on current tile outcomes
+    if (myTile) {
+      const tileType = myTile.type
+      // Satisfaction signal: did this tile meet the creature's current dominant need?
+      let satisfaction = 0
+      if ((tileType === 'food_patch' || tileType === 'bush') && c.hunger > 40 && myTile.foodAmount > 10) satisfaction = 1.5
+      if ((tileType === 'river' || tileType === 'mud') && c.thirst > 40 && myTile.waterLevel > 10) satisfaction = 1.5
+      if ((tileType === 'cave' || tileType === 'shelter') && c.warmth < 40) satisfaction = 1.5
+      if (satisfaction === 0 && c.hunger < 30 && c.thirst < 30 && c.warmth > 50) satisfaction = 0.3  // tile is fine
+
+      // Pull toward preferred type based on body-type baseline + learned history
+      const bodyBasePrefs: Partial<Record<string, string[]>> = {
+        Wisp:  ['river', 'mud'],
+        Shell: ['cave', 'shelter'],
+        Spore: ['food_patch', 'bush', 'mud'],
+        Spike: ['barren', 'rock'],
+      }
+      const basePrefTypes = bodyBasePrefs[c.genome.body] ?? []
+
+      // Reinforce presence on preferred tile types; degrade when depleted
+      for (const prefType of basePrefTypes) {
+        const prev = memory[prefType] ?? 0
+        if (tileType === prefType) {
+          const updated = { ...memory, [prefType]: Math.min(10, prev + (satisfaction > 0 ? 0.3 : -0.1)) }
+          changes.terrainMemory = updated
+        }
+      }
+
+      // Negative reinforcement: preferred tile with no resources degrades preference
+      if (basePrefTypes.includes(tileType) && satisfaction === 0 && c.hunger > 50) {
+        const updated = { ...(changes.terrainMemory ?? memory), [tileType]: Math.max(-5, (memory[tileType] ?? 0) - 0.2) }
+        changes.terrainMemory = updated
+      }
+    }
+
+    // Seek based on learned preference + current need pressure
+    const prefMemory = changes.terrainMemory ?? c.terrainMemory ?? {}
+    const bodyPrefs: Partial<Record<string, string[]>> = {
+      Wisp:  ['river', 'mud'],
+      Shell: ['cave', 'shelter'],
+      Spore: ['food_patch', 'bush'],
+      Spike: ['barren', 'rock'],
+    }
+    const wantTypes = bodyPrefs[c.genome.body] ?? []
+
+    // Only seek preferred terrain when not in urgent need
+    if (wantTypes.length > 0 && c.hunger < 60 && c.thirst < 60) {
+      let bestType: string | null = null
+      let bestScore = 0.1  // minimum threshold to bother seeking
+      for (const t of wantTypes) {
+        const pref = (prefMemory[t] ?? 2) as number
+        if (pref > bestScore) { bestScore = pref; bestType = t }
+      }
+
+      if (bestType && myTile?.type !== bestType) {
+        const chance = Math.min(0.25, bestScore * 0.025)  // preference 10 → 25% chance/tick
+        if (Math.random() < chance) {
+          const t = findNearest([bestType as import('@/types').TileType], 20)
+          if (t) { changes.state = 'wandering'; changes.targetX = t.x; changes.targetY = t.y; targetSet = true }
+        }
+      }
     }
   }
 
@@ -954,51 +1176,54 @@ export function tickBehavior(
       && aliveCreatures.some(o => o.id !== c.id && Math.abs(o.x - c.x) <= 4 && Math.abs(o.y - c.y) <= 4)
 
     if (cooldownOk && !recluseBlocked) {
-      // Score items by trait preference. Highest score item wins.
+      // Enrichment scoring: learned preference memory + current-state need multipliers.
+      // The static personality→item lookup table is gone. Each creature's enrichmentMemory
+      // tracks how satisfying each enrichment type has been from actual use. New items
+      // start with a genome-seeded baseline (body-type + mind affinity) that decays toward
+      // the actual experienced value once the creature has used it.
       const items = Object.values(enrichmentItems)
       let bestItem: (typeof items)[0] | null = null
       let bestScore = -1
+      const enrichMem = c.enrichmentMemory ?? {}
 
       for (const item of items) {
         const dx = Math.abs(item.x - c.x)
         const dy = Math.abs(item.y - c.y)
         const dist = dx + dy
         if (dist > ENRICHMENT_SEEK_RADIUS) continue
-        // Skip items occupied by someone else unless Aggressive (can displace)
         if (item.usedBy && item.usedBy !== c.id && c.genome.personality !== 'Aggressive') continue
 
-        // Trade-off gates: respect internal state before using enrichment
+        // Hard need-state gates
         if (item.type === 'resting_spot' && c.stress > 75) continue
         if (item.type === 'worn_path' && c.hunger > 60) continue
-        // Timid avoids high-energy exposed items unless very stressed
         if ((item.type === 'springy_moss' || item.type === 'worn_path')
             && c.genome.personality === 'Timid' && c.stress < 70) continue
+        if (c.hunger > 55 && item.type === 'springy_moss') continue
 
-        // Trait-preference scoring
-        let score = 1.0
-        if (c.genome.personality === 'Lazy'       && item.type === 'resting_spot')   score = 3.0
-        if (c.genome.personality === 'Lazy'       && item.type === 'warm_stone')      score = 2.5
-        if (c.genome.personality === 'Curious'    && item.type === 'worn_path')       score = 3.0
-        if (c.genome.personality === 'Curious'    && item.type === 'springy_moss')    score = 2.5
-        if (c.genome.personality === 'Nurturing'  && item.type === 'play_stones')     score = 2.5
-        if (c.genome.personality === 'Timid'      && item.type === 'burrow')          score = 3.0
-        if (c.genome.personality === 'Aggressive' && item.type === 'burrow')          score = 0.3
-        if (c.genome.mind === 'Sentinel'          && item.type === 'warm_stone')      score *= 2.0
-        if (c.genome.mind === 'Dreaming'          && item.type === 'resting_spot')    score *= 1.5
-        // Cold creatures prioritize thermal enrichment
-        if (c.warmth < 35) {
-          if (item.type === 'warm_stone') score *= 3.0
-          if (item.type === 'burrow') score *= 2.0
+        // Genome-seeded baseline for items never used by this creature.
+        // Acts as a prior that learned experience overrides.
+        const hasMemory = enrichMem[item.type] !== undefined
+        let score: number
+        if (hasMemory) {
+          score = Math.max(0.1, enrichMem[item.type] as number)
+        } else {
+          // Baseline from body/mind biases — gives Wisp a slight mud_pool preference,
+          // Sentinel a warm_stone preference, etc. — but all are modest (0.8–1.8)
+          score = 1.0
+          if (c.genome.body === 'Wisp'  && item.type === 'mud_pool')     score = 1.6
+          if (c.genome.body === 'Shell' && item.type === 'burrow')        score = 1.6
+          if (c.genome.body === 'Shell' && item.type === 'warm_stone')    score = 1.4
+          if (c.genome.mind === 'Sentinel' && item.type === 'warm_stone') score = 1.8
+          if (c.genome.mind === 'Dreaming' && item.type === 'resting_spot') score = 1.5
+          if (c.genome.personality === 'Aggressive' && item.type === 'burrow') score = 0.3
         }
-        // Thirsty creatures prioritize mud_pool for hydration
-        if (c.thirst > 50) {
-          if (item.type === 'mud_pool') score *= 3.0
-        }
-        // Hungry creatures avoid items that increase hunger further
-        if (c.hunger > 55) {
-          if (item.type === 'springy_moss') continue
-        }
-        // Prefer closer items
+
+        // Current-state need multipliers — urgency overrides preference
+        if (c.warmth < 35 && (item.type === 'warm_stone' || item.type === 'burrow')) score *= 3.0
+        if (c.thirst > 50 && item.type === 'mud_pool')  score *= 3.0
+        if (c.stress > 70 && (item.type === 'scratching_post' || item.type === 'springy_moss')) score *= 2.0
+
+        // Proximity preference
         score *= (ENRICHMENT_SEEK_RADIUS + 1 - dist) / ENRICHMENT_SEEK_RADIUS
 
         if (score > bestScore) { bestScore = score; bestItem = item }
@@ -1007,7 +1232,6 @@ export function tickBehavior(
       if (bestItem) {
         const atItem = Math.abs(bestItem.x - c.x) <= ENRICHMENT_USE_RADIUS
           && Math.abs(bestItem.y - c.y) <= ENRICHMENT_USE_RADIUS
-        // At the item: high probability to use; navigating toward it: low probability
         const useProb = atItem ? 0.80 : 0.06 * Math.min(bestScore, 3.0)
         if (Math.random() < useProb) {
           if (atItem) {
@@ -1250,12 +1474,27 @@ export function applyEnrichmentEffect(creature: Creature, itemType: string, part
   // warm_stone: Timid gets extra stress relief from thermal safety
   if (itemType === 'warm_stone' && creature.genome.personality === 'Timid') stressDelta -= 1.0
 
+  // ── Enrichment memory learning ───────────────────────────────────────────
+  // Compute how satisfying this use was, relative to what the creature needed.
+  // High need + matching item effect = high satisfaction = preference rises.
+  // Low need + item use = marginal satisfaction = preference stays or dips slightly.
+  let satisfaction = 1.0
+  if (stressDelta < 0 && creature.stress > 60) satisfaction = 2.0  // stress relief when stressed
+  if (fx.warmth > 0 && creature.warmth < 40) satisfaction = 2.0    // warmth when cold
+  if (fx.thirst < 0 && creature.thirst > 50) satisfaction = 2.0    // hydration when thirsty
+  if (stressDelta < 0 && creature.stress < 30) satisfaction = 0.3  // not needed right now
+
+  const prevPref = (creature.enrichmentMemory?.[itemType] ?? 1.0) as number
+  const learnedPref = Math.min(10, Math.max(0.1, prevPref + (satisfaction - 1.0) * 0.4))
+  const newMemory = { ...(creature.enrichmentMemory ?? {}), [itemType]: learnedPref }
+
   return {
     stress: Math.max(0, Math.min(100, creature.stress + stressDelta)),
     hunger: Math.max(0, Math.min(100, creature.hunger + fx.hunger)),
     thirst: Math.max(0, Math.min(100, creature.thirst + fx.thirst)),
     warmth: Math.max(0, Math.min(100, creature.warmth + fx.warmth)),
     health: Math.max(0, Math.min(100, creature.health + fx.health)),
+    enrichmentMemory: newMemory,
   }
 }
 

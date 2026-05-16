@@ -9,7 +9,6 @@ export const DEFAULT_MODIFIERS: SimModifiers = {
   awarenessMessageMult:        1.0,
   healCharges:                 3,
   foodDropCooldownMs:          5_000,
-  ascensionThresholdOffset:    0,
 }
 
 // Derive SimModifiers from the player's CaretakerProfile answers.
@@ -67,12 +66,9 @@ export function computeSimModifiers(profile: CaretakerProfile): SimModifiers {
   }
 
   // ── Expectation ───────────────────────────────────────────────────────────
-  // ascension:   colony tends toward cognition; sentience accumulates faster
   // persistence: no change
   // extinction:  harsher baseline; drought lingers, food thins
-  if (profile.expectation === 'ascension') {
-    m.sentienceGrowthMult *= 1.20
-  } else if (profile.expectation === 'extinction') {
+  if (profile.expectation === 'extinction') {
     m.droughtDurationMult  *= 1.20
     m.foodRegrowMult       *= 0.88
   }

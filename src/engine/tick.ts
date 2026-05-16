@@ -35,8 +35,8 @@ import {
   AUTUMN_WINDFALL_CHANCE, AUTUMN_WINDFALL_FOOD, AUTUMN_MUSHROOM_CHANCE, AUTUMN_MUSHROOM_FOOD,
   WINTER_LICHEN_CHANCE, WINTER_LICHEN_FOOD, WINTER_LICHEN_CAVE_RADIUS,
   WARMTH_DECAY_BASE, WARMTH_DECAY_WINTER,
-  CARETAKER_PRESENCE_RADIUS, CARETAKER_PRESENCE_WINDOW_MS, CARETAKER_SENTIENCE_BOOST,
-  BONE_MEMORY_CHANCE, BONE_MEMORY_RADIUS,
+  CARETAKER_PRESENCE_RADIUS, CARETAKER_PRESENCE_WINDOW_MS,
+  BONE_MEMORY_RADIUS,
   QUESTION_RESPONSE_WINDOW_MS,
   TREE_FOOD_DROP_CHANCE, TREE_FOOD_RADIUS, TREE_FOOD_MATURE_AGE, TREE_APPLE_MAX_PER_TILE,
   PLAY_DURATION_TICKS, PLAY_STRESS_REDUCTION,
@@ -73,11 +73,7 @@ import {
   // cannibal trauma
   CANNIBAL_TRAUMA_DURATION_DAYS, CANNIBAL_TRAUMA_STRESS_PER_TICK,
   // awareness stage window tracking
-  AWARENESS_STAGE_2_ROLES_REQUIRED,
   AWARENESS_STAGE_3_LEXICON_MIN,
-  AWARENESS_STAGE_4_SENTIENCE_MIN,
-  AWARENESS_STAGE_5_SENTIENCE_MIN,
-  AWARENESS_STAGE_5_DREAMING_MIN,
   COHORT_PHASE_THRESHOLDS,
   // neglect & legendary
   NEGLECT_WARMTH_THRESHOLD, NEGLECT_HUNGER_THRESHOLD, NEGLECT_MIN_AFFECTED, NEGLECT_WARNING_COOLDOWN,
@@ -96,7 +92,7 @@ import {
   canReproduce, canAsexuallyReproduce, resolveFight, applyEnrichmentEffect,
 } from '@/creatures/behavior'
 import { DEFAULT_MODIFIERS } from '@/engine/profile'
-import { createOffspring, createAsexualOffspring, getColonyStage, computeAwarenessStage } from '@/creatures/factory'
+import { createOffspring, createAsexualOffspring, getColonyStage, computeAwarenessStage, recordExperience } from '@/creatures/factory'
 import { generateMessage, deathMessage, extinctionMessage, boneMemoryMessage, generateRaceRevivalMessage, neglectWarningMessage, legendaryMessage } from './messages'
 import { createRng, buildTileIndex } from '@/world/worldGen'
 import { getSpeechContext, buildSentence, learnFromNearby, unlockTierEmoji, assignRole } from '@/engine/speech'
@@ -161,48 +157,64 @@ export function tickSimulation(state: GameState): GameState {
     next.cohortPhase = Math.max(next.cohortPhase ?? 1, newPhase) as CohortPhase
   }
 
-  // ── Awareness stage — emergent window tracking ──────────────────────────────
-  // Windows for stages 1→2 and 2→3 track role diversity and lexicon depth.
-  // Windows for stages 3→4 and 4→5 track sentience depth within the cohort phase.
-  // A sustained window is required for each advance — brief spikes reset the clock.
+  // ── Cognition pressure — continuous, not gated ────────────────────────────
+  // Awareness is a gradient, not a quest unlock. cognitionPressure (0-100) rises
+  // from multiple orthogonal signals and drives the awarenessStage label.
+  // Critically: it can FALL if those signals degrade — regression is real.
   {
     const aliveForStage = aliveAfterReproduction
+    const prev = next.cognitionPressure ?? 0
 
-    // Stage 1→2: role diversity window
+    // ── Signal 1: Role diversity (0-25 points)
+    // More distinct roles = richer social specialization. But diversity without
+    // minimum depth (too few creatures) counts for less.
     const distinctRoles = new Set(aliveForStage.map(c => c.role).filter(r => r !== undefined)).size
-    const meetsRoles = distinctRoles >= AWARENESS_STAGE_2_ROLES_REQUIRED
-    next.roleWindowStart = meetsRoles
-      ? (next.roleWindowStart ?? next.time.day)
-      : undefined
+    const popDepth = Math.min(1, aliveForStage.length / 10)  // under 10 creatures = shallow
+    const roleSignal = Math.min(25, distinctRoles * 4) * popDepth
 
-    // Stage 2→3: colony vocabulary window
+    // ── Signal 2: Vocabulary depth (0-20 points)
+    // Colony-wide symbol pool reflects shared conceptual vocabulary.
     const colonyVocab = new Set<string>()
     for (const c of aliveForStage) c.knownEmoji.forEach(e => colonyVocab.add(e))
-    const meetsLexicon = colonyVocab.size >= AWARENESS_STAGE_3_LEXICON_MIN
-    next.lexiconWindowStart = meetsLexicon
-      ? (next.lexiconWindowStart ?? next.time.day)
-      : undefined
+    const lexiconSignal = Math.min(20, (colonyVocab.size / AWARENESS_STAGE_3_LEXICON_MIN) * 20)
 
-    // Stage 3→4: ancestral memory window — requires cohort phase 4 and at least
-    // one alive creature whose sentience has reached deep awakening.
-    const meetsAncestral = (next.cohortPhase ?? 1) >= 4
-      && aliveForStage.some(c => c.sentience >= AWARENESS_STAGE_4_SENTIENCE_MIN)
-    next.ancestralWindowStart = meetsAncestral
-      ? (next.ancestralWindowStart ?? next.time.day)
-      : undefined
+    // ── Signal 3: Sentience depth (0-25 points)
+    // Not just "does one creature have high sentience" — the distribution matters.
+    // A colony where many creatures have moderate sentience outscores one where a
+    // single Sentinel is outlier-high and everyone else is 0.
+    const avgSentience = aliveForStage.reduce((s, c) => s + c.sentience, 0) / Math.max(1, aliveForStage.length)
+    const maxSentience = aliveForStage.reduce((max, c) => Math.max(max, c.sentience), 0)
+    const sentienceSignal = Math.min(25, (avgSentience * 0.6 + maxSentience * 0.4) * 0.25)
 
-    // Stage 4→5: transcendence window — requires cohort phase 5 and at least one
-    // Sentinel Elder at sentience ≥ 88 OR a Dreaming Elder at sentience ≥ 95.
-    const meetsTranscendent = (next.cohortPhase ?? 1) >= 5
-      && aliveForStage.some(c =>
-        c.role === 'elder' && (
-          (c.genome.mind === 'Sentinel' && c.sentience >= AWARENESS_STAGE_5_SENTIENCE_MIN) ||
-          (c.genome.mind === 'Dreaming' && c.sentience >= AWARENESS_STAGE_5_DREAMING_MIN)
-        )
-      )
-    next.transcendentWindowStart = meetsTranscendent
-      ? (next.transcendentWindowStart ?? next.time.day)
-      : undefined
+    // ── Signal 4: Lineage and generational depth (0-15 points)
+    // Multiple lineages with non-hostile relations + generational depth = cultural history.
+    const lineageCount = new Set(aliveForStage.map(c => c.lineageId)).size
+    const alliedPairs = Object.values(next.lineageRelations ?? {}).filter(v => v > 20).length
+    const generationSignal = Math.min(10, (next.cohortPhase ?? 1) * 2)
+    const lineageSignal = Math.min(5, lineageCount * 0.8 + alliedPairs * 0.5) + generationSignal
+
+    // ── Signal 5: Experience breadth (0-15 points)
+    // Creatures with rich experiential histories contribute disproportionately.
+    const expBreadth = aliveForStage.reduce((s, c) => s + Math.min(1, (c.experienceWeight ?? 0) / 60), 0)
+    const experienceSignal = Math.min(15, expBreadth * 2)
+
+    // ── Combine and smooth ─────────────────────────────────────────────────
+    const rawPressure = roleSignal + lexiconSignal + sentienceSignal + lineageSignal + experienceSignal
+    // Smooth toward target at a rate that prevents single-tick spikes from
+    // immediately unlocking stages, while allowing genuine regression to register.
+    const target = Math.min(100, rawPressure)
+    const delta = target - prev
+    // Rises faster than it falls; cultural depth is earned slowly but lost quicker
+    const rate = delta > 0 ? 0.004 : 0.008
+    next.cognitionPressure = Math.max(0, Math.min(100, prev + delta * rate))
+
+    // Keep the window tracking fields for computeAwarenessStage() in factory.ts (backward compat),
+    // but now derive them from pressure rather than binary condition checks.
+    const cp = next.cognitionPressure
+    next.roleWindowStart    = cp >= 15 ? (next.roleWindowStart    ?? next.time.day) : undefined
+    next.lexiconWindowStart = cp >= 35 ? (next.lexiconWindowStart ?? next.time.day) : undefined
+    next.ancestralWindowStart    = cp >= 60 ? (next.ancestralWindowStart    ?? next.time.day) : undefined
+    next.transcendentWindowStart = cp >= 85 ? (next.transcendentWindowStart ?? next.time.day) : undefined
   }
 
   const computedStage = computeAwarenessStage(next)
@@ -211,25 +223,49 @@ export function tickSimulation(state: GameState): GameState {
   next = tickCaretaker(next, mods)
   next = checkEndgame(next, mods)
 
-  // ── Neglect warning ───────────────────────────────────────────────────────────
-  // Fire a system message when multiple creatures are simultaneously in warmth or
-  // hunger crisis, with a cooldown to avoid message spam.
+  // ── Neglect warning — colony distress accumulator ─────────────────────────
+  // The colony doesn't get surveilled by the engine and notified by threshold.
+  // Instead, creature distress accumulates in a colony-wide signal that the
+  // colony itself "notices" when it reaches a meaningful level. The message
+  // reflects the colony's self-awareness of crisis, not an engine alert.
+  // This also prevents the hair-trigger threshold system from firing on noise.
   {
     const alive = aliveAfterReproduction
     if (alive.length >= 2) {
+      // Accumulate distress signals from creature states every tick.
+      // The accumulator rises when creatures are in genuine crisis and falls when
+      // conditions improve. The colony "speaks" when the accumulator crosses a
+      // threshold — meaning the crisis has been sustained long enough to be real.
+      const coldFrac  = alive.filter(c => c.warmth < NEGLECT_WARMTH_THRESHOLD).length / alive.length
+      const hungryFrac = alive.filter(c => c.hunger > NEGLECT_HUNGER_THRESHOLD).length  / alive.length
+      const stressedFrac = alive.filter(c => c.stress > 75).length / alive.length
+
+      // Each tick: crisis fractions contribute +0.5..+2.0 per tick;
+      // absence of crisis decays the accumulator by 0.3
+      const crisisInput = (coldFrac * 1.5 + hungryFrac * 2.0 + stressedFrac * 0.8)
+      const acc = next.colonyDistressAccumulator ?? 0
+      const newAcc = crisisInput > 0.1
+        ? Math.min(100, acc + crisisInput * 0.4)
+        : Math.max(0, acc - 0.3)
+      next.colonyDistressAccumulator = newAcc
+
+      // Fire a distress message only when accumulator has built to a meaningful level
+      // AND sufficient time has passed since the last warning (colony doesn't repeat itself)
       const cooldownOk = (next.lastNeglectWarning === undefined)
         || (next.time.day - next.lastNeglectWarning >= NEGLECT_WARNING_COOLDOWN)
 
-      if (cooldownOk) {
-        const coldCount = alive.filter(c => c.warmth < NEGLECT_WARMTH_THRESHOLD).length
+      if (newAcc >= 35 && cooldownOk) {
+        const coldCount   = alive.filter(c => c.warmth < NEGLECT_WARMTH_THRESHOLD).length
         const hungryCount = alive.filter(c => c.hunger > NEGLECT_HUNGER_THRESHOLD).length
-
+        // Choose which crisis is dominant and generate a colony-voiced message
         if (coldCount >= NEGLECT_MIN_AFFECTED) {
           next.messages = [...next.messages, neglectWarningMessage('warmth', coldCount, next.time.day)]
           next.lastNeglectWarning = next.time.day
+          next.colonyDistressAccumulator = 0  // colony spoke — reset; it won't repeat unless crisis rebuilds
         } else if (hungryCount >= NEGLECT_MIN_AFFECTED) {
           next.messages = [...next.messages, neglectWarningMessage('hunger', hungryCount, next.time.day)]
           next.lastNeglectWarning = next.time.day
+          next.colonyDistressAccumulator = 0
         }
       }
     }
@@ -1111,6 +1147,7 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
 
 function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifiers): GameState {
   const creatures = { ...state.creatures }
+  let next = { ...state }
   const srcTiles = state.tiles
   const tiles = srcTiles.slice()
   const clonedTileRows = new Uint8Array(WORLD_SIZE)
@@ -1152,8 +1189,14 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
     }
 
     const creatureTile = state.tiles[c.y]?.[c.x]
-    // Track biome for environmental visual adaptation
-    if (creatureTile?.biome) c.dominantBiome = creatureTile.biome
+    // Track biome for environmental visual adaptation; record biome discovery experience
+    if (creatureTile?.biome) {
+      const prevBiome = c.dominantBiome
+      c.dominantBiome = creatureTile.biome
+      if (prevBiome && prevBiome !== creatureTile.biome) {
+        recordExperience(c, 'discovered_biome', state.time.day)
+      }
+    }
     c = tickNeeds(c, state.time.season, creatureTile?.biome)
 
     // Weather thirst/stress correction; rain/storm reduces thirst; drought/heat increases it.
@@ -1206,12 +1249,34 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
     // Awareness acceleration; caretaker actions near a creature boost sentience
     const lastActionX = state.caretaker.lastActionX ?? null
     const lastActionY = state.caretaker.lastActionY ?? null
+    // Caretaker proximity — creature notices something anomalous happened nearby.
+    // The player's presence is no longer a direct sentience injection. Instead,
+    // it registers as a 'caretaker_contact' experience that contributes to
+    // experienceWeight (lived breadth), which in turn feeds cognitionPressure.
+    // The colony becomes aware of the caretaker through accumulated observation,
+    // not because the caretaker's gaze is hardwired into the sentience score.
     if (lastActionX !== null && lastActionY !== null
         && c.genome.mind !== 'Feral'
         && Date.now() - (state.caretaker.lastActionMs ?? 0) < CARETAKER_PRESENCE_WINDOW_MS
         && Math.abs(c.x - lastActionX) <= CARETAKER_PRESENCE_RADIUS
         && Math.abs(c.y - lastActionY) <= CARETAKER_PRESENCE_RADIUS) {
-      c.sentience = Math.min(100, c.sentience + CARETAKER_SENTIENCE_BOOST * mods.sentienceGrowthMult)
+      // Record the experience (feeds experienceWeight → cognitionPressure → awarenessStage)
+      // but no direct sentience bonus. The colony must reason its way to awareness.
+      recordExperience(c, 'caretaker_contact', state.time.day)
+      // Stress reduction: a calm presence is still felt, just not mystically enlightening
+      c.stress = Math.max(0, c.stress - 0.4)
+    }
+
+    // Survived starvation: creature was critical and recovered
+    if (c.hunger > 90 && c.health > 30) {
+      recordExperience(c, 'survived_starvation', state.time.day)
+    }
+
+    // Solitude check: alone within 10 tiles for a prolonged period
+    const hasNearby = aliveCreatures.some(o =>
+      o.id !== c.id && Math.abs(o.x - c.x) <= 10 && Math.abs(o.y - c.y) <= 10)
+    if (!hasNearby) {
+      recordExperience(c, 'long_solitude', state.time.day)
     }
 
     // Disease drains health each tick while sick. Auto-clears once health recovers
@@ -1582,24 +1647,55 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
       }
     }
 
-    // Crowding disease; large populations standing close together
-    // occasionally fall sick. Self-regulating brake on overpopulation.
-    if (aliveCount > DISEASE_POP_THRESHOLD
-      && c.state !== 'sick'
-      && c.health > 35) {
-      // Count adjacent creatures (radius 1) cheaply
+    // ── Ecological disease spread ─────────────────────────────────────────────
+    // Disease no longer fires purely on headcount. Contagion emerges from:
+    //   1. Local density (how many creatures are literally adjacent)
+    //   2. Season (autumn/winter spike — pathogens persist in cold, damp air)
+    //   3. Biome (wetland = stagnant water = pathogen reservoir; arid = desiccating)
+    //   4. Weather (rain/storm increase contact and weaken warmth)
+    //   5. Stress (immune suppression from chronic stress)
+    //   6. Sick neighbours (direct contact vector; unchanged from before)
+    // This means disease outbreaks feel ecologically motivated: a wet autumn
+    // in a dense wetland colony is dangerous. A dispersed arid colony in summer is not.
+    if (c.state !== 'sick' && c.health > 35) {
+      // Local density — count adjacent creatures
       let crowding = 0
       for (const other of aliveCreatures) {
         if (other.id === c.id) continue
         if (Math.abs(other.x - c.x) <= 1 && Math.abs(other.y - c.y) <= 1) {
           crowding++
-          if (other.state === 'sick') crowding += 2  // proximity to sick = higher risk
           if (crowding >= 5) break
         }
       }
-      const popPressure = (aliveCount - DISEASE_POP_THRESHOLD) / 30  // 0..ish
+
+      // Season multiplier: autumn/winter are prime pathogen seasons
+      const seasonMult = state.time.season === 'autumn' ? 1.8
+        : state.time.season === 'winter' ? 1.5
+        : state.time.season === 'spring' ? 0.9
+        : 0.6  // summer: low baseline
+
+      // Biome multiplier: wetlands breed pathogens; arid is naturally hostile to them
+      const biome = creatureTile?.biome ?? 'temperate'
+      const biomeMult = biome === 'wetland' ? 2.2
+        : biome === 'lush' ? 1.3
+        : biome === 'temperate' ? 1.0
+        : biome === 'rocky' ? 0.8
+        : 0.5  // arid
+
+      // Weather multiplier: rain/storm weaken resistance and increase contact
+      const wMult = weather === 'rain' ? 1.4 : weather === 'storm' ? 1.6 : 1.0
+
+      // Stress suppresses immunity: chronically stressed creatures get sick more
+      const stressMult = c.stress > 70 ? 1.5 : c.stress > 50 ? 1.2 : 1.0
+
+      // Immunity protection
       const immunityReduction = 1 - Math.min(DISEASE_IMMUNITY_PROTECTION, (c.immunity ?? 0) * DISEASE_IMMUNITY_PROTECTION)
-      if (crowding >= 3 && Math.random() < DISEASE_CONTACT_CHANCE * (1 + popPressure) * crowding * immunityReduction) {
+
+      // Base contact chance is low; it accumulates from ecology, not headcount
+      const contactChance = DISEASE_CONTACT_CHANCE * seasonMult * biomeMult * wMult * stressMult * immunityReduction
+
+      // Requires some local density; solitary creatures don't get contagious disease
+      if (crowding >= 2 && Math.random() < contactChance * crowding) {
         c.state = 'sick'
         c.stateTimer = 0
         c.health = Math.max(15, c.health - 6)
@@ -1624,16 +1720,54 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
       }
     }
 
-    // Lineage rivalry: diverged lineages cause passive stress when in proximity.
-    if (c.tribeId !== null || c.lineageId) {
-      const hasRival = aliveCreatures.some(other =>
+    // ── Inter-lineage relations: stress is earned through history, not taxonomy ──
+    // Lineages that share offspring (hybrid IDs), have peaceful cohabitation history,
+    // or have cross-lineage bonds experience reduced proximity stress.
+    // Lineages with combat history experience amplified stress.
+    // The lineageRelations map accumulates this over time; stress is derived from it.
+    if (c.lineageId) {
+      const relations = next.lineageRelations ?? {}
+      const nearbyRivals = aliveCreatures.filter(other =>
         other.id !== c.id &&
         other.lineageId !== c.lineageId &&
         Math.abs(other.x - c.x) <= RIVAL_PROXIMITY_RADIUS &&
         Math.abs(other.y - c.y) <= RIVAL_PROXIMITY_RADIUS
       )
-      if (hasRival) {
-        c.stress = Math.min(100, c.stress + RIVAL_STRESS_PER_TICK)
+      for (const other of nearbyRivals) {
+        const key = [c.lineageId, other.lineageId].sort().join(':')
+        const relation = relations[key] ?? 0  // -100 (hostile) .. 100 (allied)
+
+        // Hybrid lineages (contain '+') are bridge populations — they stress neither parent line
+        const isHybridBridge = c.lineageId.includes('+') || other.lineageId.includes('+')
+
+        // Stress scales inversely with relationship: hostile = full stress, allied = no stress
+        // Neutral (0) = half the base stress; relations must be actively negative to cause full stress
+        const relationFactor = isHybridBridge ? 0 : Math.max(0, (50 - relation) / 100)
+        const stressDelta = RIVAL_STRESS_PER_TICK * relationFactor
+
+        c.stress = Math.min(100, c.stress + stressDelta)
+
+        // Peaceful cohabitation slowly improves relations (up to +30 from proximity alone)
+        if (relation < 30 && c.state !== 'fighting') {
+          const newRelation = Math.min(100, relation + 0.002)
+          next.lineageRelations = { ...next.lineageRelations, [key]: newRelation }
+        }
+      }
+
+      // Cross-lineage bonds improve relations significantly
+      for (const bond of c.bonds) {
+        const bonded = next.creatures[bond.targetId]
+        if (!bonded || bonded.diedOnDay !== null) continue
+        if (bonded.lineageId === c.lineageId) continue
+        if (bond.strength < 35) continue
+        const key = [c.lineageId, bonded.lineageId].sort().join(':')
+        const relation = next.lineageRelations?.[key] ?? 0
+        if (relation < 80) {
+          next.lineageRelations = {
+            ...(next.lineageRelations ?? {}),
+            [key]: Math.min(100, relation + 0.01 * (bond.strength / 100))
+          }
+        }
       }
     }
 
@@ -1690,12 +1824,23 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
 
       for (const bond of c.bonds) {
         if (creatures[bond.targetId] && creatures[bond.targetId].diedOnDay === null) {
+          const survivor = creatures[bond.targetId]
           creatures[bond.targetId] = {
-            ...creatures[bond.targetId],
+            ...survivor,
             state: 'mourning',
             stateTimer: 60,
-            stress: Math.min(100, creatures[bond.targetId].stress + 30),
+            stress: Math.min(100, survivor.stress + 30),
           }
+          // Bonded creature experiences loss
+          recordExperience(creatures[bond.targetId], 'bond_lost', state.time.day)
+        }
+      }
+
+      // Nearby creatures witness the death (not just bonded ones)
+      for (const witness of aliveCreatures) {
+        if (witness.id === c.id) continue
+        if (Math.abs(witness.x - c.x) <= 3 && Math.abs(witness.y - c.y) <= 3) {
+          recordExperience(witness, 'witnessed_death', state.time.day)
         }
       }
     }
@@ -1703,6 +1848,7 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
     // Sentience messages; stage-3 can be questions; responses acknowledge tool actions
     if (c.sentience > 20) {
       const respondedToQuestion = state.caretaker.respondedToQuestion ?? false
+      // (colony context removed; generateMessage doesn't accept it)
       const result = generateMessage(c, state.awarenessStage, state.time.day, lastMsgDay, respondedToQuestion, mods.awarenessMessageMult, state.caretaker.lastToolUsed)
       if (result) {
         messages.push(result.message)
@@ -1776,8 +1922,17 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
         messages.push(msg)
         lastMsgDay = state.time.day
       }
-    }
 
+      // Experience: first meaningful bond + cross-lineage bond
+      if (crossed35) {
+        recordExperience(c, 'bond_formed', state.time.day)
+        if (c.lineageId !== other.lineageId) {
+          recordExperience(c, 'cross_lineage_bond', state.time.day)
+          recordExperience(other, 'cross_lineage_bond', state.time.day)
+        }
+      }
+
+    }
     // Fights
     if (c.genome.personality === 'Aggressive' && Math.random() < 0.001) {
       const target = nearby.find(o => o.id !== c.id && o.genome.personality !== 'Timid')
@@ -1787,6 +1942,16 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
         creatures[target.id] = result.defender
         events.push(createEvent('fight', [c.id, target.id], state.time.day,
           `${c.name} challenged ${target.name}`))
+
+        // Inter-lineage combat degrades their relationship score
+        if (c.lineageId !== target.lineageId) {
+          const key = [c.lineageId, target.lineageId].sort().join(':')
+          const relation = next.lineageRelations?.[key] ?? 0
+          next.lineageRelations = {
+            ...(next.lineageRelations ?? {}),
+            [key]: Math.max(-100, relation - 8),
+          }
+        }
       }
     }
 
@@ -1937,7 +2102,7 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
   }
 
   return {
-    ...state,
+    ...next,
     creatures,
     tiles,
     messages,   // no cap here; tickSimulation applies the global slice(-500) once
@@ -1980,7 +2145,15 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
         const combinedLex = [...new Set([...tribeALex, ...tribeBLex])]
         const spawnTile = state.tiles[c.y]?.[c.x]
         const envCtx: EnvContext = { biome: spawnTile?.biome ?? 'temperate', weather: state.weather ?? 'clear', season: state.time.season }
-        const offspring = createOffspring(c, partner, c.x, c.y, state.time.day, tickRng, state.modifiers?.mutationChance, combinedLex, envCtx)
+
+        // Compute divergence pressure: geographic separation + resource stress + lineage relation hostility
+        const geoSep = (Math.abs(c.x - partner.x) + Math.abs(c.y - partner.y)) / 40  // 0-1
+        const avgStress = (c.stress + partner.stress) / 200  // 0-1
+        const lineageKey = [c.lineageId, partner.lineageId].sort().join(':')
+        const lineageHostility = Math.max(0, -(state.lineageRelations?.[lineageKey] ?? 0)) / 100
+        const divergencePressure = Math.min(1, geoSep * 0.3 + avgStress * 0.4 + lineageHostility * 0.3)
+
+        const offspring = createOffspring(c, partner, c.x, c.y, state.time.day, tickRng, state.modifiers?.mutationChance, combinedLex, envCtx, divergencePressure)
         newCreatures.push(offspring)
 
         creatures[c.id] = {
@@ -1991,6 +2164,12 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
           ...creatures[partner.id],
           offspringIds: [...creatures[partner.id].offspringIds, offspring.id],
         }
+
+        // Experience: raised_offspring fires after several offspring accumulate
+        if (creatures[c.id].offspringIds.length % 3 === 0) {
+          recordExperience(creatures[c.id], 'raised_offspring', state.time.day)
+        }
+
         pairedThisTick.add(c.id)
         pairedThisTick.add(partner.id)
 
@@ -2076,16 +2255,38 @@ function checkBoneMemory(
   messages: ColonyMessage[],
   lastMsgDay: number
 ): void {
-  if (Math.random() >= BONE_MEMORY_CHANCE) return
+  // Bone memory is not a proximity lottery. It fires only when there is a real
+  // ancestral connection between the birth and the death site — the same lineage,
+  // or a parent/grandparent relationship — and the offspring's mind is capable
+  // of registering the resonance (not Feral).
+  if (offspring.genome.mind === 'Feral') return
+  if (state.time.day - lastMsgDay < 1) return
+
   for (let dy = -BONE_MEMORY_RADIUS; dy <= BONE_MEMORY_RADIUS; dy++) {
     for (let dx = -BONE_MEMORY_RADIUS; dx <= BONE_MEMORY_RADIUS; dx++) {
       const t = state.tiles[offspring.y + dy]?.[offspring.x + dx]
-      if (t?.type === 'death_site') {
-        if (state.time.day - lastMsgDay >= 1) {
-          messages.push(boneMemoryMessage(offspring.name, state.time.day, offspring.id))
-        }
-        return
-      }
+      if (t?.type !== 'death_site' || !t.deathSiteOf) continue
+
+      const deceased = state.creatures[t.deathSiteOf]
+      if (!deceased) continue
+
+      // Lineage connection check: same root lineage, or direct parent/grandparent
+      const offspringRoot = offspring.lineageId.split('_')[0].split('+')[0]
+      const deceasedRoot  = deceased.lineageId.split('_')[0].split('+')[0]
+      const sameLineage   = offspringRoot === deceasedRoot
+      const isParent      = offspring.parentIds.includes(deceased.id)
+      const isGrandparent = offspring.parentIds.some(pid => {
+        if (!pid) return false
+        const parent = state.creatures[pid]
+        return parent?.parentIds.includes(deceased.id)
+      })
+
+      if (!sameLineage && !isParent && !isGrandparent) continue
+
+      // Connection depth shapes which message fires
+      // const relation = isParent ? 'parent' : isGrandparent ? 'grandparent' : 'lineage'
+      messages.push(boneMemoryMessage(offspring.name, state.time.day, offspring.id))
+      return
     }
   }
 }
@@ -2284,8 +2485,12 @@ function tickTribes(state: GameState): GameState {
     tribes[tribeId] = { ...tribe, tribalLexicon: [...currentLexicon] }
   }
 
-  // Detect inter-lineage conflict: creatures from different lineages in close proximity
-  // Group alive creatures by lineageId
+  // ── Inter-lineage conflict — driven by relationship history, not just proximity ──
+  // A colony where two lineages have been peacefully coexisting for generations
+  // does NOT become a war just because they happen to be standing near each other.
+  // Conflict requires accumulated hostility in lineageRelations (which is updated
+  // by combat events, territorial stress, and resource competition in tickCreatures).
+  // Proximity amplifies existing hostility; it doesn't create it from nothing.
   const lineageGroups = new Map<string, typeof alive>()
   for (const c of alive) {
     const g = lineageGroups.get(c.lineageId) ?? []
@@ -2295,34 +2500,51 @@ function tickTribes(state: GameState): GameState {
 
   const lineageIds = [...lineageGroups.keys()]
   let hasConflict = false
+  const relations = state.lineageRelations ?? {}
 
   if (lineageIds.length >= 2) {
-    // Check each pair of lineage groups for territory overlap
     for (let i = 0; i < lineageIds.length - 1; i++) {
-      const groupA = lineageGroups.get(lineageIds[i])!
+      const lidA = lineageIds[i]
+      const groupA = lineageGroups.get(lidA)!
       for (let j = i + 1; j < lineageIds.length; j++) {
-        const groupB = lineageGroups.get(lineageIds[j])!
+        const lidB = lineageIds[j]
+        const groupB = lineageGroups.get(lidB)!
 
-        // Find members from each group who are near members of the other
+        // Read accumulated relationship score for this pair
+        const relKey = [lidA, lidB].sort().join(':')
+        const relScore = relations[relKey] ?? 0
+
+        // Conflict only activates when lineages are genuinely hostile (score < -15)
+        // OR when they are neutral/unknown and actively competing for the same territory.
+        // Allied lineages (score > 20) will not attack even if standing adjacent.
+        const isHostile = relScore < -15
+        const isNeutral = relScore >= -15 && relScore < 20
+
+        if (!isHostile && !isNeutral) continue  // allied pairs never war
+
         for (const a of groupA) {
           for (const b of groupB) {
-            if (Math.abs(a.x - b.x) > 6 || Math.abs(a.y - b.y) > 6) continue
-            hasConflict = true
+            const dist = Math.abs(a.x - b.x) + Math.abs(a.y - b.y)
+            if (dist > 6) continue
 
-            // Occasional inter-lineage attack
-            if (Math.random() < TRIBE_WAR_FIGHT_CHANCE) {
-              const attacker = Math.random() < 0.5 ? a : b
-              const defender = attacker === a ? b : a
-              const atkEntry = creatures[attacker.id]
-              const defEntry = creatures[defender.id]
+            // Neutral lineages require territorial pressure to fight;
+            // hostile lineages fight on contact alone.
+            const fightThreshold = isHostile
+              ? TRIBE_WAR_FIGHT_CHANCE * 2.0
+              : TRIBE_WAR_FIGHT_CHANCE * 0.5
+
+            if (Math.random() < fightThreshold) {
+              hasConflict = true
+              const atkEntry = creatures[a.id]
+              const defEntry = creatures[b.id]
               if (atkEntry && defEntry && atkEntry.diedOnDay === null && defEntry.diedOnDay === null) {
-                // Tribal attacks: note the event without full fight resolution
                 if (state.time.day - (messages[messages.length - 1]?.day ?? -99) >= 2) {
+                  const intensity = relScore < -40 ? 'violently' : relScore < -15 ? 'aggressively' : 'tentatively'
                   messages.push({
                     id: uuid(),
-                    text: `${attacker.name} and ${defender.name} clashed at the boundary between lineages`,
+                    text: `${a.name} and ${b.name} clashed ${intensity} at the boundary between lineages`,
                     stage: 1 as const,
-                    creatureId: attacker.id,
+                    creatureId: a.id,
                     day: state.time.day,
                     timestamp: Date.now(),
                     read: false,
@@ -2336,7 +2558,7 @@ function tickTribes(state: GameState): GameState {
     }
   }
 
-  // Fracture tracking: sustained inter-lineage conflict moves toward fracture endgame
+  // Fracture tracking: sustained hostility (not just proximity) triggers scatter
   let tribeWarStart = state.tribeWarStart
   if (hasConflict) {
     tribeWarStart = tribeWarStart ?? state.time.day
@@ -2374,20 +2596,52 @@ function tickCaretaker(state: GameState, mods: SimModifiers): GameState {
 
 // ─── Endgame ─────────────────────────────────────────────────────────────────
 
+// Derive extinction cause from the colony's recorded history, not current conditions.
+// We scan the last N messages for recurring themes and cross-reference state history.
+function inferExtinctionCause(state: GameState): ExtinctionRecord['extinctionCause'] {
+  // Scan recent messages for cause signals. Each keyword tallies a score.
+  const scores: Record<ExtinctionRecord['extinctionCause'], number> = {
+    neglect: 0, war: 0, drought: 0, flood: 0, winter: 0, starvation: 0, heatwave: 0,
+  }
+
+  // Check the last 30 messages for contextual cause evidence
+  const recentMsgs = state.messages.slice(-30)
+  for (const m of recentMsgs) {
+    const t = m.text.toLowerCase()
+    if (t.includes('hunger') || t.includes('starv') || t.includes('food'))   scores.starvation++
+    if (t.includes('cold') || t.includes('warmth') || t.includes('winter'))  scores.winter++
+    if (t.includes('drought') || t.includes('thirst') || t.includes('water')) scores.drought++
+    if (t.includes('flood') || t.includes('flood'))                            scores.flood++
+    if (t.includes('heatwave') || t.includes('heat'))                         scores.heatwave++
+    if (t.includes('conflict') || t.includes('lineage') || t.includes('war') || t.includes('clash')) scores.war++
+  }
+
+  // Direct weather/season evidence at time of death also contributes
+  if (state.weather === 'heatwave')                                   scores.heatwave += 3
+  if (state.weather === 'drought')                                    scores.drought += 3
+  if (state.time.season === 'winter' || state.weather === 'snow')    scores.winter += 2
+  if (state.tribeWarStart !== undefined)                              scores.war += 3
+
+  // Colony distress history: if the distress accumulator was high before dying, it was neglect
+  if ((state.colonyDistressAccumulator ?? 0) > 50)                   scores.neglect += 4
+
+  // Find the dominant cause
+  const dominant = (Object.entries(scores) as [ExtinctionRecord['extinctionCause'], number][])
+    .sort((a, b) => b[1] - a[1])[0]
+
+  // If no strong signal, fall back to starvation (most common)
+  return (dominant[1] > 0) ? dominant[0] : 'starvation'
+}
+
 function checkEndgame(state: GameState, _mods: SimModifiers): GameState {
   const alive = Object.values(state.creatures).filter(c => c.diedOnDay === null)
 
   if (alive.length === 0 && Object.keys(state.creatures).length > 0) {
+    const cause = inferExtinctionCause(state)
     const fossils: ExtinctionRecord = {
       id: uuid(),
       extinctionDay: state.time.day,
-      extinctionCause: (
-        state.weather === 'heatwave'                                        ? 'heatwave'
-        : state.weather === 'drought'                                       ? 'drought'
-        : (state.time.season === 'winter' || state.weather === 'snow')     ? 'winter'
-        : state.totalDeaths > 20                                            ? 'starvation'
-        : 'neglect'
-      ),
+      extinctionCause: cause,
       peakPopulation: state.totalCreaturesEver,
       generationsReached: state.totalGenerations,
       finalMessage: extinctionMessage(null),
@@ -2409,20 +2663,64 @@ function checkEndgame(state: GameState, _mods: SimModifiers): GameState {
     }
   }
 
-  // Fracture: sustained inter-lineage conflict collapses the colony into separate groups.
+  // Fracture: sustained inter-lineage conflict causes the colony to split and scatter.
+  // Rather than ending the simulation, each lineage migrates to a distinct region of the
+  // map and continues as a separate population. This is an emergent branching event, not
+  // a terminal state.
   if (state.tribeWarStart !== undefined && state.endgame === null) {
     const daysSinceWarStart = state.time.day - state.tribeWarStart
     if (daysSinceWarStart >= TRIBE_WAR_SUSTAIN_DAYS) {
       const alive2 = Object.values(state.creatures).filter(c => c.diedOnDay === null)
-      if (alive2.length >= 8) {  // must have enough creatures to actually fracture
+      if (alive2.length >= 8) {
+        // Group living creatures by lineage
+        const lineageGroups = new Map<string, typeof alive2>()
+        for (const c of alive2) {
+          const g = lineageGroups.get(c.lineageId) ?? []
+          g.push(c)
+          lineageGroups.set(c.lineageId, g)
+        }
+        const lineageList = [...lineageGroups.entries()]
+
+        // Assign each lineage a destination corner/quadrant of the map so they
+        // naturally separate and stop overlapping territory.
+        const corners = [
+          { cx: Math.floor(WORLD_SIZE * 0.2), cy: Math.floor(WORLD_SIZE * 0.2) },
+          { cx: Math.floor(WORLD_SIZE * 0.8), cy: Math.floor(WORLD_SIZE * 0.8) },
+          { cx: Math.floor(WORLD_SIZE * 0.8), cy: Math.floor(WORLD_SIZE * 0.2) },
+          { cx: Math.floor(WORLD_SIZE * 0.2), cy: Math.floor(WORLD_SIZE * 0.8) },
+        ]
+
+        const updatedCreatures = { ...state.creatures }
+        lineageList.forEach(([, members], idx) => {
+          const dest = corners[idx % corners.length]
+          for (const c of members) {
+            // Scatter each member around the destination with a small random offset
+            // so the group spreads rather than piling onto one tile.
+            const scatter = 12
+            const tx = Math.max(0, Math.min(WORLD_SIZE - 1,
+              dest.cx + Math.floor((Math.random() - 0.5) * scatter * 2)))
+            const ty = Math.max(0, Math.min(WORLD_SIZE - 1,
+              dest.cy + Math.floor((Math.random() - 0.5) * scatter * 2)))
+            updatedCreatures[c.id] = {
+              ...updatedCreatures[c.id],
+              state: 'migrating' as const,
+              targetX: tx,
+              targetY: ty,
+            }
+          }
+        })
+
         return {
           ...state,
-          endgame: 'fracture',
+          creatures: updatedCreatures,
+          // Clear the war timer so the conflict clock resets after the split.
+          // If the lineages wander back into contact the timer can re-engage.
+          tribeWarStart: undefined,
           messages: [
             ...state.messages,
             {
               id: uuid(),
-              text: 'the colony has fractured. two lineages could not share the territory.',
+              text: 'the lineages could not share the territory. each has begun migrating to its own region.',
               stage: 1 as const,
               creatureId: null,
               day: state.time.day,
@@ -2459,7 +2757,6 @@ function createEvent(
     death: 'Subject deceased',
     new_generation: 'New generation recorded',
     tribe_war: 'Lineage conflict',
-    ascension_near: 'Signal depth increasing',
   }
 
   return {

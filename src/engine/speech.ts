@@ -600,38 +600,97 @@ export function buildSentence(c: Creature, context: SentenceContext): string[] {
 // Priority order matters. Roles are emergent — they reflect behavioral
 // contribution, not just genome. Generation, sentience, and offspring count
 // can elevate a creature into a deeper expression of their base type.
+// ─── Behavior-history role weights ───────────────────────────────────────────
+// Roles are not fixed personality→title mappings. They emerge from what the
+// creature has actually done. Each role has a score computed from behavioral
+// evidence; the highest scorer wins. Genome biases the starting weights but
+// cannot lock a creature into a role — actions override genetics over time.
+//
+// Evidence sources:
+//   killCount         — defensive history (guardian)
+//   offspringIds      — reproductive investment (nurturer/healer)
+//   messagesSent      — communicative history (shaman/elder)
+//   bonds.length      — social investment (nurturer)
+//   sentience         — reflective depth (elder/shaman)
+//   age               — survival depth (elder)
+//   experienceWeight  — breadth of life events (shaman)
+//   generation        — lineage depth (elder)
+
 export function assignRole(c: Creature, _tribeSize: number, lineageCount: number): CommunityRole | undefined {
-  if (c.genome.personality === 'Recluse') return 'recluse'
-
   const { personality, body, mind } = c.genome
-  const seniorMind = mind === 'Sentinel' || mind === 'Dreaming'
 
-  // Elder — Sentinel with witnessed depth: many lineages or accumulated sentience with age
-  if (mind === 'Sentinel' && (lineageCount >= 4 || (c.sentience >= 60 && c.generation >= 3))) return 'elder'
+  // Recluse is a behavioral commitment, not a genetic destiny — but persistent
+  // social withdrawal (very few bonds, no messages sent) earns it organically too.
+  const isRecluse = personality === 'Recluse'
+    || (c.bonds.filter(b => b.strength >= 20).length === 0 && c.messagesSent === 0 && c.age > 20)
+  if (isRecluse) return 'recluse'
 
-  // Shaman — senior mind with wandering or curious nature; pattern-reader and memory-keeper
-  if (seniorMind && (personality === 'Curious' || personality === 'Wanderer')) return 'shaman'
+  // ── Score each role from behavioral evidence ──────────────────────────────
+  const scores: Record<CommunityRole, number> = {
+    elder: 0, shaman: 0, guardian: 0, nurturer: 0,
+    healer: 0, scout: 0, forager: 0, recluse: 0,
+  }
 
-  // Healer — nurturing drive elevated by dreaming depth or proven through many offspring
-  if (personality === 'Nurturing' && (mind === 'Dreaming' || c.offspringIds.length >= 4)) return 'healer'
+  // ELDER — earned through survival depth, generational witness, and cognitive seniority
+  // Genome Sentinel is a bias, not a requirement; any creature that has survived long
+  // enough and witnessed enough becomes a cultural anchor.
+  scores.elder += mind === 'Sentinel' ? 15 : mind === 'Dreaming' ? 8 : 2
+  scores.elder += Math.min(20, c.age * 0.12)                         // long survival
+  scores.elder += Math.min(15, c.sentience * 0.18)                   // cognitive depth
+  scores.elder += Math.min(10, c.generation * 1.5)                   // lineage depth
+  scores.elder += Math.min(10, lineageCount * 2.0)                   // witnessed many lineages
+  scores.elder += c.messagesSent >= 5 ? 8 : 0                        // has communicated
 
-  // Nurturer — social caregiver without the depth or track record for healer
-  if (personality === 'Nurturing') return 'nurturer'
+  // SHAMAN — pattern-readers and memory-keepers; broad experience + communication
+  scores.shaman += (personality === 'Curious' || personality === 'Wanderer') ? 12 : 3
+  scores.shaman += (mind === 'Dreaming' || mind === 'Sentinel') ? 10 : 2
+  scores.shaman += Math.min(15, (c.experienceWeight ?? 0) * 0.15)    // breadth of experience
+  scores.shaman += Math.min(10, c.messagesSent * 1.2)                // communicative history
+  scores.shaman += c.sentience >= 50 ? 8 : 0                         // deep enough to interpret
 
-  // Guardian — territorial by nature or physical build; kills deepen the role
-  if (personality === 'Aggressive' || body === 'Spike') return 'guardian'
+  // GUARDIAN — proven through combat history and territorial behavior
+  scores.guardian += (personality === 'Aggressive' || personality === 'Territorial') ? 14 : 3
+  scores.guardian += body === 'Spike' ? 8 : 0
+  scores.guardian += Math.min(20, c.killCount * 3)                   // combat history is primary
+  scores.guardian += c.territoryClaim !== null ? 6 : 0               // actively holds territory
 
-  // Scout — Wisp body is built for ranging; Wanderer/Curious Wisps are the archetype,
-  // but any Wisp that has survived to gen 2+ develops the role through lived experience
-  if (body === 'Wisp' && (personality === 'Wanderer' || personality === 'Curious' || c.generation >= 2)) return 'scout'
+  // HEALER — proven through offspring survival and care investment
+  scores.healer += personality === 'Nurturing' ? 12 : personality === 'Empath' ? 9 : 2
+  scores.healer += mind === 'Dreaming' ? 8 : 0
+  scores.healer += Math.min(20, c.offspringIds.length * 3)           // reproductive investment
+  scores.healer += c.bonds.filter(b => b.strength >= 50).length * 3  // deep bonds = care history
 
-  // Forager — resource specialist through wandering drive or acquisitive personality
-  if (personality === 'Wanderer' || personality === 'Greedy') return 'forager'
+  // NURTURER — social investment without the specialization depth of healer
+  scores.nurturer += personality === 'Nurturing' ? 10 : personality === 'Social' ? 7 : 2
+  scores.nurturer += Math.min(12, c.offspringIds.length * 2)
+  scores.nurturer += c.bonds.filter(b => b.strength >= 35).length * 2
 
-  // Senior minds without a better-fitting role drift toward shaman
-  if (seniorMind) return 'shaman'
+  // SCOUT — ranging history and perceptual acuity
+  scores.scout += body === 'Wisp' ? 12 : 0
+  scores.scout += (personality === 'Wanderer' || personality === 'Curious') ? 10 : 3
+  scores.scout += c.generation >= 2 ? 6 : 0                          // survived long enough to range
+  scores.scout += Math.min(10, ((c.experienceLog?.discovered_biome !== undefined) ? 10 : 0))
 
-  return undefined
+  // FORAGER — resource acquisition history
+  scores.forager += (personality === 'Wanderer' || personality === 'Greedy' || personality === 'Hoarder') ? 12 : 3
+  scores.forager += body === 'Spore' ? 6 : 0
+  scores.forager += c.carrying !== undefined ? 4 : 0                 // actively gathering right now
+
+  // ── Pick the highest-scoring role ─────────────────────────────────────────
+  // Elder and shaman require minimum cognitive depth — genome can't shortcut this.
+  if (scores.elder < 25 && scores.shaman < 20) {
+    scores.elder = 0
+    scores.shaman = 0
+  }
+  if (c.sentience < 30) { scores.elder = 0; scores.shaman = 0 }
+
+  const roles = Object.entries(scores) as [CommunityRole, number][]
+  roles.sort((a, b) => b[1] - a[1])
+
+  const [best] = roles[0]
+  // Minimum score threshold — creatures with no strong behavioral signal get no role
+  if (roles[0][1] < 10) return undefined
+  return best
 }
 
 // ─── Starter vocabulary ───────────────────────────────────────────────────────

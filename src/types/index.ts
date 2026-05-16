@@ -1,3 +1,18 @@
+// ─── Experience event types ───────────────────────────────────────────────────
+// Each type fires once per meaningful occurrence and contributes to sentience.
+// Feral creatures are immune; Aware/Dreaming/Sentinel weigh these differently.
+export type ExperienceEventType =
+  | 'bond_formed'          // bonded with another creature for the first time
+  | 'bond_lost'            // bonded partner died
+  | 'witnessed_death'      // was present when another died
+  | 'raised_offspring'     // offspring survived past 5 days
+  | 'survived_starvation'  // hunger > 90 then recovered
+  | 'survived_combat'      // was in fight state, health dropped below 30, survived
+  | 'discovered_biome'     // entered a biome type not previously visited
+  | 'long_solitude'        // alone for 20+ consecutive days
+  | 'caretaker_contact'    // caretaker acted within close proximity
+  | 'cross_lineage_bond'   // formed a meaningful bond with creature of different lineage
+
 // ─── Genetics ────────────────────────────────────────────────────────────────
 
 export type PersonalityTrait =
@@ -146,6 +161,21 @@ export interface Creature {
   traumaUntil?: number
 
   immunity?: number            // 0-1; gained after surviving disease; reduces contact chance
+
+  // ─── Experience-driven sentience ──────────────────────────────────────────
+  // Accumulated weight of distinct lived experiences; each type contributes once
+  // per occurrence to avoid farming. Drives sentience growth alongside base rate.
+  experienceLog?: Partial<Record<ExperienceEventType, number>>  // event → game-day of last occurrence
+  experienceWeight?: number   // 0-100; cumulative experience pressure on sentience
+
+  // ─── Terrain preference learning ──────────────────────────────────────────
+  // Per-tile-type visit outcome history; positive when creature found what it
+  // sought (food/water/shelter), negative when tile was empty or unsuitable.
+  terrainMemory?: Partial<Record<string, number>>  // tileType → preference score (-10..10)
+
+  // ─── Enrichment preference learning ──────────────────────────────────────
+  // Accumulated satisfaction scores from actual enrichment use; replaces static table.
+  enrichmentMemory?: Partial<Record<string, number>>  // enrichmentType → learned preference (0..10)
 
   // community & speech
   role?: CommunityRole        // assigned when tribe forms or colony grows
@@ -342,7 +372,6 @@ export type EventType =
   | 'death'
   | 'new_generation'
   | 'tribe_war'
-  | 'ascension_near'
 
 export interface GameEvent {
   id: string
@@ -392,7 +421,7 @@ export interface CaretakerProfile {
   world:       'fertile' | 'varied' | 'scarce'
   evolution:   'fast' | 'slow'
   focus:       'bonds' | 'survival' | 'awareness'
-  expectation: 'ascension' | 'persistence' | 'extinction'
+  expectation: 'persistence' | 'extinction'
   visibility:  'attentive' | 'neutral' | 'hidden'
 }
 
@@ -408,7 +437,6 @@ export interface SimModifiers {
   awarenessMessageMult: number  // ×1.0 default; scales message cooldown (< 1 = more messages)
   healCharges: number           // 3 default; daily heal uses available to caretaker
   foodDropCooldownMs: number    // 5000 default; ms between food drop actions
-  ascensionThresholdOffset: number // 0 default; reserved for save compatibility
 }
 
 // ─── Caretaker Resources ─────────────────────────────────────────────────────
@@ -450,7 +478,7 @@ export type ColonyStage =
 
 // ─── Endgame ──────────────────────────────────────────────────────────────────
 
-export type EndgameType = 'extinction' | 'fracture' | 'ascension' | null
+export type EndgameType = 'extinction' | null
 
 // ─── Full Game State ──────────────────────────────────────────────────────────
 
@@ -500,8 +528,26 @@ export interface GameState {
   ancestralWindowStart?: number   // day depth-4 sentience condition began its sustained window
   transcendentWindowStart?: number// day depth-5 Elder-sentience condition began its sustained window
 
+  // ─── Emergent cognition ───────────────────────────────────────────────────
+  // Continuous pressure score (0-100) that drives awareness stage as a gradient,
+  // not a gate. Rises from role diversity, vocabulary, sentience depth, lineage
+  // complexity, and cross-lineage bonds. Falls when those conditions degrade.
+  // awarenessStage remains as a soft band label derived from this value.
+  cognitionPressure?: number
+
+  // Colony distress memory — accumulated creature distress signals that the
+  // colony "notices" internally before surfacing a message. Prevents the engine
+  // from acting as a surveillance system; the colony decides when to speak.
+  colonyDistressAccumulator?: number
+
   absenceImprint?: number      // in-game days of stress imprint after long absence
   tribeWarStart?: number       // game day when sustained inter-lineage conflict began
+
+  // ─── Lineage relations ────────────────────────────────────────────────────
+  // Per-pair relationship score between lineage IDs. Key = "lineageA:lineageB" (sorted).
+  // Starts neutral (0). Shared offspring, cross-lineage bonds, and cohabitation push positive.
+  // Combat and proximity stress push negative. Range: -100..100.
+  lineageRelations?: Record<string, number>
 
   // neglect & legendary tracking — optional for backward compat
   lastNeglectWarning?: number  // game day of last neglect warning message

@@ -111,7 +111,6 @@ const VISIBILITY_HINTS: Record<Visibility, string> = {
   hidden:    'your presence is subtle; awareness grows slowly, more autonomy',
 }
 const EXPECTATION_HINTS: Record<Expectation, string> = {
-  ascension:   'the colony tends toward cognition; awareness accumulates more readily',
   persistence: 'no bias ; the colony persists according to its own nature',
   extinction:  'the world presses harder; harsher baseline conditions',
 }
@@ -121,7 +120,7 @@ const PRESENCE_COLORS:  Record<Presence,    string> = { interventionist: THEME.w
 const EVOLUTION_COLORS: Record<Evolution,   string> = { fast: THEME.threat, slow: THEME.water }
 const FOCUS_COLORS:     Record<Focus,       string> = { bonds: '#c878f0', survival: THEME.alive, awareness: THEME.water }
 const VISIBILITY_COLORS: Record<Visibility, string> = { attentive: '#f0a8f0', neutral: THEME.amber, hidden: '#6a9a8a' }
-const EXPECT_COLORS:    Record<Expectation, string> = { ascension: '#c878f0', persistence: THEME.amber, extinction: THEME.death }
+const EXPECT_COLORS:    Record<Expectation, string> = { persistence: THEME.amber, extinction: THEME.death }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -181,7 +180,7 @@ export function ProfileScreen({ onComplete }: Props) {
           <Section>
             <SectionTitle>Expectation</SectionTitle>
             <OptionGrid $cols={3}>
-              {(['ascension','persistence','extinction'] as Expectation[]).map(e => (
+              {(['persistence','extinction'] as Expectation[]).map(e => (
                 <OptionBtn key={e} $selected={expectation === e} $accent={EXPECT_COLORS[e]}
                   onClick={() => setExpectation(e)}>
                   {e.slice(0, 11)}

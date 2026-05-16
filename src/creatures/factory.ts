@@ -9,13 +9,7 @@ import {
   MUTATION_CRISIS_BOOST_MAX,
   STARTER_BOND_STRENGTH,
   REPRODUCE_BOND_MIN_STRENGTH,
-  AWARENESS_STAGE_2_ROLES_REQUIRED,
-  AWARENESS_STAGE_2_WINDOW_DAYS,
-  AWARENESS_STAGE_3_LEXICON_MIN,
-  AWARENESS_STAGE_3_WINDOW_DAYS,
-  AWARENESS_STAGE_4_WINDOW_DAYS,
-  AWARENESS_STAGE_5_WINDOW_DAYS,
-  LINEAGE_FORK_GENERATION,
+  // window/gate constants removed — awarenessStage now reads cognitionPressure directly
 } from '@/engine/constants'
 import {
   randomGenome,
@@ -150,17 +144,46 @@ function detectMutations(offspring: Genome, parentA: Creature, parentB: Creature
   return mutated
 }
 
-// Compute the lineageId for a new offspring. Every LINEAGE_FORK_GENERATION
-// generations, the ID forks from the root ancestor into a sub-lineage so that
-// distant cousins are treated as strangers by the existing fight gates.
-// UUIDs use hyphens; underscore is the tier separator and won't collide.
-function deriveLineageId(primaryParent: Creature, offspringGeneration: number): string {
-  const tier = Math.floor(offspringGeneration / LINEAGE_FORK_GENERATION)
-  if (tier === 0) return primaryParent.lineageId
-  const rootId = primaryParent.lineageId.includes('_')
-    ? primaryParent.lineageId.split('_')[0]
-    : primaryParent.lineageId
-  return `${rootId}_${tier}`
+// ─── Lineage divergence ───────────────────────────────────────────────────────
+// Lineage forking is NOT a generation counter. It is a pressure accumulation.
+// A fork happens when actual divergence forces (geographic separation, resource
+// competition, accumulated stress from proximity) push past a threshold.
+// Creatures born from cross-lineage parents inherit a BLENDED lineage ID, which
+// creates a natural bridge population and reduces inter-lineage tension.
+//
+// lineageId format: "{rootId}" or "{rootId}_{branchSuffix}"
+// rootId = lineageId of the primary parent's root
+// branchSuffix = short hash from divergence pressure snapshot
+
+function deriveLineageId(
+  parentA: Creature,
+  parentB: Creature,
+  inheritFromA: boolean,
+  divergencePressure: number,
+  rng: () => number,
+): string {
+  const primary = inheritFromA ? parentA : parentB
+  const secondary = inheritFromA ? parentB : parentA
+
+  const rootA = primary.lineageId.includes('_') ? primary.lineageId.split('_')[0] : primary.lineageId
+  const rootB = secondary.lineageId.includes('_') ? secondary.lineageId.split('_')[0] : secondary.lineageId
+
+  // Cross-lineage birth: offspring get a blended lineage ID that is distinct from both
+  // parents but related to neither as a full outsider. This is the social bridge population.
+  if (rootA !== rootB) {
+    // Blend: alphabetically ordered roots joined by '+' marks hybrid lineage
+    const [lo, hi] = [rootA, rootB].sort()
+    return `${lo.slice(0, 8)}+${hi.slice(0, 8)}`
+  }
+
+  // Same-root parents: fork only under genuine divergence pressure (≥ 0.7 threshold)
+  if (divergencePressure >= 0.70) {
+    const branchSuffix = Math.floor(rng() * 0xffff).toString(16).padStart(4, '0')
+    return `${rootA}_${branchSuffix}`
+  }
+
+  // No fork: offspring inherit parent's lineage
+  return primary.lineageId
 }
 
 export function createOffspring(
@@ -173,6 +196,7 @@ export function createOffspring(
   mutationChance?: number,
   tribalLexicon: string[] = [],
   envCtx?: EnvContext,
+  divergencePressure = 0,  // 0-1; computed by caller from geographic/stress/resource signals
 ): Creature {
   // Fitness-weighted inheritance: healthier, less-stressed parents pass on more traits.
   // The probability of inheriting parentA's trait rises with parentA's relative fitness.
@@ -210,7 +234,7 @@ export function createOffspring(
     genome,
     generation,
     parentIds: [parentA.id, parentB.id],
-    lineageId: deriveLineageId(inheritFromA ? parentA : parentB, generation),
+    lineageId: deriveLineageId(parentA, parentB, inheritFromA, divergencePressure, rng),
     bornOnDay: currentDay,
     knownEmoji: inheritEmoji(parentA, parentB, tribalLexicon, rng),
   }, rng)
@@ -248,7 +272,7 @@ export function createAsexualOffspring(
     genome,
     generation: parent.generation + 1,
     parentIds: [parent.id, null],
-    lineageId: deriveLineageId(parent, parent.generation + 1),
+    lineageId: deriveLineageId(parent, parent, true, 0, rng),
     bornOnDay: currentDay,
     knownEmoji: inheritEmoji(parent, null, [], rng),
   }, rng)
@@ -361,17 +385,80 @@ export function createStarterCreatures(
 }
 
 // ─── Sentience tick ───────────────────────────────────────────────────────────
+// Sentience is not a timer — it is an accumulation of lived experience.
+// The base rate (SENTIENCE_GROWTH_BY_MIND) is a biological floor: a Sentinel in
+// isolation still has a richer inner world than a Feral in a crowd, but the ceiling
+// is unlocked only by what actually happens to the creature.
+//
+// Experience weight (0-100) is accumulated separately via recordExperience() and
+// decays very slowly — trauma and discovery leave lasting marks.
+// The final growth each tick = base_rate × mind_multiplier + experience_pressure.
+// Above sentience 70, regression is possible if the creature is completely isolated
+// and has no recent experiences — awareness that goes untested fades.
 
 export function tickSentience(creature: Creature): number {
-  const growth = SENTIENCE_GROWTH_BY_MIND[creature.genome.mind] ?? 0
-  // Below 50, sentience grows freely — baseline cognition requires no social input.
-  // Above 50, a meaningful bond (strength ≥ 35) is required for further awakening.
-  // Isolated creatures plateau: inner worlds only deepen through others reflecting them back.
-  if (creature.sentience >= 50) {
-    const hasMeaningfulBond = creature.bonds.some(b => b.strength >= REPRODUCE_BOND_MIN_STRENGTH)
-    return Math.min(100, creature.sentience + growth * (hasMeaningfulBond ? 1.0 : 0.2))
+  if (creature.genome.mind === 'Feral') return creature.sentience // Feral: no awakening
+
+  const baseRate = SENTIENCE_GROWTH_BY_MIND[creature.genome.mind] ?? 0
+
+  // Experience pressure: accumulated weight drives meaningful growth beyond the floor
+  const expWeight = creature.experienceWeight ?? 0
+  const experiencePressure = (expWeight / 100) * baseRate * 4  // up to 4× base from experience
+
+  // Bond depth: a strong social network amplifies reflection and self-awareness
+  const strongBonds = creature.bonds.filter(b => b.strength >= REPRODUCE_BOND_MIN_STRENGTH).length
+  const bondMultiplier = Math.min(2.0, 1.0 + strongBonds * 0.25)
+
+  // Solitude drag: above sentience 70, untested awareness slowly regresses without bonds
+  let regressionDrag = 0
+  if (creature.sentience >= 70 && strongBonds === 0) {
+    regressionDrag = baseRate * 2  // pulls back — awareness without reflection fades
   }
-  return Math.min(100, creature.sentience + growth)
+
+  const delta = (baseRate + experiencePressure) * bondMultiplier - regressionDrag
+  return Math.max(0, Math.min(100, creature.sentience + delta))
+}
+
+// ─── Record an experience event on a creature ─────────────────────────────────
+// Mutates the creature in place. Each event type contributes a weighted burst to
+// experienceWeight; different mind types feel experiences differently.
+// Returns the experience weight delta applied.
+export function recordExperience(
+  creature: Creature,
+  event: import('@/types').ExperienceEventType,
+  currentDay: number
+): number {
+  if (creature.genome.mind === 'Feral') return 0  // Feral creatures don't accumulate experience
+
+  // Cooldown per event type: don't let the same stimulus repeat-farm sentience
+  const cooldowns: Record<string, number> = {
+    bond_formed: 30, bond_lost: 5, witnessed_death: 3, raised_offspring: 20,
+    survived_starvation: 10, survived_combat: 5, discovered_biome: 60,
+    long_solitude: 15, caretaker_contact: 10, cross_lineage_bond: 30,
+  }
+  const log = creature.experienceLog ?? {}
+  const lastDay = log[event] ?? -999
+  const cooldown = cooldowns[event] ?? 20
+  if (currentDay - lastDay < cooldown) return 0
+
+  // Base weights per event type
+  const weights: Record<string, number> = {
+    bond_formed: 8, bond_lost: 12, witnessed_death: 10, raised_offspring: 9,
+    survived_starvation: 7, survived_combat: 8, discovered_biome: 5,
+    long_solitude: 4, caretaker_contact: 6, cross_lineage_bond: 10,
+  }
+
+  // Mind-type sensitivity: Dreaming and Sentinel feel experiences more deeply
+  const sensitivity: Record<string, number> = {
+    Aware: 1.0, Dreaming: 1.6, Sentinel: 1.4,
+  }
+
+  const baseWeight = weights[event] ?? 5
+  const delta = baseWeight * (sensitivity[creature.genome.mind] ?? 1.0)
+
+  creature.experienceLog = { ...log, [event]: currentDay }
+  creature.experienceWeight = Math.min(100, (creature.experienceWeight ?? 0) + delta)
+  return delta
 }
 
 // ─── Colony stage ─────────────────────────────────────────────────────────────
@@ -388,40 +475,24 @@ export function getColonyStage(population: number) {
 // ─── Awareness stage ─────────────────────────────────────────────────────────
 
 export function computeAwarenessStage(state: GameState): MessageStage {
-  const alive = Object.values(state.creatures).filter(c => c.diedOnDay === null)
-
-  // Stage 1→2: behavioral specialization — 4 distinct community roles held
-  // simultaneously by alive creatures, sustained for 7 consecutive in-game days.
-  const liveRoles = new Set(alive.map(c => c.role).filter(r => r !== undefined))
-  const rolesMet = liveRoles.size >= AWARENESS_STAGE_2_ROLES_REQUIRED
-    && state.roleWindowStart !== undefined
-    && state.time.day - state.roleWindowStart >= AWARENESS_STAGE_2_WINDOW_DAYS
-
-  if (!rolesMet) return 1
-
-  // Stage 2→3: cultural depth — colony vocabulary union ≥ 30 symbols, 7-day window.
-  const colonyVocab = new Set<string>()
-  for (const c of alive) c.knownEmoji.forEach(e => colonyVocab.add(e))
-  const lexiconMet = colonyVocab.size >= AWARENESS_STAGE_3_LEXICON_MIN
-    && state.lexiconWindowStart !== undefined
-    && state.time.day - state.lexiconWindowStart >= AWARENESS_STAGE_3_WINDOW_DAYS
-
-  if (!lexiconMet) return 2
-
-  // Stage 3→4: ancestral memory — cohort phase 4 (gen ≥ 30) with at least one
-  // creature at sentience ≥ 80, sustained for 14 consecutive in-game days.
-  // The window is tracked in tick.ts; here we only read whether it was satisfied.
-  const ancestralMet = (state.cohortPhase ?? 1) >= 4
-    && state.ancestralWindowStart !== undefined
-    && state.time.day - state.ancestralWindowStart >= AWARENESS_STAGE_4_WINDOW_DAYS
-
-  if (!ancestralMet) return 3
-
-  // Stage 4→5: transcendence — cohort phase 5 (gen ≥ 60) with at least one Elder
-  // at sentience ≥ 95, sustained for 21 consecutive in-game days.
-  const transcendentMet = (state.cohortPhase ?? 1) >= 5
-    && state.transcendentWindowStart !== undefined
-    && state.time.day - state.transcendentWindowStart >= AWARENESS_STAGE_5_WINDOW_DAYS
-
-  return transcendentMet ? 5 : 4
+  // Awareness stage is now purely derived from cognitionPressure — the continuous
+  // gradient computed in tick.ts from five orthogonal colony-wide signals.
+  // There are no binary gates or separate condition checks here; the stage label
+  // is just a human-readable band over the underlying pressure score.
+  //
+  // Band thresholds are matched to the pressure contributions:
+  //   Stage 1 → 2 : pressure ≥ 15   (early role diversity + any vocab)
+  //   Stage 2 → 3 : pressure ≥ 35   (lexicon depth + sentience starting)
+  //   Stage 3 → 4 : pressure ≥ 60   (broad sentience + lineage complexity)
+  //   Stage 4 → 5 : pressure ≥ 85   (deep ancestral & experience breadth)
+  //
+  // Regression is real: if the colony degrades (mass death, loss of roles,
+  // vocabulary collapse) the stage can fall back. This is intentional —
+  // awareness is earned by the living colony, not banked from the past.
+  const cp = state.cognitionPressure ?? 0
+  if (cp >= 85) return 5
+  if (cp >= 60) return 4
+  if (cp >= 35) return 3
+  if (cp >= 15) return 2
+  return 1
 }

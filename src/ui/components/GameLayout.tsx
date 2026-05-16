@@ -73,14 +73,14 @@ const EndgameOverlay = styled.div`
   font-family:${THEME.font};color:${THEME.textSecondary};
   z-index:100;animation:${fadeIn} 1.2s ease;
 `
-const EndgameGlyph = styled.div<{ $type:string }>`
+const EndgameGlyph = styled.div`
   font-size:56px;font-weight:700;
-  color:${p => p.$type==='fracture' ? THEME.threat : THEME.death};
+  color:${THEME.death};
   margin-bottom:1.6rem;
 `
-const EndgameTitle = styled.div<{ $type:string }>`
+const EndgameTitle = styled.div`
   font-size:22px;font-weight:700;letter-spacing:0.3em;text-transform:uppercase;
-  color:${p => p.$type==='fracture' ? THEME.threat : THEME.death};
+  color:${THEME.death};
   margin-bottom:1.4rem;
 `
 const EndgameBody = styled.div`
@@ -138,8 +138,8 @@ const ConfirmBtn = styled.button<{ $danger?:boolean }>`
     color:${p => p.$danger ? THEME.threat : THEME.textPrimary};}
 `
 
-const ENDGAME_GLYPH: Record<string,string> = { extinction:'✝', fracture:'◇' }
-const ENDGAME_TITLE: Record<string,string> = { extinction:'Extinction', fracture:'Fracture' }
+const ENDGAME_GLYPH  = '✝'
+const ENDGAME_TITLE  = 'Extinction'
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -257,8 +257,8 @@ export function GameLayout() {
 
         {gameState.endgame && (
           <EndgameOverlay>
-            <EndgameGlyph $type={gameState.endgame}>{ENDGAME_GLYPH[gameState.endgame]}</EndgameGlyph>
-            <EndgameTitle $type={gameState.endgame}>{ENDGAME_TITLE[gameState.endgame]}</EndgameTitle>
+            <EndgameGlyph>{ENDGAME_GLYPH}</EndgameGlyph>
+            <EndgameTitle>{ENDGAME_TITLE}</EndgameTitle>
             <EndgameBody>{gameState.messages[gameState.messages.length-1]?.text}</EndgameBody>
             <EndgameBtn onClick={()=>setShowRestartConfirm(true)}>Begin Again</EndgameBtn>
           </EndgameOverlay>

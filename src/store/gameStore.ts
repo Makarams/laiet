@@ -225,9 +225,9 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
       if (state) {
         const migrated = normalizeLoadedCreatureNames(state)
 
-        // Legacy saves may have endgame:'ascension' or 'fracture' from before those
-        // endings were removed. Clear them so the simulation resumes rather than
-        // freezing with no escape route. Only 'extinction' is a valid terminal state.
+        // Only 'extinction' is a valid terminal state. Clear any other endgame value
+        // (fracture, ascension, or anything else from previous iterations) so the
+        // simulation resumes rather than freezing on an obsolete end screen.
         if (migrated.state.endgame && migrated.state.endgame !== 'extinction') {
           migrated.state.endgame = null
         }
