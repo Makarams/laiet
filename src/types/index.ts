@@ -18,23 +18,31 @@ export type ExperienceEventType =
 export type PersonalityTrait =
   | 'Curious' | 'Timid' | 'Aggressive' | 'Lazy' | 'Greedy' | 'Nurturing' | 'Wanderer' | 'Recluse'
   | 'Hoarder' | 'Empath' | 'Furtive' | 'Territorial' | 'Social' | 'Stoic'
+  | 'Scavenger' | 'Mimic' | 'Nomadic' | 'Vigilant' | 'Symbiotic'
 export type BodyTrait = 'Spore' | 'Shell' | 'Spike' | 'Wisp'
 export type MindTrait = 'Feral' | 'Aware' | 'Dreaming' | 'Sentinel'
 
 // Ancestral racial lineage; persists across generations and can re-emerge
 // from latent ancestry even after a race has been absent for many generations.
 export type RaceTrait = 'Kin' | 'Drift' | 'Burrow' | 'Apex' | 'Pale' | 'Tide' | 'Bloom' | 'Ash'
+  | 'Ember' | 'Mire' | 'Crag' | 'Veil'
 
 // Heritable environmental adaptations; acquired at birth from spawn conditions
 // and passed to offspring at ADAPTATION_INHERIT_CHANCE per trait (max 3 per creature).
 export type AdaptationTrait =
-  | 'cold_hardy'    // winter/snow birth → warmth decay ×0.65
-  | 'drought_tough' // arid/drought birth → hunger decay ×0.78
-  | 'cave_sighted'  // rocky biome birth → no night warmth penalty; enlarged pale eyes
-  | 'hydro_fins'    // wetland birth → thirst decay ×0.55 on wetland/river tiles
-  | 'heat_plated'   // heatwave/summer birth → heatwave stress blocked; gold chitin stripe
-  | 'storm_braced'  // storm birth → storm stress immune; dark crackle ring
-  | 'thick_pelt'    // heavy snowfall in winter birth → broad insulation; warmth drain ×0.60 in all cold/wet weather; storm stress ×0.50
+  | 'cold_hardy'       // winter/snow birth → warmth decay ×0.65
+  | 'drought_tough'    // arid/drought birth → hunger decay ×0.78
+  | 'cave_sighted'     // rocky biome birth → no night warmth penalty; enlarged pale eyes
+  | 'hydro_fins'       // wetland birth → thirst decay ×0.55 on wetland/river tiles
+  | 'heat_plated'      // heatwave/summer birth → heatwave stress blocked; gold chitin stripe
+  | 'storm_braced'     // storm birth → storm stress immune; dark crackle ring
+  | 'thick_pelt'       // heavy snowfall in winter birth → broad insulation; warmth drain ×0.60 in all cold/wet weather; storm stress ×0.50
+  | 'bioluminescent'   // fog birth → emits faint glow at night; reduces nearby creature stress
+  | 'spore_resistant'  // lush+rain birth → disease contact chance ×0.40
+  | 'root_eater'       // lush/spring birth → hunger decay ×0.75 on vegetation tiles
+  | 'thermal_vent'     // arid+heatwave/drought birth → heatwave stress blocked; gains warmth on hot tiles
+  | 'echo_sense'       // rocky+fog/winter birth → no night warmth penalty; navigates dark without penalty
+  | 'ridge_armor'      // rocky+storm birth → health loss from combat ×0.70
 
 // Environmental context at time of birth; shapes morphology pressure and adaptation acquisition.
 export interface EnvContext {
@@ -63,6 +71,12 @@ export interface Genome {
   race?: RaceTrait                                    // ancestral lineage; optional for backward compat
   latentAncestry?: Partial<Record<RaceTrait, number>> // dormant race → generations-dormant counter
   adaptations?: AdaptationTrait[]                     // environmental adaptations; up to 3 per creature
+
+  // Diploid allele pairs: each slot encodes the full genotype; phenotype is resolved via dominance.
+  // Optional — saves without alleles treat the expressed trait as homozygous (no behavioral change).
+  personalityAlleles?: [PersonalityTrait, PersonalityTrait]
+  bodyAlleles?: [BodyTrait, BodyTrait]
+  mindAlleles?: [MindTrait, MindTrait]
 }
 
 // ─── Creature ─────────────────────────────────────────────────────────────────

@@ -192,18 +192,12 @@ export function ColonyStatsPanel() {
         (STAGE_THRESHOLDS[nextStage] - STAGE_THRESHOLDS[colonyStage])) * 100)
     : 100
 
-  // Dynasty tracking: top 3 lineage roots by deepest generation reached
-  const dynastyMap = new Map<string, { count: number; maxGen: number; familyName: string }>()
-  for (const c of alive) {
-    const root = c.lineageId.includes('_') ? c.lineageId.split('_')[0] : c.lineageId
-    const entry = dynastyMap.get(root) ?? { count: 0, maxGen: 0, familyName: c.familyName }
-    entry.count++
-    if (c.generation > entry.maxGen) { entry.maxGen = c.generation; entry.familyName = c.familyName }
-    dynastyMap.set(root, entry)
-  }
-  const topDynasties = [...dynastyMap.values()]
-    .sort((a, b) => b.maxGen - a.maxGen || b.count - a.count)
-    .slice(0, 3)
+  // Count distinct lineage roots among the living (each '_' branch traces back to one root)
+  const lineageRoots = new Set(alive.map(c =>
+    c.lineageId.includes('_') ? c.lineageId.split('_')[0] :
+    c.lineageId.includes('+') ? c.lineageId : c.lineageId
+  ))
+  const lineageCount = lineageRoots.size
 
   const currentWeather = (weather ?? 'clear') as WeatherState
   // snowAccumulation is optional on GameState (new feature)
@@ -224,6 +218,10 @@ export function ColonyStatsPanel() {
           <Value $color={totalDeaths > 0 ? THEME.death : undefined}>{totalDeaths}</Value>
         </Row>
         <Row><Label>Generation</Label><Value $color={THEME.amber}>{maxGen}</Value></Row>
+        <Row>
+          <Label>Lineages</Label>
+          <Value $color={lineageCount > 1 ? THEME.amber : THEME.textTertiary}>{lineageCount}</Value>
+        </Row>
       </Section>
 
       <Section>
@@ -313,21 +311,6 @@ export function ColonyStatsPanel() {
           <Value>{COHORT_PHASE_NAMES[cohortPhase ?? 1]} · gen {totalGenerations}</Value>
         </Row>
       </Section>
-
-      {topDynasties.length > 0 && (
-        <Section>
-          <SectionTitle>Dynasties</SectionTitle>
-          {topDynasties.map((d, i) => (
-            <Row key={i}>
-              <Label style={{ fontStyle:'italic' }}>{d.familyName}</Label>
-              <span style={{ fontSize:11, color:THEME.textTertiary }}>
-                <span style={{ color:THEME.amber, fontWeight:700 }}>gen {d.maxGen}</span>
-                {' · '}{d.count} alive
-              </span>
-            </Row>
-          ))}
-        </Section>
-      )}
 
       <Section>
         <SectionTitle>Operator</SectionTitle>

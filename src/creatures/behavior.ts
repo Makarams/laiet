@@ -1,11 +1,12 @@
 import {
-  Creature, Tile, ThoughtSymbol, Season, WeatherState, EnrichmentItem
+  Creature, Tile, ThoughtSymbol, Season, WeatherState, EnrichmentItem, EnvContext
 } from '@/types'
+import { computeDormancy, RACE_PROFILES } from '@/engine/genetics'
 import {
   HUNGER_DECAY, THIRST_DECAY, WARMTH_DECAY_BASE, WARMTH_DECAY_WINTER,
   STRESS_DECAY_BASE, HUNGER_CRITICAL, THIRST_CRITICAL, WARMTH_CRITICAL, STRESS_CRITICAL,
   COLD_HARDY_WARMTH_MULT, DROUGHT_TOUGH_HUNGER_MULT, HYDRO_FINS_THIRST_MULT,
-  THICK_PELT_WARMTH_MULT,
+  THICK_PELT_WARMTH_MULT, ROOT_EATER_HUNGER_MULT, RIDGE_ARMOR_DAMAGE_MULT,
   HUNGER_SEEK_THRESHOLD, THIRST_SEEK_THRESHOLD, WARMTH_SEEK_THRESHOLD,
   FOOD_EAT_AMOUNT,
   MOVE_SPEED_BY_BODY, REPRODUCE_RATE_BY_BODY, FIGHT_POWER_BY_BODY,
@@ -22,7 +23,6 @@ import {
   PUDDLE_MOVE_MODIFIER, PUDDLE_MOVE_THRESHOLD,
   HARVEST_TRIGGER_SATISFACTION, HARVEST_RADIUS, BUILD_TERRITORY_RADIUS,
   FOOD_SEEK_MIN_AMOUNT, FOOD_SEEK_FALLBACK_RADIUS, PUDDLE_DRINK_RADIUS,
-  TIDE_WATER_SEEK_RADIUS, BLOOM_HUNGER_THRESHOLD,
 } from '@/engine/constants'
 import { findNearestTileOfType, findNearestInIndex, getTile, isTilePassable, TileTypeIndex } from '@/world/worldGen'
 import { tickSentience } from './factory'
@@ -70,7 +70,7 @@ function findNearestValidBuildSpot(
 
 // ─── Needs decay ─────────────────────────────────────────────────────────────
 
-export function tickNeeds(creature: Creature, season: Season, biome?: string): Creature {
+export function tickNeeds(creature: Creature, season: Season, biome?: string, weather?: WeatherState): Creature {
   const c = { ...creature }
   const isWinter = season === 'winter'
   const adaptations = c.genome.adaptations ?? []
@@ -79,7 +79,9 @@ export function tickNeeds(creature: Creature, season: Season, biome?: string): C
   // thick_pelt stacks multiplicatively with cold_hardy for maximum insulation
   const warmthMult  = (adaptations.includes('cold_hardy') ? COLD_HARDY_WARMTH_MULT : 1.0)
     * (adaptations.includes('thick_pelt') ? THICK_PELT_WARMTH_MULT : 1.0)
-  const hungerMult  = adaptations.includes('drought_tough') ? DROUGHT_TOUGH_HUNGER_MULT : 1.0
+  const rootEaterVeg = adaptations.includes('root_eater') && (biome === 'lush' || biome === 'temperate')
+  const hungerMult  = (adaptations.includes('drought_tough') ? DROUGHT_TOUGH_HUNGER_MULT : 1.0)
+    * (rootEaterVeg ? ROOT_EATER_HUNGER_MULT : 1.0)
   // hydro_fins reduces thirst on wetland and river tiles
   const thirstMult  = (adaptations.includes('hydro_fins') && (biome === 'wetland' || biome === 'river'))
     ? HYDRO_FINS_THIRST_MULT : 1.0
@@ -91,12 +93,20 @@ export function tickNeeds(creature: Creature, season: Season, biome?: string): C
   c.warmth = Math.max(0, c.warmth - (isWinter ? WARMTH_DECAY_WINTER : WARMTH_DECAY_BASE) * warmthMult)
   c.sentience = tickSentience(c)
 
-  c.needSatisfaction = computeNeedSatisfaction(c)
+  // Dormancy: suppress personality-driven need penalties when the dominant allele
+  // is environmentally mismatched and the recessive allele would be more adaptive.
+  const needsEnv: EnvContext = { biome: biome ?? 'temperate', weather: weather ?? 'clear', season }
+  const needsDormancy = computeDormancy(c.genome, needsEnv)
+
+  c.needSatisfaction = computeNeedSatisfaction(c, needsDormancy)
   let stressDelta = c.needSatisfaction < 30 ? 0.5 : -STRESS_DECAY_BASE
   // Stoic halves stress accumulation; they stay calm under pressure
-  if (c.genome.personality === 'Stoic') stressDelta = Math.min(0, stressDelta) * 0.5 + Math.max(0, stressDelta) * 0.5
-  // Ash race is adapted to harsh terrain; slight passive stress bleed
-  if (c.genome.race === 'Ash') stressDelta = Math.min(stressDelta, stressDelta - 0.06)
+  if (c.genome.personality === 'Stoic' && !needsDormancy.personality) stressDelta = Math.min(0, stressDelta) * 0.5 + Math.max(0, stressDelta) * 0.5
+  // Race-specific passive stress adjustment from RACE_PROFILES
+  if (c.genome.race) {
+    const sm = RACE_PROFILES[c.genome.race]?.stressModifier
+    if (sm) stressDelta = Math.min(stressDelta, stressDelta + sm)
+  }
   c.stress = Math.min(100, c.stress + stressDelta)
 
   // Health damage from critical stats
@@ -129,8 +139,12 @@ export function tickNeeds(creature: Creature, season: Season, biome?: string): C
   return c
 }
 
-function computeNeedSatisfaction(c: Creature): number {
+function computeNeedSatisfaction(c: Creature, dormancy?: { personality: boolean; mind: boolean }): number {
   const base = 100 - c.hunger * 0.3 - c.thirst * 0.3 - (100 - c.warmth) * 0.2 - c.stress * 0.2
+
+  // Dormant personality: the expressed trait is genetically present but environmentally
+  // suppressed — the creature falls back to baseline satisfaction without trait penalties.
+  if (dormancy?.personality) return Math.max(0, Math.min(100, base))
 
   let traitPenalty = 0
   switch (c.genome.personality) {
@@ -174,6 +188,21 @@ function computeNeedSatisfaction(c: Creature): number {
       break
     case 'Stoic':
       traitPenalty = 0  // need satisfaction is never penalised by personality
+      break
+    case 'Scavenger':
+      traitPenalty = c.hunger > 10 ? 12 : 0  // perpetual foraging drive even at low hunger
+      break
+    case 'Mimic':
+      traitPenalty = c.bonds.length === 0 ? 20 : 0  // needs someone to mirror
+      break
+    case 'Nomadic':
+      traitPenalty = c.state === 'idle' && c.stateTimer > 60 ? 22 : 0  // restless if stationary
+      break
+    case 'Vigilant':
+      traitPenalty = c.stress > 30 ? 15 : 0  // lower stress tolerance; alertness is costly
+      break
+    case 'Symbiotic':
+      traitPenalty = c.bonds.length < 2 ? 18 : 0  // needs diverse social bonds
       break
   }
 
@@ -224,14 +253,19 @@ export function tickBehavior(
   const c = creature
   const changes: Partial<Creature> = {}
 
+  // Dormancy: check if expressed personality/mind is suppressed by environmental mismatch.
+  // Dormant traits don't drive behavioral decisions; the creature falls back to survival basics.
+  const behavEnv: EnvContext = { biome: c.dominantBiome ?? 'temperate', weather: weather ?? 'clear', season }
+  const dormancy = computeDormancy(c.genome, behavEnv)
+
   // Inline finder: uses index when available, falls back to BFS scan
   const findNearest = (types: Parameters<typeof findNearestTileOfType>[3], maxDist: number) =>
     tileIdx
       ? findNearestInIndex(tileIdx, tiles, c.x, c.y, types, maxDist)
       : findNearestTileOfType(tiles, c.x, c.y, types, maxDist)
 
-  // ── Recluse crowding; solitude is their natural state; crowds add stress ──
-  if (c.genome.personality === 'Recluse') {
+  // ── Recluse crowding: only active when personality is expressed (not dormant) ──
+  if (c.genome.personality === 'Recluse' && !dormancy.personality) {
     const crowd = aliveCreatures.filter(
       o => o.id !== c.id
         && Math.abs(o.x - c.x) <= RECLUSE_CROWD_RADIUS
@@ -273,7 +307,7 @@ export function tickBehavior(
   // Triggers when health is critically low OR personality is Timid + stress is high.
   // Flees away from the centroid of nearby creatures toward map edges.
   const fearTrigger = (c.health < 28)
-    || (c.genome.personality === 'Timid' && c.stress > 65)
+    || (c.genome.personality === 'Timid' && !dormancy.personality && c.stress > 65)
   if (fearTrigger && c.state !== 'fleeing') {
     const threats = aliveCreatures.filter(
       o => o.id !== c.id
@@ -294,8 +328,7 @@ export function tickBehavior(
 
   // ── 3. Critical survival (pre-emptive; seek before truly desperate) ──
   if (c.hunger > HUNGER_SEEK_THRESHOLD) {
-    // Bloom race (season-sensitive, reproduction-amplified) seeks food more eagerly.
-    const effectiveHungerMin = c.genome.race === 'Bloom' ? BLOOM_HUNGER_THRESHOLD : FOOD_SEEK_MIN_AMOUNT
+    const effectiveHungerMin = (c.genome.race && RACE_PROFILES[c.genome.race]?.hungerThresholdOverride) ?? FOOD_SEEK_MIN_AMOUNT
     const foodTile = findNearest(['food_patch', 'bush'], 20)
     if (foodTile && foodTile.foodAmount > effectiveHungerMin) {
       changes.state = 'seeking_food'
@@ -352,8 +385,7 @@ export function tickBehavior(
       changes.targetY = puddleTile.y
       return changes
     }
-    // Tide race (riparian specialist) can detect rivers from farther away.
-    const waterRadius = c.genome.race === 'Tide' ? TIDE_WATER_SEEK_RADIUS : 24
+    const waterRadius = (c.genome.race && RACE_PROFILES[c.genome.race]?.waterSeekRadiusOverride) ?? 24
     const waterTile = findNearest(['river'], waterRadius)
     if (waterTile) {
       changes.state = 'seeking_water'
@@ -905,6 +937,98 @@ export function tickBehavior(
         }
       }
       break
+
+    case 'Scavenger':
+      // Seeks death sites and food patches regardless of hunger; always foraging
+      if (!targetSet && Math.random() < 0.08) {
+        const deathTile = findNearest(['death_site'], 15)
+        const foodTile  = findNearest(['food_patch', 'bush'], 20)
+        const scavTarget = deathTile || foodTile
+        if (scavTarget) {
+          changes.state = 'wandering'
+          changes.targetX = scavTarget.x
+          changes.targetY = scavTarget.y
+          targetSet = true
+        }
+      }
+      break
+
+    case 'Mimic':
+      // Follows and mirrors strongest-bonded partner
+      if (!targetSet && c.bonds.length > 0 && Math.random() < 0.10) {
+        const partner = aliveCreatures.find(o => o.id === c.bonds[0].targetId && !o.diedOnDay)
+        if (partner && Math.abs(partner.x - c.x) + Math.abs(partner.y - c.y) > 3) {
+          const jitter = 2
+          const tx = Math.max(0, Math.min(WORLD_SIZE - 1,
+            partner.x + Math.floor(Math.random() * (jitter * 2 + 1)) - jitter))
+          const ty = Math.max(0, Math.min(WORLD_SIZE - 1,
+            partner.y + Math.floor(Math.random() * (jitter * 2 + 1)) - jitter))
+          if (tiles[ty]?.[tx] && isTilePassable(tiles[ty][tx])) {
+            changes.state = 'wandering'
+            changes.targetX = tx
+            changes.targetY = ty
+            targetSet = true
+          }
+        }
+      }
+      break
+
+    case 'Nomadic':
+      // Extreme long-range displacement; resets target often; natural colony spreader
+      if (!targetSet && (c.targetX === null || Math.random() < 0.06)) {
+        const dist = 35 + Math.floor(Math.random() * 40)
+        const angle = Math.random() * Math.PI * 2
+        const tx = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(c.x + Math.cos(angle) * dist)))
+        const ty = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(c.y + Math.sin(angle) * dist)))
+        if (tiles[ty]?.[tx] && isTilePassable(tiles[ty][tx])) {
+          changes.state = 'wandering'
+          changes.targetX = tx
+          changes.targetY = ty
+          targetSet = true
+        }
+      }
+      break
+
+    case 'Vigilant':
+      // Arc patrols; raises alert stress in bonded peers when threat is near
+      if (!targetSet && Math.random() < 0.07) {
+        const angle = Math.random() * Math.PI * 2
+        const dist  = 8 + Math.floor(Math.random() * 12)
+        const tx = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(c.x + Math.cos(angle) * dist)))
+        const ty = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(c.y + Math.sin(angle) * dist)))
+        if (tiles[ty]?.[tx] && isTilePassable(tiles[ty][tx])) {
+          changes.state = 'wandering'
+          changes.targetX = tx
+          changes.targetY = ty
+          targetSet = true
+        }
+      }
+      break
+
+    case 'Symbiotic':
+      // Actively seeks creatures from a different lineage root
+      if (!targetSet && Math.random() < 0.08) {
+        const myRoot = c.lineageId.includes('_') ? c.lineageId.split('_')[0] : c.lineageId
+        const crossPartner = aliveCreatures.find(o =>
+          o.id !== c.id
+          && Math.abs(o.x - c.x) <= 25 && Math.abs(o.y - c.y) <= 25
+          && (o.lineageId.includes('_') ? o.lineageId.split('_')[0] : o.lineageId) !== myRoot
+        )
+        if (crossPartner) {
+          const jitter = 3
+          const tx = Math.max(0, Math.min(WORLD_SIZE - 1,
+            crossPartner.x + Math.floor(Math.random() * (jitter * 2 + 1)) - jitter))
+          const ty = Math.max(0, Math.min(WORLD_SIZE - 1,
+            crossPartner.y + Math.floor(Math.random() * (jitter * 2 + 1)) - jitter))
+          if (tiles[ty]?.[tx] && isTilePassable(tiles[ty][tx])) {
+            changes.state = 'wandering'
+            changes.targetX = tx
+            changes.targetY = ty
+            targetSet = true
+          }
+        }
+      }
+      break
   }
 
   // ── 5.4. Harvesting & construction; Territorial/Aggressive creatures build fences ──
@@ -1020,20 +1144,11 @@ export function tickBehavior(
     }
   }
 
-  // ── 5.6. Race terrain affinity; ancestral lineage shapes habitat preference ──
+  // ── 5.6. Race terrain affinity — data-driven from RACE_PROFILES ─────────────
   if (!targetSet && c.genome.race && Math.random() < 0.05) {
-    const race = c.genome.race
-    if (race === 'Burrow' || race === 'Pale') {
-      const t = findNearest(['cave'], 20)
-      if (t) { changes.state = 'wandering'; changes.targetX = t.x; changes.targetY = t.y; targetSet = true }
-    } else if (race === 'Tide') {
-      const t = findNearest(['river', 'mud'], 20)
-      if (t) { changes.state = 'wandering'; changes.targetX = t.x; changes.targetY = t.y; targetSet = true }
-    } else if (race === 'Ash') {
-      const t = findNearest(['barren'], 20)
-      if (t) { changes.state = 'wandering'; changes.targetX = t.x; changes.targetY = t.y; targetSet = true }
-    } else if (race === 'Bloom') {
-      const t = findNearest(['food_patch', 'bush'], 20)
+    const affinity = RACE_PROFILES[c.genome.race]?.terrainAffinity
+    if (affinity && affinity.length > 0) {
+      const t = findNearest(affinity, 20)
       if (t) { changes.state = 'wandering'; changes.targetX = t.x; changes.targetY = t.y; targetSet = true }
     }
   }
@@ -1145,8 +1260,7 @@ export function tickBehavior(
       : c.genome.personality === 'Empath' ? 12
       : c.genome.personality === 'Territorial' ? 8
       : 16
-    // Drift race roams farther; built for wide-range dispersal
-    const raceMult = c.genome.race === 'Drift' ? 1.5 : 1.0
+    const raceMult = (c.genome.race && RACE_PROFILES[c.genome.race]?.wanderRangeMult) ?? 1.0
     // Early-gen creatures stay closer to the group while bonding is still forming
     const range = Math.round((c.generation <= EARLY_GEN_MAX ? Math.min(baseRange, 12) : baseRange) * raceMult)
     for (let attempt = 0; attempt < 6; attempt++) {
@@ -1504,7 +1618,8 @@ export function resolveFight(
   attacker: Creature,
   defender: Creature
 ): { attacker: Creature; defender: Creature; attackerWon: boolean } {
-  const apexBonus = (c: Creature) => c.genome.race === 'Apex' ? 0.5 : 0
+  const apexBonus    = (c: Creature) => (c.genome.race && RACE_PROFILES[c.genome.race]?.fightBonus) ?? 0
+  const ridgeArmored = (c: Creature) => (c.genome.adaptations ?? []).includes('ridge_armor')
 
   // Deterministic base powers drive the decisiveness calculation;
   // random jitter is added separately so outcome still has uncertainty.
@@ -1532,15 +1647,18 @@ export function resolveFight(
   const winnerMax    = Math.round(15 - decisiveness * 12)
   const winnerDamage = Math.floor(Math.random() * (winnerMax + 1))
 
+  const attackerLoserMult = ridgeArmored(attacker) ? RIDGE_ARMOR_DAMAGE_MULT : 1.0
+  const defenderLoserMult = ridgeArmored(defender) ? RIDGE_ARMOR_DAMAGE_MULT : 1.0
+
   return {
     attackerWon,
     attacker: attackerWon
       ? { ...attacker, killCount: attacker.killCount + 1,
           health: Math.max(0, attacker.health - winnerDamage) }
-      : { ...attacker, health: Math.max(0, attacker.health - loserDamage),
+      : { ...attacker, health: Math.max(0, attacker.health - Math.round(loserDamage * attackerLoserMult)),
           stress: Math.min(100, attacker.stress + 20) },
     defender: attackerWon
-      ? { ...defender, health: Math.max(0, defender.health - loserDamage),
+      ? { ...defender, health: Math.max(0, defender.health - Math.round(loserDamage * defenderLoserMult)),
           stress: Math.min(100, defender.stress + 20) }
       : { ...defender, killCount: defender.killCount + 1,
           health: Math.max(0, defender.health - winnerDamage) },

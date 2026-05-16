@@ -258,7 +258,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
         // before live ticking resumes so the player sees the colony's
         // observation about their return immediately.
         if (hoursAway >= 0.5 && !advanced.endgame) {
-          const absenceMsg = generateAbsenceMessage(hoursAway, advanced.awarenessStage)
+          const absenceMsg = generateAbsenceMessage(hoursAway, advanced.awarenessStage, advanced.totalGenerations)
           absenceMsg.day = advanced.time.day
           advanced = {
             ...advanced,

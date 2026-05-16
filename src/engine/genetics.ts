@@ -1,17 +1,56 @@
-import { Genome, PersonalityTrait, BodyTrait, MindTrait, MorphologyTraits, RaceTrait, AdaptationTrait, EnvContext } from '@/types'
+import { Genome, PersonalityTrait, BodyTrait, MindTrait, MorphologyTraits, RaceTrait, AdaptationTrait, EnvContext, TileType } from '@/types'
 import {
   MUTATION_CHANCE,
   LATENT_REVIVAL_BASE, LATENT_DEPTH_BONUS, LATENT_MAX_DEPTH, LATENT_DOMINANT_WEIGHT,
   ADAPTATION_INHERIT_CHANCE, ADAPTATION_MAX,
+  BLOOM_HUNGER_THRESHOLD, TIDE_WATER_SEEK_RADIUS,
 } from './constants'
 
 export const PERSONALITIES: PersonalityTrait[] = [
   'Curious', 'Timid', 'Aggressive', 'Lazy', 'Greedy', 'Nurturing', 'Wanderer', 'Recluse',
   'Hoarder', 'Empath', 'Furtive', 'Territorial', 'Social', 'Stoic',
+  'Scavenger', 'Mimic', 'Nomadic', 'Vigilant', 'Symbiotic',
 ]
 export const BODIES: BodyTrait[] = ['Spore', 'Shell', 'Spike', 'Wisp']
 export const MINDS: MindTrait[] = ['Feral', 'Aware', 'Dreaming', 'Sentinel']
-export const RACES: RaceTrait[] = ['Kin', 'Drift', 'Burrow', 'Apex', 'Pale', 'Tide', 'Bloom', 'Ash']
+export const RACES: RaceTrait[] = ['Kin', 'Drift', 'Burrow', 'Apex', 'Pale', 'Tide', 'Bloom', 'Ash', 'Ember', 'Mire', 'Crag', 'Veil']
+
+// ─── Race behavioral profiles ─────────────────────────────────────────────────
+// Centralizes all race-specific behavioral modifiers. Replacing scattered
+// `c.genome.race === 'X'` checks so adding a new race only requires this table.
+export interface RaceProfile {
+  terrainAffinity?: TileType[]       // preferred tile types for habitat movement
+  stressModifier?: number            // passive stress delta added each tick (negative = relief)
+  hungerThresholdOverride?: number   // lower food-amount threshold before seeking food
+  waterSeekRadiusOverride?: number   // detection radius for water tiles
+  wanderRangeMult?: number           // multiplier on base wandering distance
+  fightBonus?: number                // flat bonus to attack power in combat
+}
+
+export const RACE_PROFILES: Partial<Record<RaceTrait, RaceProfile>> = {
+  Ash:    { terrainAffinity: ['barren'], stressModifier: -0.06 },
+  Bloom:  { terrainAffinity: ['food_patch', 'bush'], hungerThresholdOverride: BLOOM_HUNGER_THRESHOLD },
+  Tide:   { terrainAffinity: ['river', 'mud'], waterSeekRadiusOverride: TIDE_WATER_SEEK_RADIUS },
+  Burrow: { terrainAffinity: ['cave'] },
+  Pale:   { terrainAffinity: ['cave'] },
+  Drift:  { wanderRangeMult: 1.5 },
+  Apex:   { fightBonus: 0.5 },
+  Ember:  { terrainAffinity: ['barren'], stressModifier: -0.04 },  // fire-adapted; heat tolerance
+  Mire:   { terrainAffinity: ['mud', 'flooded'], waterSeekRadiusOverride: 20 },  // wetland-specialist
+  Crag:   { terrainAffinity: ['rock', 'cave'], wanderRangeMult: 0.7 },  // rugged mountain-dwellers
+  Veil:   { terrainAffinity: ['cave', 'shelter'], stressModifier: -0.03 },  // mist-born; concealment seekers
+  Kin:    {},  // Kin advantage is in tick.ts (group defense, kin-lineage recognition)
+}
+
+// ─── Behavioral reinforcement signal ─────────────────────────────────────────
+// Derived from parent stats at reproduction time; biases which traits emerge
+// during mutation events without requiring per-tick behavioral logging.
+export interface BehaviorSig {
+  combatBias: number        // 0-1; high kill count → Spike body more likely to mutate in
+  socialBias: number        // 0-1; many bonds → Wisp/Social personality bias
+  reproductiveBias: number  // 0-1; many offspring → Spore body bias
+  survivalBias: number      // 0-1; longevity (age/maxAge ratio) → Shell body bias
+}
 
 // ─── Morphology helpers ───────────────────────────────────────────────────────
 
@@ -63,17 +102,28 @@ function computeMorphBias(env: EnvContext): MorphBias {
 }
 
 // Returns the single adaptation trait an offspring can acquire from its birth environment,
-// or null if conditions don't favour a specific trait.
+// or null if conditions don't favour a specific trait. Priority order matters — each
+// early return narrows the remaining type space for TypeScript.
 export function acquireAdaptation(env: EnvContext): AdaptationTrait | null {
   const { biome, weather, season } = env
   // Heavy snowfall in winter → broad insulation (stronger than cold_hardy alone)
-  if (season === 'winter' && weather === 'snow')                         return 'thick_pelt'
-  if (season === 'winter' || weather === 'snow')                         return 'cold_hardy'
-  if (biome === 'wetland')                                               return 'hydro_fins'
-  if (biome === 'rocky')                                                 return 'cave_sighted'
-  if (weather === 'heatwave' && season === 'summer')                    return 'heat_plated'
-  if (weather === 'drought' || biome === 'arid')                        return 'drought_tough'
-  if (weather === 'storm')                                               return 'storm_braced'
+  if (season === 'winter' && weather === 'snow')  return 'thick_pelt'
+  if (season === 'winter' || weather === 'snow')  return 'cold_hardy'
+  // After here: season ∈ {spring,summer,autumn}, weather ∈ {clear,rain,storm,drought,heatwave,fog}
+  if (weather === 'fog')                          return 'bioluminescent'
+  // After here: weather ≠ fog
+  if (weather === 'storm' && biome === 'rocky')   return 'ridge_armor'
+  if (biome === 'wetland')                        return 'hydro_fins'
+  // rocky + rain develops echolocation instead of generic cave adaptation
+  if (biome === 'rocky' && weather === 'rain')    return 'echo_sense'
+  if (biome === 'rocky')                          return 'cave_sighted'
+  if (weather === 'heatwave' && season === 'summer') return 'heat_plated'
+  // arid + drought (non-heatwave): sustained heat tolerance from harsh dry cycles
+  if (biome === 'arid' && weather === 'drought')  return 'thermal_vent'
+  if (weather === 'drought' || biome === 'arid')  return 'drought_tough'
+  if (biome === 'lush' && weather === 'rain')     return 'spore_resistant'
+  if (biome === 'lush' || (biome === 'temperate' && season === 'spring')) return 'root_eater'
+  if (weather === 'storm')                        return 'storm_braced'
   return null
 }
 
@@ -110,10 +160,18 @@ function mutateMorphologyAsexual(parent: MorphologyTraits, rng: () => number): M
 }
 
 export function randomGenome(rng: () => number): Genome {
+  const personality = PERSONALITIES[Math.floor(rng() * PERSONALITIES.length)]
+  const body        = BODIES[Math.floor(rng() * BODIES.length)]
+  const mind        = MINDS[Math.floor(rng() * MINDS.length)]
   return {
-    personality: PERSONALITIES[Math.floor(rng() * PERSONALITIES.length)],
-    body: BODIES[Math.floor(rng() * BODIES.length)],
-    mind: MINDS[Math.floor(rng() * MINDS.length)],
+    personality,
+    body,
+    mind,
+    // Gen-0 creatures are homozygous: both alleles identical so traits cannot
+    // appear without inheritance or mutation pressure.
+    personalityAlleles: [personality, personality],
+    bodyAlleles:        [body, body],
+    mindAlleles:        [mind, mind],
     morphSeed: rng(),
     morphology: initMorphology(),
     race: RACES[Math.floor(rng() * RACES.length)],
@@ -182,23 +240,64 @@ export function inheritRace(
   return { race: expressed, latentAncestry: latency }
 }
 
+// ─── Allele resolution ───────────────────────────────────────────────────────
+
+function resolveAlleles<T extends string>(
+  a: T,
+  b: T,
+  dominance: Record<string, number>,
+): { expressed: T; recessive: T } {
+  if (a === b) return { expressed: a, recessive: a }
+  const domA = dominance[a] ?? 0.5
+  const domB = dominance[b] ?? 0.5
+  return domA >= domB ? { expressed: a, recessive: b } : { expressed: b, recessive: a }
+}
+
+function weightedPick<T>(pool: T[], weights: number[], rng: () => number): T {
+  const total = weights.reduce((s, w) => s + w, 0)
+  let r = rng() * total
+  for (let i = 0; i < pool.length; i++) {
+    r -= weights[i]
+    if (r <= 0) return pool[i]
+  }
+  return pool[pool.length - 1]
+}
+
 // ─── Trait dominance & environmental pressure ─────────────────────────────────
 
-// Dominant traits (value > 0.5) win inheritance competition more often.
-// Models dominant/recessive allele dynamics without full diploid machinery.
+const BODY_DOMINANCE: Record<BodyTrait, number> = {
+  Spike: 0.62,
+  Shell: 0.58,
+  Wisp:  0.46,
+  Spore: 0.38,
+}
+
+const MIND_DOMINANCE: Record<MindTrait, number> = {
+  Sentinel: 0.62,
+  Dreaming: 0.55,
+  Aware:    0.50,
+  Feral:    0.36,
+}
+
+// Dominant traits (value > 0.5) win allele competition in heterozygous pairs.
 // Assertive, mobile traits spread more readily; passive, shy traits recede.
 const PERSONALITY_DOMINANCE: Record<PersonalityTrait, number> = {
   Aggressive:  0.62,
   Territorial: 0.60,
+  Vigilant:    0.57,
   Curious:     0.56,
   Wanderer:    0.55,
+  Nomadic:     0.54,
   Social:      0.54,
   Greedy:      0.53,
+  Scavenger:   0.53,
   Nurturing:   0.52,
   Hoarder:     0.51,
   Stoic:       0.50,
+  Symbiotic:   0.50,
   Empath:      0.49,
   Recluse:     0.48,
+  Mimic:       0.48,
   Furtive:     0.46,
   Lazy:        0.44,
   Timid:       0.42,
@@ -212,73 +311,190 @@ function personalityEnvBonus(env: EnvContext, candidate: PersonalityTrait): numb
   let bonus = 0
   if (biome === 'arid') {
     if (candidate === 'Wanderer' || candidate === 'Stoic' || candidate === 'Greedy') bonus += 0.05
-    else if (candidate === 'Nurturing' || candidate === 'Social' || candidate === 'Lazy') bonus -= 0.04
+    if (candidate === 'Scavenger' || candidate === 'Nomadic') bonus += 0.05
+    if (candidate === 'Nurturing' || candidate === 'Social' || candidate === 'Lazy') bonus -= 0.04
   }
   if (biome === 'wetland') {
     if (candidate === 'Social' || candidate === 'Nurturing' || candidate === 'Empath') bonus += 0.05
-    else if (candidate === 'Aggressive' || candidate === 'Recluse') bonus -= 0.04
+    if (candidate === 'Symbiotic' || candidate === 'Mimic') bonus += 0.04
+    if (candidate === 'Aggressive' || candidate === 'Recluse') bonus -= 0.04
   }
   if (biome === 'rocky') {
     if (candidate === 'Recluse' || candidate === 'Stoic' || candidate === 'Territorial') bonus += 0.05
-    else if (candidate === 'Social' || candidate === 'Empath') bonus -= 0.04
+    if (candidate === 'Vigilant') bonus += 0.05
+    if (candidate === 'Social' || candidate === 'Empath') bonus -= 0.04
   }
   if (biome === 'lush') {
     if (candidate === 'Curious' || candidate === 'Social' || candidate === 'Nurturing') bonus += 0.04
+    if (candidate === 'Symbiotic' || candidate === 'Mimic') bonus += 0.04
   }
   if (season === 'winter') {
     if (candidate === 'Hoarder' || candidate === 'Stoic' || candidate === 'Greedy') bonus += 0.04
-    else if (candidate === 'Lazy' || candidate === 'Social') bonus -= 0.04
+    if (candidate === 'Scavenger') bonus += 0.04
+    if (candidate === 'Lazy' || candidate === 'Social') bonus -= 0.04
   }
   if (weather === 'drought' || weather === 'heatwave') {
     if (candidate === 'Wanderer' || candidate === 'Aggressive') bonus += 0.04
-    else if (candidate === 'Lazy') bonus -= 0.04
+    if (candidate === 'Nomadic' || candidate === 'Scavenger') bonus += 0.04
+    if (candidate === 'Lazy') bonus -= 0.04
+  }
+  if (weather === 'storm') {
+    if (candidate === 'Vigilant' || candidate === 'Nomadic') bonus += 0.04
+    if (candidate === 'Timid' || candidate === 'Lazy') bonus -= 0.04
   }
   return bonus
 }
 
-// Sexual inheritance; mix from two parents with mutation chance per slot.
-// mutationChance defaults to the constant but can be overridden by SimModifiers.
-// Optional envCtx applies directional morphology pressure from birth conditions.
-// parentBias (0..1): probability of inheriting from parentA; >0.5 = parentA is fitter.
-// Default 0.5 = equal selection; callers pass computed fitness ratio for natural selection.
-export function inheritGenome(parentA: Genome, parentB: Genome, rng: () => number, mutationChance = MUTATION_CHANCE, envCtx?: EnvContext, parentBias = 0.5): Genome {
-  const pick = <T>(a: T, b: T, pool: T[]): T => {
-    const base = rng() < parentBias ? a : b
-    if (rng() < mutationChance) return pool[Math.floor(rng() * pool.length)]
-    return base
-  }
+// Environmental fitness bonus for body mutations.
+// Positive = this body type is favored by current conditions; biases weighted mutation sampling.
+function bodyEnvBonus(env: EnvContext, candidate: BodyTrait): number {
+  const { biome, weather, season } = env
+  let bonus = 0
+  if (biome === 'rocky' || weather === 'storm')         { if (candidate === 'Shell') bonus += 0.06; if (candidate === 'Spore') bonus -= 0.05 }
+  if (biome === 'wetland')                              { if (candidate === 'Wisp')  bonus += 0.06; if (candidate === 'Shell') bonus -= 0.03 }
+  if (weather === 'drought' || weather === 'heatwave')  { if (candidate === 'Wisp')  bonus -= 0.05; if (candidate === 'Spore') bonus += 0.04 }
+  if (season === 'winter'   || weather === 'snow')      { if (candidate === 'Shell') bonus += 0.05; if (candidate === 'Spore') bonus -= 0.05 }
+  return bonus
+}
 
-  // Personality inherits with combined fitness bias AND trait dominance, plus env pressure.
-  // This makes natural selection work at the allele level, not just the organismal level.
-  const pickPersonality = (): PersonalityTrait => {
-    const domA = PERSONALITY_DOMINANCE[parentA.personality] ?? 0.5
-    const domB = PERSONALITY_DOMINANCE[parentB.personality] ?? 0.5
-    const domProb = domA / (domA + domB)
-    const combinedBias = (parentBias + domProb) * 0.5  // average of fitness and dominance pressures
-    let base = rng() < combinedBias ? parentA.personality : parentB.personality
+// Environmental fitness bonus for mind mutations.
+// Extreme scarcity slightly favors pure instinct; otherwise higher cognition is broadly advantageous.
+function mindEnvBonus(env: EnvContext, candidate: MindTrait): number {
+  const { weather, season } = env
+  let bonus = 0
+  if (weather === 'drought' || weather === 'heatwave') { if (candidate === 'Feral') bonus += 0.04; if (candidate === 'Sentinel') bonus -= 0.03 }
+  if (season === 'winter')                             { if (candidate === 'Feral') bonus += 0.03 }
+  return bonus
+}
 
-    if (rng() < mutationChance) {
-      if (envCtx) {
-        // Env-weighted mutation: sample two random personalities, keep the one better fit to the biome.
-        const c1 = PERSONALITIES[Math.floor(rng() * PERSONALITIES.length)]
-        const c2 = PERSONALITIES[Math.floor(rng() * PERSONALITIES.length)]
-        base = personalityEnvBonus(envCtx, c1) >= personalityEnvBonus(envCtx, c2) ? c1 : c2
-      } else {
-        base = PERSONALITIES[Math.floor(rng() * PERSONALITIES.length)]
-      }
-    } else if (envCtx) {
-      // Non-mutation case: if the chosen personality is env-negative and the other parent's
-      // personality is env-positive, occasionally swap (small nudge, not a forced override).
-      const chosenBonus = personalityEnvBonus(envCtx, base)
-      const otherPersonality = base === parentA.personality ? parentB.personality : parentA.personality
-      const otherBonus = personalityEnvBonus(envCtx, otherPersonality)
-      if (chosenBonus < 0 && otherBonus > 0 && rng() < 0.14) base = otherPersonality
+// Picks a mutated personality weighted by environmental fitness.
+// Unlike a random pool pick, this ensures new traits emerge because they are
+// contextually advantageous — not arbitrarily.
+function pickMutatedPersonality(envCtx: EnvContext | undefined, rng: () => number): PersonalityTrait {
+  if (!envCtx) return PERSONALITIES[Math.floor(rng() * PERSONALITIES.length)]
+  const weights = PERSONALITIES.map(p => Math.max(0.05, 1.0 + personalityEnvBonus(envCtx, p) * 8))
+  return weightedPick(PERSONALITIES, weights, rng)
+}
+
+// Picks a mutated body type weighted by environmental fitness AND behavioral reinforcement.
+// Combat history, social bonding, reproductive output, and longevity each nudge the
+// probability toward the body type that would have been most adaptive for the parent.
+function pickMutatedBody(envCtx: EnvContext | undefined, sig: BehaviorSig | undefined, rng: () => number): BodyTrait {
+  const weights = BODIES.map(b => {
+    let w = 1.0
+    if (envCtx) w = Math.max(0.05, w + bodyEnvBonus(envCtx, b) * 8)
+    if (sig) {
+      if (b === 'Spike') w *= (1 + sig.combatBias)
+      if (b === 'Wisp')  w *= (1 + sig.socialBias * 0.6)
+      if (b === 'Spore') w *= (1 + sig.reproductiveBias * 0.8)
+      if (b === 'Shell') w *= (1 + sig.survivalBias * 0.7)
     }
-    return base
+    return Math.max(0.05, w)
+  })
+  return weightedPick(BODIES, weights, rng)
+}
+
+// Picks a mutated mind type weighted by environmental fitness.
+function pickMutatedMind(envCtx: EnvContext | undefined, rng: () => number): MindTrait {
+  if (!envCtx) return MINDS[Math.floor(rng() * MINDS.length)]
+  const weights = MINDS.map(m => Math.max(0.05, 1.0 + mindEnvBonus(envCtx, m) * 6))
+  return weightedPick(MINDS, weights, rng)
+}
+
+// ─── Dormancy ────────────────────────────────────────────────────────────────
+
+// Returns whether personality and/or mind are currently dormant for a creature.
+// A trait is dormant when it is heterozygous AND the dominant allele is an environmental
+// mismatch while the recessive allele would be beneficial — the genotype carries the
+// trait but current conditions suppress its behavioral expression.
+// Callers use this to bypass personality-specific behavior and need penalties.
+export function computeDormancy(genome: Genome, env: EnvContext): { personality: boolean; mind: boolean } {
+  let personality = false
+  let mind = false
+
+  const pAlleles = genome.personalityAlleles
+  if (pAlleles && pAlleles[0] !== pAlleles[1]) {
+    const { expressed, recessive } = resolveAlleles(pAlleles[0], pAlleles[1], PERSONALITY_DOMINANCE)
+    if (expressed === genome.personality) {
+      const eb = personalityEnvBonus(env, expressed)
+      const rb = personalityEnvBonus(env, recessive)
+      if (eb < -0.025 && rb > 0.015) personality = true
+    }
   }
 
-  // morphSeed still controls per-creature shape asymmetry; it drifts between
-  // parents to keep siblings distinguishable within a lineage.
+  const mAlleles = genome.mindAlleles
+  if (mAlleles && mAlleles[0] !== mAlleles[1]) {
+    const { expressed, recessive } = resolveAlleles(mAlleles[0], mAlleles[1], MIND_DOMINANCE)
+    // Mind dormancy: Feral dominates but the recessive awareness allele is more adaptive
+    // in cognitively rich environments (lush/wetland biomes with social pressure).
+    if (expressed === genome.mind
+      && expressed === 'Feral'
+      && (recessive === 'Aware' || recessive === 'Dreaming' || recessive === 'Sentinel')
+      && (env.biome === 'lush' || env.biome === 'wetland')
+    ) mind = true
+  }
+
+  return { personality, mind }
+}
+
+// ─── Sexual inheritance ───────────────────────────────────────────────────────
+
+// Each parent contributes one allele from their diploid pair (50/50 within the pair).
+// The two contributed alleles form the offspring's genotype; the expressed phenotype
+// is resolved by dominance. Mutations replace exactly one allele with an env-biased
+// and behaviorally-reinforced pick — not a random pool draw.
+// parentBias (0..1): retained for morphology weighting; no longer gates discrete alleles.
+export function inheritGenome(
+  parentA: Genome,
+  parentB: Genome,
+  rng: () => number,
+  mutationChance = MUTATION_CHANCE,
+  envCtx?: EnvContext,
+  parentBias = 0.5,
+  behaviorSig?: BehaviorSig,
+): Genome {
+  // Pick one allele from a parent's diploid pair; treats old saves (no alleles) as homozygous.
+  const pickFromPair = <T>(alleles: [T, T] | undefined, expressed: T): T =>
+    alleles ? (rng() < 0.5 ? alleles[0] : alleles[1]) : expressed
+
+  // --- Personality alleles ---
+  let pA = pickFromPair(parentA.personalityAlleles, parentA.personality)
+  let pB = pickFromPair(parentB.personalityAlleles, parentB.personality)
+  if (rng() < mutationChance) {
+    // Mutation: one allele is replaced by an env-biased pick rather than a random draw.
+    if (rng() < 0.5) pA = pickMutatedPersonality(envCtx, rng)
+    else             pB = pickMutatedPersonality(envCtx, rng)
+  } else if (envCtx) {
+    // Non-mutation nudge: if the dominant allele is env-negative and the recessive is positive,
+    // occasionally swap them — mild directional pressure over many generations.
+    const { expressed, recessive } = resolveAlleles(pA, pB, PERSONALITY_DOMINANCE)
+    if (personalityEnvBonus(envCtx, expressed) < -0.02
+      && personalityEnvBonus(envCtx, recessive) > 0.01
+      && rng() < 0.08) {
+      if (pA === expressed) { pA = recessive; pB = expressed }
+      else                  { pA = expressed; pB = recessive }
+    }
+  }
+  const personality = resolveAlleles(pA, pB, PERSONALITY_DOMINANCE).expressed
+
+  // --- Body alleles ---
+  let bA = pickFromPair(parentA.bodyAlleles, parentA.body)
+  let bB = pickFromPair(parentB.bodyAlleles, parentB.body)
+  if (rng() < mutationChance) {
+    if (rng() < 0.5) bA = pickMutatedBody(envCtx, behaviorSig, rng)
+    else             bB = pickMutatedBody(envCtx, behaviorSig, rng)
+  }
+  const body = resolveAlleles(bA, bB, BODY_DOMINANCE).expressed
+
+  // --- Mind alleles ---
+  let mA = pickFromPair(parentA.mindAlleles, parentA.mind)
+  let mB = pickFromPair(parentB.mindAlleles, parentB.mind)
+  if (rng() < mutationChance) {
+    if (rng() < 0.5) mA = pickMutatedMind(envCtx, rng)
+    else             mB = pickMutatedMind(envCtx, rng)
+  }
+  const mind = resolveAlleles(mA, mB, MIND_DOMINANCE).expressed
+
   const inheritedSeed = rng() < parentBias ? parentA.morphSeed : parentB.morphSeed
   const seedDrift = (rng() - 0.5) * 0.18
   const morphSeed = clamp01(inheritedSeed + seedDrift)
@@ -286,9 +502,12 @@ export function inheritGenome(parentA: Genome, parentB: Genome, rng: () => numbe
   const { race, latentAncestry } = inheritRace(parentA, parentB, rng)
 
   return {
-    personality: pickPersonality(),
-    body: pick(parentA.body, parentB.body, BODIES),
-    mind: pick(parentA.mind, parentB.mind, MINDS),
+    personality,
+    body,
+    mind,
+    personalityAlleles: [pA, pB],
+    bodyAlleles: [bA, bB],
+    mindAlleles: [mA, mB],
     morphSeed,
     morphology: inheritMorphology(
       parentA.morphology ?? initMorphology(),
@@ -301,15 +520,37 @@ export function inheritGenome(parentA: Genome, parentB: Genome, rng: () => numbe
   }
 }
 
-// Asexual mutation; single parent, higher mutation rate, larger morph drift
-export function mutateGenomeAsexual(parent: Genome, rng: () => number, mutationChance: number): Genome {
-  const mut = <T>(current: T, pool: T[]): T =>
-    rng() < mutationChance ? pool[Math.floor(rng() * pool.length)] : current
+// Asexual mutation; single parent, higher morph drift, allele pairs copied then one may mutate.
+// Mind mutates less readily in clonal lines — cognitive stability is preserved across divisions.
+export function mutateGenomeAsexual(parent: Genome, rng: () => number, mutationChance: number, envCtx?: EnvContext): Genome {
+  // Copy both alleles from the parent; one may be replaced by a mutation event.
+  const copyPair = <T>(alleles: [T, T] | undefined, expressed: T): [T, T] =>
+    alleles ? [alleles[0], alleles[1]] : [expressed, expressed]
+
+  let [pA, pB] = copyPair(parent.personalityAlleles, parent.personality)
+  if (rng() < mutationChance) {
+    if (rng() < 0.5) pA = pickMutatedPersonality(envCtx, rng)
+    else             pB = pickMutatedPersonality(envCtx, rng)
+  }
+  const personality = resolveAlleles(pA, pB, PERSONALITY_DOMINANCE).expressed
+
+  let [bA, bB] = copyPair(parent.bodyAlleles, parent.body)
+  if (rng() < mutationChance) {
+    if (rng() < 0.5) bA = pickMutatedBody(envCtx, undefined, rng)
+    else             bB = pickMutatedBody(envCtx, undefined, rng)
+  }
+  const body = resolveAlleles(bA, bB, BODY_DOMINANCE).expressed
+
+  let [mA, mB] = copyPair(parent.mindAlleles, parent.mind)
+  if (rng() < mutationChance * 0.5) {
+    if (rng() < 0.5) mA = pickMutatedMind(envCtx, rng)
+    else             mB = pickMutatedMind(envCtx, rng)
+  }
+  const mind = resolveAlleles(mA, mB, MIND_DOMINANCE).expressed
 
   const seedDrift = (rng() - 0.5) * 0.32
   const morphSeed = clamp01(parent.morphSeed + seedDrift)
 
-  // Asexual: age all latent races by 1 generation; rare race mutation (~half of mutationChance)
   const oldLatent = parent.latentAncestry ?? {}
   const newLatent: Partial<Record<RaceTrait, number>> = {}
   for (const r in oldLatent) {
@@ -320,15 +561,18 @@ export function mutateGenomeAsexual(parent: Genome, rng: () => number, mutationC
   if (rng() < mutationChance * 0.5) {
     const newRace = RACES[Math.floor(rng() * RACES.length)]
     if (newRace !== race) {
-      if (race) newLatent[race] = (newLatent[race] ?? 0) + 1  // old race becomes latent
+      if (race) newLatent[race] = (newLatent[race] ?? 0) + 1
       race = newRace
     }
   }
 
   return {
-    personality: mut(parent.personality, PERSONALITIES),
-    body: mut(parent.body, BODIES),
-    mind: mut(parent.mind, MINDS),
+    personality,
+    body,
+    mind,
+    personalityAlleles: [pA, pB],
+    bodyAlleles: [bA, bB],
+    mindAlleles: [mA, mB],
     morphSeed,
     morphology: mutateMorphologyAsexual(parent.morphology ?? initMorphology(), rng),
     race,
@@ -433,6 +677,11 @@ export function describeGenome(genome: Genome): string {
     Territorial:'zone-dominant, boundary-enforcing',
     Social:     'bond-maximising, crowd-seeking',
     Stoic:      'stress-resistant, low-affect baseline',
+    Scavenger:  'opportunistic forager, death-site seeker',
+    Mimic:      'bond-follower, behavioral mirror',
+    Nomadic:    'extreme-range disperser, restless mover',
+    Vigilant:   'arc-patroller, threat-sensitive',
+    Symbiotic:  'cross-lineage seeker, diversity-bonded',
   }
   const bDesc: Record<BodyTrait, string> = {
     Spore: 'rapid reproduction, short lifespan',
@@ -478,6 +727,11 @@ export function genomeColor(genome: Genome): string {
     Territorial:[ 18, 90, 68],  // burnt sienna; the border-marker
     Social:     [320, 70, 82],  // bright rose; the cluster-seeker
     Stoic:      [200, 18, 60],  // cool slate; the unmoved
+    Scavenger:  [ 26, 60, 52],  // dark ochre; the bone-picker
+    Mimic:      [270, 45, 74],  // muted lavender; the reflection
+    Nomadic:    [ 55, 85, 68],  // dusty gold; the horizon-chaser
+    Vigilant:   [180, 50, 58],  // teal-grey; the watcher
+    Symbiotic:  [160, 65, 72],  // soft jade; the bridge-builder
   }
 
   const bodyMod: Record<BodyTrait, [number, number]> = {

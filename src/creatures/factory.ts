@@ -9,6 +9,8 @@ import {
   MUTATION_CRISIS_BOOST_MAX,
   STARTER_BOND_STRENGTH,
   REPRODUCE_BOND_MIN_STRENGTH,
+  LINEAGE_FORK_INTERVAL,
+  LINEAGE_FORK_CHANCE,
   // window/gate constants removed — awarenessStage now reads cognitionPressure directly
 } from '@/engine/constants'
 import {
@@ -21,6 +23,7 @@ import {
   acquireAdaptation,
   inheritAdaptations,
   RACES,
+  BehaviorSig,
 } from '@/engine/genetics'
 import { createRng } from '@/world/worldGen'
 import { starterEmoji, inheritEmoji } from '@/engine/speech'
@@ -95,19 +98,33 @@ function computeParentFitness(c: Creature): number {
     + Math.max(0, 1 - c.stress / 100) * 0.20
 }
 
-// Detect which genome slots in offspring differ from BOTH parents; true mutation.
-// Returns list of slot names that changed vs. both parents.
-// Also detects significant morphology threshold crossings (new features appearing).
+// Detects mutations: alleles that appear in the offspring but are absent from both parents' allele pools.
+// With the diploid model, a mutation is specific to an allele, not just the expressed phenotype —
+// a recessive new allele is a true mutation even if it isn't visible in this generation.
+// Also detects morphology threshold crossings (new visible features appearing).
 function detectMutations(offspring: Genome, parentA: Creature, parentB: Creature): string[] {
   const mutated: string[] = []
-  if (offspring.personality !== parentA.genome.personality && offspring.personality !== parentB.genome.personality)
+
+  // Build parent allele pools (fall back to expressed trait as homozygous if no pair stored)
+  const pAPersonalities = new Set(parentA.genome.personalityAlleles ?? [parentA.genome.personality])
+  const pBPersonalities = new Set(parentB.genome.personalityAlleles ?? [parentB.genome.personality])
+  const offPersonalities = offspring.personalityAlleles ?? [offspring.personality, offspring.personality]
+  if (offPersonalities.some(a => !pAPersonalities.has(a) && !pBPersonalities.has(a)))
     mutated.push('personality')
-  if (offspring.body !== parentA.genome.body && offspring.body !== parentB.genome.body)
+
+  const pABodies = new Set(parentA.genome.bodyAlleles ?? [parentA.genome.body])
+  const pBBodies = new Set(parentB.genome.bodyAlleles ?? [parentB.genome.body])
+  const offBodies = offspring.bodyAlleles ?? [offspring.body, offspring.body]
+  if (offBodies.some(b => !pABodies.has(b) && !pBBodies.has(b)))
     mutated.push('body')
-  if (offspring.mind !== parentA.genome.mind && offspring.mind !== parentB.genome.mind)
+
+  const pAMinds = new Set(parentA.genome.mindAlleles ?? [parentA.genome.mind])
+  const pBMinds = new Set(parentB.genome.mindAlleles ?? [parentB.genome.mind])
+  const offMinds = offspring.mindAlleles ?? [offspring.mind, offspring.mind]
+  if (offMinds.some(m => !pAMinds.has(m) && !pBMinds.has(m)))
     mutated.push('mind')
-  // Race counts as a mutation only if it differs from both parents AND isn't a latent revival
-  // (revivals are expected; raw random mutations are the notable events)
+
+  // Race: counts as mutation only when not a latent revival
   if (offspring.race
     && offspring.race !== parentA.genome.race
     && offspring.race !== parentB.genome.race
@@ -116,32 +133,38 @@ function detectMutations(offspring: Genome, parentA: Creature, parentB: Creature
     mutated.push('race')
   }
 
-  // Detect morphology threshold crossings (new visible features appearing)
+  // Morphology threshold crossings (new visible features appearing)
   const offMorph = offspring.morphology
   const parentAMorph = parentA.genome.morphology
   const parentBMorph = parentB.genome.morphology
 
-  // Limb thresholds: 0.20, 0.30, 0.35, 0.55
   const limbThresholds = [0.20, 0.30, 0.35, 0.55]
   for (const threshold of limbThresholds) {
-    const parentsBelowThreshold = (parentAMorph.limbLength < threshold && parentBMorph.limbLength < threshold)
-    if (parentsBelowThreshold && offMorph.limbLength >= threshold) {
-      mutated.push('limbs')
-      break
+    if (parentAMorph.limbLength < threshold && parentBMorph.limbLength < threshold && offMorph.limbLength >= threshold) {
+      mutated.push('limbs'); break
     }
   }
 
-  // Spine thresholds: 0.25, 0.30, 0.45, 0.50, 0.55
   const spineThresholds = [0.25, 0.30, 0.45, 0.50, 0.55]
   for (const threshold of spineThresholds) {
-    const parentsBelowThreshold = (parentAMorph.spinalLength < threshold && parentBMorph.spinalLength < threshold)
-    if (parentsBelowThreshold && offMorph.spinalLength >= threshold) {
-      mutated.push('spine')
-      break
+    if (parentAMorph.spinalLength < threshold && parentBMorph.spinalLength < threshold && offMorph.spinalLength >= threshold) {
+      mutated.push('spine'); break
     }
   }
 
   return mutated
+}
+
+// Behavioral reinforcement signal: derived from parent stats as a proxy for the
+// environmental pressures that shaped their lifetimes. Used to bias body mutations
+// toward the type that would have been most adaptive for the parents.
+function computeBehaviorSignature(parentA: Creature, parentB: Creature): BehaviorSig {
+  return {
+    combatBias:       Math.min(1, (parentA.killCount + parentB.killCount) / 10),
+    socialBias:       Math.min(1, (parentA.bonds.length + parentB.bonds.length) / 8),
+    reproductiveBias: Math.min(1, (parentA.offspringIds.length + parentB.offspringIds.length) / 20),
+    survivalBias:     Math.min(1, ((parentA.age / parentA.maxAge) + (parentB.age / parentB.maxAge)) / 2),
+  }
 }
 
 // ─── Lineage divergence ───────────────────────────────────────────────────────
@@ -160,6 +183,7 @@ function deriveLineageId(
   parentB: Creature,
   inheritFromA: boolean,
   divergencePressure: number,
+  generation: number,
   rng: () => number,
 ): string {
   const primary = inheritFromA ? parentA : parentB
@@ -168,21 +192,28 @@ function deriveLineageId(
   const rootA = primary.lineageId.includes('_') ? primary.lineageId.split('_')[0] : primary.lineageId
   const rootB = secondary.lineageId.includes('_') ? secondary.lineageId.split('_')[0] : secondary.lineageId
 
-  // Cross-lineage birth: offspring get a blended lineage ID that is distinct from both
-  // parents but related to neither as a full outsider. This is the social bridge population.
+  // Cross-lineage birth: blended lineage ID marks hybrid population; bridges both parents
   if (rootA !== rootB) {
-    // Blend: alphabetically ordered roots joined by '+' marks hybrid lineage
     const [lo, hi] = [rootA, rootB].sort()
     return `${lo.slice(0, 8)}+${hi.slice(0, 8)}`
   }
 
-  // Same-root parents: fork only under genuine divergence pressure (≥ 0.7 threshold)
-  if (divergencePressure >= 0.70) {
+  // Generation-interval fork: primary divergence mechanism.
+  // Every LINEAGE_FORK_INTERVAL generations, offspring have a LINEAGE_FORK_CHANCE
+  // of branching into a distinct sub-lineage. Gen 1 is excluded to preserve the
+  // founding cohesion window.
+  if (generation > 1 && generation % LINEAGE_FORK_INTERVAL === 0 && rng() < LINEAGE_FORK_CHANCE) {
     const branchSuffix = Math.floor(rng() * 0xffff).toString(16).padStart(4, '0')
     return `${rootA}_${branchSuffix}`
   }
 
-  // No fork: offspring inherit parent's lineage
+  // Pressure-based fork: geographic separation + stress + inter-lineage hostility.
+  // Threshold lowered to 0.40 so it is reachable under realistic breeding conditions.
+  if (divergencePressure >= 0.40) {
+    const branchSuffix = Math.floor(rng() * 0xffff).toString(16).padStart(4, '0')
+    return `${rootA}_${branchSuffix}`
+  }
+
   return primary.lineageId
 }
 
@@ -213,7 +244,8 @@ export function createOffspring(
   const baseMutation = mutationChance ?? MUTATION_CHANCE
   const effectiveMutation = Math.min(0.28, baseMutation + crisisBoost)
 
-  const baseGenome = inheritGenome(parentA.genome, parentB.genome, rng, effectiveMutation, envCtx, parentBias)
+  const behaviorSig = computeBehaviorSignature(parentA, parentB)
+  const baseGenome = inheritGenome(parentA.genome, parentB.genome, rng, effectiveMutation, envCtx, parentBias, behaviorSig)
   const newAdaptation = envCtx ? acquireAdaptation(envCtx) : null
   const genome = {
     ...baseGenome,
@@ -234,7 +266,7 @@ export function createOffspring(
     genome,
     generation,
     parentIds: [parentA.id, parentB.id],
-    lineageId: deriveLineageId(parentA, parentB, inheritFromA, divergencePressure, rng),
+    lineageId: deriveLineageId(parentA, parentB, inheritFromA, divergencePressure, generation, rng),
     bornOnDay: currentDay,
     knownEmoji: inheritEmoji(parentA, parentB, tribalLexicon, rng),
   }, rng)
@@ -259,7 +291,7 @@ export function createAsexualOffspring(
   rng: () => number,
   envCtx?: EnvContext,
 ): Creature {
-  const baseGenome = mutateGenomeAsexual(parent.genome, rng, ASEXUAL_MUTATION_CHANCE)
+  const baseGenome = mutateGenomeAsexual(parent.genome, rng, ASEXUAL_MUTATION_CHANCE, envCtx)
   const newAdaptation = envCtx ? acquireAdaptation(envCtx) : null
   const genome = {
     ...baseGenome,
@@ -272,7 +304,7 @@ export function createAsexualOffspring(
     genome,
     generation: parent.generation + 1,
     parentIds: [parent.id, null],
-    lineageId: deriveLineageId(parent, parent, true, 0, rng),
+    lineageId: deriveLineageId(parent, parent, true, 0, parent.generation + 1, rng),
     bornOnDay: currentDay,
     knownEmoji: inheritEmoji(parent, null, [], rng),
   }, rng)
@@ -333,6 +365,11 @@ function pickStarterGenomes(rng: () => number): Genome[] {
     personality: personalities[i],
     body: bodies[i],
     mind: minds[i],
+    // Starters are homozygous: both alleles identical, matching the expressed trait.
+    // New alleles can only enter the population through mutation pressure, not at random.
+    personalityAlleles: [personalities[i], personalities[i]] as [PersonalityTrait, PersonalityTrait],
+    bodyAlleles:        [bodies[i], bodies[i]] as [BodyTrait, BodyTrait],
+    mindAlleles:        [minds[i], minds[i]] as [MindTrait, MindTrait],
     morphSeed: rng(),
     morphology: initMorphology(),
     race: RACES[Math.floor(rng() * RACES.length)],

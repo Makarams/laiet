@@ -1,4 +1,4 @@
-import { Creature, CommunityRole, MindTrait } from '@/types'
+import { Creature, CommunityRole, MindTrait, ExperienceEventType } from '@/types'
 
 // ─── Emoji vocabulary; world-grounded ───────────────────────────────────────
 //
@@ -244,6 +244,23 @@ export const ROLE_EMOJI: Record<CommunityRole, string[]> = {
 
   // Recluse — minimal speech; darkness, stone, wind, solitary calm
   recluse:  ['🌑', '🪨', '🌬️', '💤', '😌', '😔', '🐚', '🌁', '🪹', '🌘'],
+}
+
+// ─── Experience-aligned emoji unlock map ─────────────────────────────────────
+// Maps each experience event type to emoji that conceptually align with it.
+// When a creature unlocks a new symbol, if they have recent experiences, the
+// unlock is biased toward concepts they've actually lived — not random acquisition.
+export const EXPERIENCE_EMOJI_MAP: Partial<Record<ExperienceEventType, string[]>> = {
+  bond_formed:         ['❤️', '💖', '🫶', '🪢', '😊', '👁️'],
+  bond_lost:           ['💔', '🌘', '😔', '🦴', '🕊️', '😮'],
+  witnessed_death:     ['💀', '🕊️', '🦴', '😔', '😱', '🌑'],
+  raised_offspring:    ['🐣', '🌱', '❤️', '🫶', '🤲', '😊'],
+  survived_starvation: ['🍎', '😰', '💀', '🌱', '💪', '😌'],
+  survived_combat:     ['🩸', '💥', '😌', '💪', '😤', '🛡️'],
+  discovered_biome:    ['🗺️', '🌊', '🏔️', '🌳', '🐾', '👁️'],
+  long_solitude:       ['🌑', '🪨', '😔', '🐚', '💤', '😌'],
+  caretaker_contact:   ['🌀', '✨', '👆', '🌠', '❓', '👁️'],
+  cross_lineage_bond:  ['🌍', '🔗', '🧬', '💖', '🌈', '🧿'],
 }
 
 // ─── Sentence grammar ─────────────────────────────────────────────────────────
@@ -616,14 +633,13 @@ export function buildSentence(c: Creature, context: SentenceContext): string[] {
 //   experienceWeight  — breadth of life events (shaman)
 //   generation        — lineage depth (elder)
 
-export function assignRole(c: Creature, _tribeSize: number, lineageCount: number): CommunityRole | undefined {
+export function assignRole(
+  c: Creature,
+  _tribeSize: number,
+  lineageCount: number,
+  roleCounts?: Partial<Record<string, number>>
+): CommunityRole | undefined {
   const { personality, body, mind } = c.genome
-
-  // Recluse is a behavioral commitment, not a genetic destiny — but persistent
-  // social withdrawal (very few bonds, no messages sent) earns it organically too.
-  const isRecluse = personality === 'Recluse'
-    || (c.bonds.filter(b => b.strength >= 20).length === 0 && c.messagesSent === 0 && c.age > 20)
-  if (isRecluse) return 'recluse'
 
   // ── Score each role from behavioral evidence ──────────────────────────────
   const scores: Record<CommunityRole, number> = {
@@ -676,6 +692,33 @@ export function assignRole(c: Creature, _tribeSize: number, lineageCount: number
   scores.forager += body === 'Spore' ? 6 : 0
   scores.forager += c.carrying !== undefined ? 4 : 0                 // actively gathering right now
 
+  // RECLUSE — social withdrawal earned through behavior, not locked by genome
+  // Recluse personality is a strong but not absolute signal; isolated behavior confirms it.
+  scores.recluse += personality === 'Recluse' ? 22 : 0
+  scores.recluse += c.bonds.filter(b => b.strength >= 20).length === 0 ? 10 : 0
+  scores.recluse += c.messagesSent === 0 && c.age > 20 ? 8 : 0
+  scores.recluse += c.stress > 60 && c.bonds.length === 0 ? 5 : 0
+  scores.recluse += (personality === 'Furtive' || personality === 'Timid')
+    && c.bonds.filter(b => b.strength >= 30).length === 0 ? 6 : 0
+
+  // ── Colony-compositional boost — fill underrepresented roles ─────────────
+  // If a role is absent from the colony, qualifying creatures get a moderate
+  // boost. This is not a hard assignment — a creature with no behavioral signal
+  // for guardian won't become one just because the colony lacks one.
+  // The boost only matters when two roles are otherwise close in score.
+  if (roleCounts) {
+    const ABSENT_BOOST = 6
+    const SPARSE_BOOST = 3
+    let totalAlive = 0
+    for (const v of Object.values(roleCounts)) totalAlive += (v ?? 0)
+    const fillRoles: CommunityRole[] = ['guardian', 'healer', 'forager', 'scout', 'nurturer', 'shaman', 'elder']
+    for (const role of fillRoles) {
+      const count = roleCounts[role] ?? 0
+      if (count === 0) scores[role] += ABSENT_BOOST
+      else if (totalAlive >= 6 && count === 1) scores[role] += SPARSE_BOOST
+    }
+  }
+
   // ── Pick the highest-scoring role ─────────────────────────────────────────
   // Elder and shaman require minimum cognitive depth — genome can't shortcut this.
   if (scores.elder < 25 && scores.shaman < 20) {
@@ -684,12 +727,12 @@ export function assignRole(c: Creature, _tribeSize: number, lineageCount: number
   }
   if (c.sentience < 30) { scores.elder = 0; scores.shaman = 0 }
 
-  const roles = Object.entries(scores) as [CommunityRole, number][]
-  roles.sort((a, b) => b[1] - a[1])
+  const roleEntries = Object.entries(scores) as [CommunityRole, number][]
+  roleEntries.sort((a, b) => b[1] - a[1])
 
-  const [best] = roles[0]
+  const [best] = roleEntries[0]
   // Minimum score threshold — creatures with no strong behavioral signal get no role
-  if (roles[0][1] < 10) return undefined
+  if (roleEntries[0][1] < 10) return undefined
   return best
 }
 
@@ -780,22 +823,48 @@ export function learnFromNearby(
 }
 
 // ─── Sentience-gated tier unlock ─────────────────────────────────────────────
-// A creature occasionally crystallizes a new concept as sentience deepens.
-// Role emoji unlock separately — the role shapes what concepts they arrive at.
+// A creature crystallizes new concepts as sentience deepens. When the creature
+// has recent experiences, the unlock is biased toward concepts they have lived
+// rather than random acquisition — vocabulary grows from life, not luck.
 export function unlockTierEmoji(c: Creature, rng: () => number): string | null {
   const known = new Set(c.knownEmoji)
 
+  // Build a weighted candidate list biased by experience log
+  function pickFromPool(pool: string[], chance: number): string | null {
+    const missing = pool.filter(e => !known.has(e))
+    if (missing.length === 0 || rng() >= chance) return null
+
+    // Collect experience-aligned emoji the creature hasn't learned yet
+    const expLog = c.experienceLog ?? {}
+    const aligned: string[] = []
+    for (const [evType, day] of Object.entries(expLog) as [ExperienceEventType, number][]) {
+      // Only count experiences from the last 80 game-days as shaping recent thought
+      if (day !== undefined && c.bornOnDay !== undefined && day >= (c.bornOnDay - 80)) {
+        const candidates = EXPERIENCE_EMOJI_MAP[evType] ?? []
+        for (const e of candidates) {
+          if (missing.includes(e)) aligned.push(e)
+        }
+      }
+    }
+
+    // 60% chance to pick an experience-aligned emoji if available; else random
+    if (aligned.length > 0 && rng() < 0.6) {
+      return aligned[Math.floor(rng() * aligned.length)]
+    }
+    return missing[Math.floor(rng() * missing.length)]
+  }
+
   if (c.sentience > 75 && c.genome.mind === 'Sentinel') {
-    const missing = EMOJI_TIER_3.filter(e => !known.has(e))
-    if (missing.length > 0 && rng() < 0.002) return missing[Math.floor(rng() * missing.length)]
+    const result = pickFromPool(EMOJI_TIER_3, 0.002)
+    if (result) return result
   }
   if (c.sentience > 50) {
-    const missing = EMOJI_TIER_2.filter(e => !known.has(e))
-    if (missing.length > 0 && rng() < 0.003) return missing[Math.floor(rng() * missing.length)]
+    const result = pickFromPool(EMOJI_TIER_2, 0.003)
+    if (result) return result
   }
   if (c.sentience > 20) {
-    const missing = EMOJI_TIER_1.filter(e => !known.has(e))
-    if (missing.length > 0 && rng() < 0.005) return missing[Math.floor(rng() * missing.length)]
+    const result = pickFromPool(EMOJI_TIER_1, 0.005)
+    if (result) return result
   }
   if (c.role) {
     const roleEmoji = ROLE_EMOJI[c.role] ?? []

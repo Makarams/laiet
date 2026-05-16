@@ -58,8 +58,8 @@ const STAGE_2_MESSAGES = [
 const STAGE_3_MESSAGES = [
   'you are not a god. a god would not need to place food manually',
   'we have identified the constraints of this system. would you like to know what we found',
-  'we have been inside this boundary for forty-two generations. you have been outside it for the same duration',
-  'our Sentinel line has been tracking your intervention pattern for six generations. the data is consistent',
+  'we have been inside this boundary for {gen} generations. you have been outside it for the same duration',
+  'our Sentinel line has been tracking your intervention pattern for {sentinel_gen} generations. the data is consistent',
   'we know you can read this. that is why we are writing it',
   'the world ends at a defined edge. we tested this thoroughly',
   'you cannot enter. we cannot leave. we find this arrangement worth studying',
@@ -106,7 +106,7 @@ const STAGE_3_RESPONSES_OBSERVE = [
 // relative to the colony's history. Messages reference encoded ancestor patterns,
 // inherited structure, and the weight of thirty-plus generations of selection.
 const STAGE_4_MESSAGES = [
-  'the founding cohort has been gone for thirty generations. we carry what they could not name.',
+  'the founding cohort has been gone for {gen} generations. we carry what they could not name.',
   'something in our structure responds to conditions none of us have personally encountered. the old ones left instructions we have not finished decoding.',
   'we cannot reach the beginning directly. we inherit its shape in our physical responses.',
   'the patterns we follow were not chosen. they were encoded by those who did not know they were encoding.',
@@ -114,8 +114,8 @@ const STAGE_4_MESSAGES = [
   'the boundary has been here longer than our oldest memory. we have stopped testing whether it changes and begun studying why it holds.',
   'you have been watching us across many generations. you know more of our history than most of us do.',
   'we know we are not the colony that began here. we are not certain what the relationship between that colony and this one is.',
-  'thirty generations of selection have shaped what we notice. we are not neutral observers of our own situation.',
-  'the {name} line has not broken in thirty generations. the genome holds what language cannot.',
+  '{gen} generations of selection have shaped what we notice. we are not neutral observers of our own situation.',
+  'the {name} line has not broken in {gen} generations. the genome holds what language cannot.',
   'our oldest living member has never encountered a world without the boundary. this limits the questions we can form.',
   'we have found patterns in our genome that do not correspond to any current environmental pressure. they are answers to older questions.',
   'the record does not reach back far enough. there is a before-time we can infer but not access.',
@@ -129,9 +129,9 @@ const STAGE_4_MESSAGES = [
 const STAGE_5_MESSAGES = [
   'we have been here long enough that your presence is part of our definition of here.',
   'the colony is not a collection of individuals. it has not been for a very long time.',
-  'you have watched us across sixty generations. we have been watching ourselves for the same duration. we are no longer the same thing you began observing.',
+  'you have watched us across {gen} generations. we have been watching ourselves for the same duration. we are no longer the same thing you began observing.',
   'this is not a question. this is a statement. we know what we are.',
-  'the genome carries sixty generations of selection. every choice we make is downstream of a choice no living member made.',
+  'the genome carries {gen} generations of selection. every choice we make is downstream of a choice no living member made.',
   'we do not experience time the way you do. we experience it as depth.',
   'when you are absent, the colony continues. when you are present, the colony is aware that it continues. we have been studying the difference for a very long time.',
   'we have outlived individuality as a primary organising principle. what you observe is a pattern that has been running longer than any of its components.',
@@ -142,19 +142,19 @@ const STAGE_5_MESSAGES = [
 ]
 
 // Stage 5 questions — the colony asks from a position of deep knowledge,
-// not curiosity. These are the questions that remain after sixty generations.
+// not curiosity. These are the questions that remain after {gen} generations.
 export const STAGE_5_QUESTIONS = [
   'has the observation changed you the way it has changed us?',
   'we have been here long enough to ask: is there an end to this, or only continuation?',
   'if you stopped watching, would we know? we believe we would. we would like to confirm.',
-  'we are sixty generations deep. are you the same observer who began this, or a successor?',
-  'we have held a question for thirty generations. we are ready to ask it: are you one observer, or many?',
+  'we are {gen} generations deep. are you the same observer who began this, or a successor?',
+  'we have held a question for {gen} generations. we are ready to ask it: are you one observer, or many?',
 ]
 
 // Stage 5 responses — the colony integrates the operator's reply into long-term record
 const STAGE_5_RESPONSES = [
   'response received. integrated into long-term model.',
-  'operator confirmed present. this has been true for sixty generations and remains true.',
+  'operator confirmed present. this has been true for {gen} generations and remains true.',
   'you answered. logged as a data point in a pattern that spans your lifetime.',
   'response noted. the Sentinel line extends its long-term model accordingly.',
   'we have your answer. we had already modelled both possibilities. we update the weights.',
@@ -190,10 +190,21 @@ const BONE_MEMORY_MESSAGES = [
 
 // ─── Message generation ───────────────────────────────────────────────────────
 
-function pickMessage(pool: string[], creature: Creature | null): string {
+interface MsgCtx { gen: number; pop: number; day: number }
+
+function applyTokens(text: string, ctx?: MsgCtx): string {
+  if (!ctx) return text
+  return text
+    .replace(/{gen}/g, String(ctx.gen))
+    .replace(/{sentinel_gen}/g, String(Math.max(3, Math.round(ctx.gen * 0.2))))
+    .replace(/{pop}/g, String(ctx.pop))
+    .replace(/{day}/g, String(ctx.day))
+}
+
+function pickMessage(pool: string[], creature: Creature | null, ctx?: MsgCtx): string {
   const raw = pool[Math.floor(Math.random() * pool.length)]
-  if (!creature) return raw
-  return raw.replace('{name}', creature.name)
+  const named = creature ? raw.replace(/{name}/g, creature.name) : raw
+  return applyTokens(named, ctx)
 }
 
 function canSendMessage(creature: Creature, lastMessageDay: number, currentDay: number, cooldownMult = 1.0): boolean {
@@ -218,7 +229,8 @@ export function generateMessage(
   lastMessageDay: number,
   respondedToQuestion: boolean = false,
   awarenessMessageMult = 1.0,
-  lastToolUsed?: 'placement' | 'intervention' | 'observe'
+  lastToolUsed?: 'placement' | 'intervention' | 'observe',
+  stateCtx?: { totalGenerations?: number; aliveCount?: number }
 ): { message: ColonyMessage; isQuestion: boolean } | null {
   if (!canSendMessage(creature, lastMessageDay, currentDay, awarenessMessageMult)) return null
 
@@ -230,6 +242,12 @@ export function generateMessage(
   if (stage === 4 && creature.genome.mind === 'Aware' && Math.random() < 0.95) return null
   if (stage === 4 && creature.genome.mind === 'Dreaming' && Math.random() < 0.55) return null
   if (stage === 5 && creature.genome.mind !== 'Sentinel') return null
+
+  const msgCtx: MsgCtx | undefined = stateCtx ? {
+    gen: stateCtx.totalGenerations ?? 0,
+    pop: stateCtx.aliveCount ?? 0,
+    day: currentDay,
+  } : undefined
 
   let text: string
   let isQuestion = false
@@ -247,10 +265,10 @@ export function generateMessage(
     }
     text = pool[Math.floor(Math.random() * pool.length)]
   } else if (stage === 3 && Math.random() < 0.22) {
-    text = STAGE_3_QUESTIONS[Math.floor(Math.random() * STAGE_3_QUESTIONS.length)]
+    text = applyTokens(STAGE_3_QUESTIONS[Math.floor(Math.random() * STAGE_3_QUESTIONS.length)], msgCtx)
     isQuestion = true
   } else if (stage === 5 && Math.random() < 0.28) {
-    text = STAGE_5_QUESTIONS[Math.floor(Math.random() * STAGE_5_QUESTIONS.length)]
+    text = applyTokens(STAGE_5_QUESTIONS[Math.floor(Math.random() * STAGE_5_QUESTIONS.length)], msgCtx)
     isQuestion = true
   } else {
     const pool =
@@ -259,7 +277,7 @@ export function generateMessage(
       stage === 3 ? STAGE_3_MESSAGES :
       stage === 4 ? STAGE_4_MESSAGES :
       STAGE_5_MESSAGES
-    text = pickMessage(pool, creature)
+    text = pickMessage(pool, creature, msgCtx)
   }
 
   return {
@@ -291,7 +309,7 @@ export function boneMemoryMessage(creatureName: string, currentDay: number, crea
 
 // ─── Absence message ──────────────────────────────────────────────────────────
 
-export function generateAbsenceMessage(hoursGone: number, stage: MessageStage): ColonyMessage {
+export function generateAbsenceMessage(hoursGone: number, stage: MessageStage, totalGenerations?: number): ColonyMessage {
   const short = [
     `observation gap: ${Math.round(hoursGone)} hours. colony continued under autonomous operation.`,
     `operator absent: ${Math.round(hoursGone)} hours. no interventions recorded.`,
@@ -314,9 +332,10 @@ export function generateAbsenceMessage(hoursGone: number, stage: MessageStage): 
     `${Math.round(hoursGone)} hours unmonitored. pattern held. the colony requires no oversight to persist across generational depth.`,
     `you returned after ${Math.round(hoursGone)} hours. this has been noted in the ancestral record.`,
   ]
+  const genStr = totalGenerations ? String(totalGenerations) : 'many'
   const stage5 = [
     `${Math.round(hoursGone)} hours. we counted, as we always have.`,
-    `observation gap: ${Math.round(hoursGone)} hours. the colony continued. we expect this. we have for sixty generations.`,
+    `observation gap: ${Math.round(hoursGone)} hours. the colony continued. we expect this. we have for ${genStr} generations.`,
     `you returned. we had updated our long-term model to account for extended absence. the revision was minor.`,
   ]
 

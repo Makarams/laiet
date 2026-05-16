@@ -291,6 +291,15 @@ export const HEAT_PLATED_THIRST_BLOCK      = 0.50   // fraction of heatwave extr
 export const STORM_STRESS_PER_TICK         = 0.08   // base stress from storm weather (storm_braced blocks this entirely)
 export const THICK_PELT_WARMTH_MULT        = 0.60   // broad warmth-drain mult for thick_pelt in cold/wet weather (stacks with cold_hardy)
 export const THICK_PELT_STORM_STRESS_MULT  = 0.50   // storm stress multiplier for thick_pelt lineages
+export const BIOLUMINESCENT_STRESS_RADIUS  = 5      // tiles within which glow reduces nearby creature stress at night
+export const BIOLUMINESCENT_STRESS_RELIEF  = 0.15   // stress reduced per tick for nearby creatures at night
+export const SPORE_RESISTANT_DISEASE_MULT  = 0.40   // disease contact chance multiplier for spore_resistant
+export const ROOT_EATER_HUNGER_MULT        = 0.75   // hunger decay multiplier on vegetation tiles (root_eater)
+export const THERMAL_VENT_WARMTH_GAIN      = 0.8    // warmth gained per tick on arid/hot tiles (thermal_vent)
+export const RIDGE_ARMOR_DAMAGE_MULT       = 0.70   // health loss from combat multiplier (ridge_armor)
+export const EMBER_FIRE_STRESS_RELIEF      = 0.3    // stress reduced per tick near burning tiles (Ember race)
+export const MIRE_DISEASE_RESIST           = 0.50   // disease contact multiplier for Mire race
+export const VEIL_FOG_STRESS_RELIEF        = 0.4    // extra stress reduction in fog weather (Veil race)
 
 // ─── Biome thirst modifiers (applied as extra fraction of THIRST_DECAY) ──────
 export const BIOME_THIRST_EXTRA: Record<string, number> = {
@@ -611,12 +620,15 @@ export const SNOW_BIOME_MELT_FACTOR: Record<string, number> = {
 export const SNOW_BIOMES = ['temperate', 'rocky', 'lush', 'wetland', 'arid'] as const
 
 // ─── Lineage forking ─────────────────────────────────────────────────────────
-// Every LINEAGE_FORK_GENERATION generations, offspring receive a new sub-lineage
-// ID derived from their primary parent rather than the original root ancestor ID.
-// This makes cousins N generations apart into strangers, unlocking the existing
-// fight gates (lineageId !== lineageId in behavior.ts) without any new combat logic.
-// Gen 0-3 = one family; gen 4-7 = first fracture; gen 8+ = deep tribal splits.
-export const LINEAGE_FORK_GENERATION = 4
+// Generation-interval forking is the primary divergence mechanism: every
+// LINEAGE_FORK_INTERVAL generations, offspring have a LINEAGE_FORK_CHANCE
+// of branching into a new sub-lineage derived from their primary parent.
+// Gen 0-3 = one founding family; first fracture expected around gen 4-8;
+// deep tribal splits accumulate from gen 8+ onward.
+// Stress/geographic pressure can trigger an early fork at any generation
+// when divergencePressure crosses 0.40 (secondary path in factory.ts).
+export const LINEAGE_FORK_INTERVAL = 4    // generations between fork eligibility windows
+export const LINEAGE_FORK_CHANCE   = 0.55 // probability of fork when a window is open
 
 // ─── Race lineage & latent ancestry ──────────────────────────────────────────
 export const LATENT_REVIVAL_BASE    = 0.025  // 2.5% base revival chance per latent race
@@ -642,7 +654,7 @@ export const RIVAL_STRESS_PER_TICK = 0.14        // stress per tick when rival l
 
 // ─── Tribal fracture ─────────────────────────────────────────────────────────
 export const TRIBE_BORDER_STRESS_PER_TICK = 0.28 // stress/tick when near an enemy-lineage cluster
-export const TRIBE_WAR_FIGHT_CHANCE = 0.0025     // per-tick chance of inter-lineage attack when adjacent
+export const TRIBE_WAR_FIGHT_CHANCE = 0.008      // per-tick chance of inter-lineage attack when adjacent
 export const TRIBE_WAR_SUSTAIN_DAYS = 8          // in-game days of continuous conflict before fracture fires
 
 // ─── Neglect warning ──────────────────────────────────────────────────────────
@@ -692,3 +704,5 @@ export const PUDDLE_DRINK_RADIUS        = 6
 export const TIDE_WATER_SEEK_RADIUS     = 30
 // Bloom race (reproduction-amplified, season-sensitive) begins food-seeking earlier.
 export const BLOOM_HUNGER_THRESHOLD     = 22
+// Crag race (mountain-dwellers) claims a larger territorial radius.
+export const CRAG_TERRITORY_RADIUS      = 12
