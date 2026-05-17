@@ -1191,13 +1191,9 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
   const aliveCount = aliveCreatures.length
   const tileIdx = buildTileIndex(srcTiles)
 
-  // Snapshot of role counts at tick start — used to make role assignment colony-compositional.
-  // Roles that are absent from the colony get a mild boost in assignRole scoring so qualified
-  // creatures fill them preferentially. This is computed once and stays stable for the tick.
-  const currentRoleCounts: Partial<Record<string, number>> = {}
-  for (const ac of aliveCreatures) {
-    if (ac.role) currentRoleCounts[ac.role] = (currentRoleCounts[ac.role] ?? 0) + 1
-  }
+  // Roles are assigned purely from behavioral evidence scores in assignRole().
+  // No gap-filling boost: the colony cannot appoint a guardian by need alone —
+  // a creature has to earn it through actual combat and territorial history.
 
   for (const id in creatures) {
     const initialState = creatures[id].state
@@ -1650,14 +1646,22 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
         cannibalTile.deathSiteAge = 0
         if (c.state === 'seeking_food' || c.state === 'scavenging' || c.state === 'migrating') c.state = 'idle'
 
-        // Stress nearby witnesses and mark trauma window
+        // Stress nearby witnesses; magnitude and duration scale with personality sensitivity.
+        // Stoic witnesses are unshaken. Empaths and Nurturers are deeply affected.
         for (const witness of Object.values(creatures)) {
           if (witness.id === c.id || witness.diedOnDay !== null) continue
           if (Math.abs(witness.x - c.x) <= 3 && Math.abs(witness.y - c.y) <= 3) {
+            const wp = witness.genome.personality
+            if (wp === 'Stoic') continue  // psychological immunity; unmoved by distress events
+            const sensitivityMult = wp === 'Empath' ? 1.8
+              : wp === 'Nurturing' ? 1.4
+              : wp === 'Timid' ? 1.3
+              : wp === 'Scavenger' ? 0.5  // Scavengers expect death; normalized to it
+              : 1.0
             creatures[witness.id] = {
               ...witness,
-              stress: Math.min(100, witness.stress + CANNIBAL_WITNESS_STRESS),
-              traumaUntil: state.time.day + CANNIBAL_TRAUMA_DURATION_DAYS,
+              stress: Math.min(100, witness.stress + CANNIBAL_WITNESS_STRESS * sensitivityMult),
+              traumaUntil: state.time.day + Math.round(CANNIBAL_TRAUMA_DURATION_DAYS * sensitivityMult),
             }
           }
         }
@@ -1867,21 +1871,28 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
         deathTile.type = 'death_site'
         deathTile.deathSiteAge = 0
 
-        // Healroot spawns around death sites; the world offers remedy to mourners.
-        // Capped to prevent late-game death saturation from flooding the map.
+        // Healroot is an ecological opportunist: death disturbs the soil, and moist
+        // ground nearby will colonize naturally. Dry or barren tiles won't take root.
+        // The creature dying is the trigger, but moisture is the gate — not symbolism.
         if (healrootCount < HEALROOT_CAP) {
           for (let dy = -HEALROOT_DEATH_SITE_RADIUS; dy <= HEALROOT_DEATH_SITE_RADIUS; dy++) {
             for (let dx = -HEALROOT_DEATH_SITE_RADIUS; dx <= HEALROOT_DEATH_SITE_RADIUS; dx++) {
               if (healrootCount >= HEALROOT_CAP) break
               const ny = c.y + dy
               const nx = c.x + dx
-              if (ny >= 0 && ny < WORLD_SIZE && nx >= 0 && nx < WORLD_SIZE && Math.random() < HEALROOT_DEATH_SPAWN_CHANCE) {
-                const tile = writeTile(ny, nx)
-                if (tile.type === 'grass' || tile.type === 'mud') {
-                  tile.type = 'healroot'
-                  tile.healrootAmount = 60
-                  healrootCount++
-                }
+              if (ny < 0 || ny >= WORLD_SIZE || nx < 0 || nx >= WORLD_SIZE) continue
+              const tile = writeTile(ny, nx)
+              // Ecological gate: healroot only establishes in moist, organic-rich ground.
+              // Lush/wetland biomes are naturally suitable; river adjacency or standing
+              // water (puddle) make even temperate soil viable.
+              const isMoist = tile.biome === 'lush' || tile.biome === 'wetland'
+                || tile.waterLevel > 20
+                || (tile.puddleLevel ?? 0) > 0.2
+              if ((tile.type === 'grass' || tile.type === 'mud') && isMoist
+                  && Math.random() < HEALROOT_DEATH_SPAWN_CHANCE) {
+                tile.type = 'healroot'
+                tile.healrootAmount = 60
+                healrootCount++
               }
             }
           }
@@ -1897,11 +1908,23 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
       for (const bond of c.bonds) {
         if (creatures[bond.targetId] && creatures[bond.targetId].diedOnDay === null) {
           const survivor = creatures[bond.targetId]
+          // Mourning duration and stress proportional to bond strength × social drive.
+          // A weak acquaintance causes a brief pause; a lifelong bond causes prolonged grief.
+          const bondDepth = bond.strength / 100  // 0-1
+          const personality = survivor.genome.personality
+          const socialMult = personality === 'Social' ? 1.5
+            : personality === 'Nurturing' ? 1.3
+            : personality === 'Empath' ? 1.25
+            : personality === 'Stoic' ? 0.4
+            : personality === 'Recluse' ? 0.6
+            : 1.0
+          const mourningDuration = Math.max(10, Math.round(15 + bondDepth * 65 * socialMult))
+          const stressBump = Math.round(8 + bondDepth * 32 * socialMult)
           creatures[bond.targetId] = {
             ...survivor,
             state: 'mourning',
-            stateTimer: 60,
-            stress: Math.min(100, survivor.stress + 30),
+            stateTimer: mourningDuration,
+            stress: Math.min(100, survivor.stress + stressBump),
           }
           // Bonded creature experiences loss
           recordExperience(creatures[bond.targetId], 'bond_lost', state.time.day)
@@ -2094,7 +2117,7 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
     // 3. Role assignment; assign/refresh when tribe membership changes or colony grows
     if (aliveCount >= 6 && (c.tribeId || aliveCount >= 10)) {
       const lineageCount = aliveCreatures.filter(o => o.lineageId === c.lineageId).length
-      const role = assignRole(c, aliveCount, lineageCount, currentRoleCounts)
+      const role = assignRole(c, aliveCount, lineageCount)
       if (role !== c.role) {
         c = { ...c, role }
         // Role-specific emoji: shaman/elder immediately gain their first role word

@@ -5,7 +5,7 @@ import {
   drawTile, drawCreature, drawAtmosphere, drawScanlines, drawVignette,
   gridToIso, canvasOrigin, isoToGrid, resetCanvasState, drawEnrichmentItem,
 } from '@/ui/renderer'
-import { WORLD_SIZE, ISO_TILE_HEIGHT } from '@/engine/constants'
+import { WORLD_SIZE, ISO_TILE_HEIGHT, BUILD_TERRITORY_RADIUS } from '@/engine/constants'
 import type { GameState, Season, EnrichmentType, Tile, Creature, EnrichmentItem } from '@/types'
 import { genomeColor } from '@/engine/genetics'
 
@@ -184,6 +184,10 @@ function zoomAt(cam: Camera, lx: number, ly: number, newZoomRaw: number, cw: num
 
 function clamp(v: number, a: number, b: number): number {
   return Math.max(a, Math.min(b, v))
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)]
 }
 
 const SEASON_LABELS: Record<Season, string> = {
@@ -409,6 +413,60 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
         const esx = origin.x + iso.x
         const esy = origin.y + iso.y
         drawEnrichmentItem(ctx, item, esx, esy)
+      }
+
+      // Territory zone overlays — soft diamond per unique claim, before creatures
+      {
+        const seenClaims = new Set<string>()
+        const R = BUILD_TERRITORY_RADIUS
+        for (const c of Object.values(gs.creatures)) {
+          if (c.diedOnDay !== null || !c.territoryClaim) continue
+          const key = `${c.territoryClaim.x},${c.territoryClaim.y}`
+          if (seenClaims.has(key)) continue
+          seenClaims.add(key)
+          const { x: cx, y: cy } = c.territoryClaim
+          // The Chebyshev-R territory square has 4 corner tiles in unrotated grid space.
+          // In isometric projection these map to top/right/bottom/left of a rhombus.
+          const corners: [number, number][] = [
+            [cx - R, cy - R],
+            [cx + R, cy - R],
+            [cx + R, cy + R],
+            [cx - R, cy + R],
+          ]
+          const pts = corners.map(([gx, gy]) => {
+            const rg = rotateGrid(
+              Math.max(0, Math.min(WORLD_SIZE - 1, gx)),
+              Math.max(0, Math.min(WORLD_SIZE - 1, gy)),
+              rot, WORLD_SIZE,
+            )
+            const iso = gridToIso(rg.x, rg.y)
+            return { x: origin.x + iso.x, y: origin.y + iso.y }
+          })
+          const [rr, gg, bb] = hexToRgb(genomeColor(c.genome))
+          const lw = Math.max(0.5, 1.5 / cam.zoom)
+          const dash = Math.max(2, 4 / cam.zoom)
+          ctx.save()
+          ctx.beginPath()
+          ctx.moveTo(pts[0].x, pts[0].y)
+          for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
+          ctx.closePath()
+          ctx.fillStyle = `rgba(${rr},${gg},${bb},0.07)`
+          ctx.fill()
+          ctx.strokeStyle = `rgba(${rr},${gg},${bb},0.38)`
+          ctx.lineWidth = lw
+          ctx.setLineDash([dash, dash])
+          ctx.stroke()
+          // Small solid marker at the claim center
+          const rc = rotateGrid(cx, cy, rot, WORLD_SIZE)
+          const ci = gridToIso(rc.x, rc.y)
+          const mx = origin.x + ci.x, my = origin.y + ci.y + ISO_TILE_HEIGHT * 0.5
+          ctx.setLineDash([])
+          ctx.fillStyle = `rgba(${rr},${gg},${bb},0.55)`
+          ctx.beginPath()
+          ctx.arc(mx, my, Math.max(2, 3 / cam.zoom), 0, Math.PI * 2)
+          ctx.fill()
+          ctx.restore()
+        }
       }
 
       // Pre-compute alive creature interpolated/rotated positions once;

@@ -1,5 +1,5 @@
 import { v4 as uuid } from 'uuid'
-import { Creature, Genome, GameState, PersonalityTrait, BodyTrait, MindTrait, EnvContext, MessageStage } from '@/types'
+import { Creature, CreatureDrives, Genome, GameState, PersonalityTrait, BodyTrait, MindTrait, EnvContext, MessageStage } from '@/types'
 import {
   MAX_AGE_BY_BODY,
   SENTIENCE_GROWTH_BY_MIND,
@@ -9,8 +9,8 @@ import {
   MUTATION_CRISIS_BOOST_MAX,
   STARTER_BOND_STRENGTH,
   REPRODUCE_BOND_MIN_STRENGTH,
-  LINEAGE_FORK_INTERVAL,
-  LINEAGE_FORK_CHANCE,
+  DRIVE_SEED_STRENGTH,
+  DRIVE_PERSONALITY_SEEDS,
   // window/gate constants removed — awarenessStage now reads cognitionPressure directly
 } from '@/engine/constants'
 import {
@@ -27,6 +27,36 @@ import {
 } from '@/engine/genetics'
 import { createRng } from '@/world/worldGen'
 import { starterEmoji, inheritEmoji } from '@/engine/speech'
+
+// ─── Drive initialization ────────────────────────────────────────────────────
+// Seeds a creature's drives from personality with random variance.
+// All unspecified drives default to 0.3 (neutral baseline).
+export function seedDrives(personality: string, rng: () => number): CreatureDrives {
+  const defaults: CreatureDrives = {
+    dominance: 0.3, curiosity: 0.3, sociality: 0.3,
+    vigilance: 0.3, acquisitive: 0.3, reclusion: 0.3, mobility: 0.3,
+  }
+  const seed = DRIVE_PERSONALITY_SEEDS[personality] ?? {}
+  const drives: CreatureDrives = { ...defaults }
+  for (const key of Object.keys(drives) as (keyof CreatureDrives)[]) {
+    const target = (seed[key] ?? 0.3) * DRIVE_SEED_STRENGTH + 0.3 * (1 - DRIVE_SEED_STRENGTH)
+    drives[key] = Math.max(0, Math.min(1, target + (rng() - 0.5) * 0.12))
+  }
+  return drives
+}
+
+// Blends two parent drive sets for sexual offspring; slight mutation variance.
+function inheritDrives(parentA: CreatureDrives, parentB: CreatureDrives, rng: () => number): CreatureDrives {
+  const drives: CreatureDrives = {
+    dominance: 0, curiosity: 0, sociality: 0,
+    vigilance: 0, acquisitive: 0, reclusion: 0, mobility: 0,
+  }
+  for (const key of Object.keys(drives) as (keyof CreatureDrives)[]) {
+    const mid = (parentA[key] + parentB[key]) / 2
+    drives[key] = Math.max(0, Math.min(1, mid + (rng() - 0.5) * 0.08))
+  }
+  return drives
+}
 
 export function spawnCreature(
   overrides: Partial<Creature> & {
@@ -84,6 +114,9 @@ export function spawnCreature(
     // speech system; starter vocab derived from mind + personality
     knownEmoji: overrides.knownEmoji ?? starterEmoji(genome.mind, genome.personality, rng),
     role: overrides.role,
+
+    // behavioral drives; seeded from personality if not provided (e.g. from parent inheritance)
+    drives: overrides.drives ?? seedDrives(genome.personality, rng),
   }
 }
 
@@ -183,7 +216,7 @@ function deriveLineageId(
   parentB: Creature,
   inheritFromA: boolean,
   divergencePressure: number,
-  generation: number,
+  _generation: number,
   rng: () => number,
 ): string {
   const primary = inheritFromA ? parentA : parentB
@@ -196,15 +229,6 @@ function deriveLineageId(
   if (rootA !== rootB) {
     const [lo, hi] = [rootA, rootB].sort()
     return `${lo.slice(0, 8)}+${hi.slice(0, 8)}`
-  }
-
-  // Generation-interval fork: primary divergence mechanism.
-  // Every LINEAGE_FORK_INTERVAL generations, offspring have a LINEAGE_FORK_CHANCE
-  // of branching into a distinct sub-lineage. Gen 1 is excluded to preserve the
-  // founding cohesion window.
-  if (generation > 1 && generation % LINEAGE_FORK_INTERVAL === 0 && rng() < LINEAGE_FORK_CHANCE) {
-    const branchSuffix = Math.floor(rng() * 0xffff).toString(16).padStart(4, '0')
-    return `${rootA}_${branchSuffix}`
   }
 
   // Pressure-based fork: geographic separation + stress + inter-lineage hostility.
@@ -259,6 +283,9 @@ export function createOffspring(
 
   const mutatedTraits = detectMutations(genome, parentA, parentB)
 
+  const parentDrivesA = parentA.drives ?? seedDrives(parentA.genome.personality, rng)
+  const parentDrivesB = parentB.drives ?? seedDrives(parentB.genome.personality, rng)
+
   const c = spawnCreature({
     x, y,
     name: generateName(rng),
@@ -269,6 +296,7 @@ export function createOffspring(
     lineageId: deriveLineageId(parentA, parentB, inheritFromA, divergencePressure, generation, rng),
     bornOnDay: currentDay,
     knownEmoji: inheritEmoji(parentA, parentB, tribalLexicon, rng),
+    drives: inheritDrives(parentDrivesA, parentDrivesB, rng),
   }, rng)
 
   if (mutatedTraits.length > 0) {
@@ -297,6 +325,8 @@ export function createAsexualOffspring(
     ...baseGenome,
     adaptations: inheritAdaptations(parent.genome, null, newAdaptation, rng),
   }
+  const parentDrives = parent.drives ?? seedDrives(parent.genome.personality, rng)
+
   const c = spawnCreature({
     x, y,
     name: generateName(rng),
@@ -307,6 +337,7 @@ export function createAsexualOffspring(
     lineageId: deriveLineageId(parent, parent, true, 0, parent.generation + 1, rng),
     bornOnDay: currentDay,
     knownEmoji: inheritEmoji(parent, null, [], rng),
+    drives: inheritDrives(parentDrives, parentDrives, rng),
   }, rng)
 
   // Track asexual morphology mutations as a special case (clones always mutate)

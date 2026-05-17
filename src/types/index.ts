@@ -79,6 +79,21 @@ export interface Genome {
   mindAlleles?: [MindTrait, MindTrait]
 }
 
+// ─── Creature drives — continuous behavioral tendencies ──────────────────────
+// Seven drives seed from personality but drift from actual behavioral history.
+// They replace the personality→behavior switch: personality biases the starting
+// weights, but what the creature actually does reshapes them over time.
+// Range 0..1. Stored as optional for backward compatibility with old saves.
+export interface CreatureDrives {
+  dominance:   number  // territory-holding, fight-seeking, rival-challenging
+  curiosity:   number  // exploration, biome discovery, new-stimulus seeking
+  sociality:   number  // bond-seeking, grooming, proximity comfort
+  vigilance:   number  // threat-monitoring, perimeter patrol, stress sensitivity
+  acquisitive: number  // food-seeking, resource gathering, hoarding
+  reclusion:   number  // crowd-avoidance, solitude preference, isolation
+  mobility:    number  // long-range movement, migration distance
+}
+
 // ─── Creature ─────────────────────────────────────────────────────────────────
 
 export interface Bond {
@@ -205,6 +220,9 @@ export interface Creature {
   // carrying; a creature can hold one item (healroot, fruit, pebble)
   carrying?: CarriedItemType
   carryingTargetId?: string   // creature id they're bringing it to (optional)
+
+  // continuous behavioral drives; seeded from personality, drift from actual history
+  drives?: CreatureDrives
 }
 
 export type MicroAnimType = 'jump' | 'shake' | 'sneeze' | 'groom' | 'wag'

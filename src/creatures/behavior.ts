@@ -1,5 +1,5 @@
 import {
-  Creature, Tile, ThoughtSymbol, Season, WeatherState, EnrichmentItem, EnvContext
+  Creature, CreatureDrives, Tile, ThoughtSymbol, Season, WeatherState, EnrichmentItem, EnvContext
 } from '@/types'
 import { computeDormancy, RACE_PROFILES } from '@/engine/genetics'
 import {
@@ -25,7 +25,8 @@ import {
   FOOD_SEEK_MIN_AMOUNT, FOOD_SEEK_FALLBACK_RADIUS, PUDDLE_DRINK_RADIUS,
 } from '@/engine/constants'
 import { findNearestTileOfType, findNearestInIndex, getTile, isTilePassable, TileTypeIndex } from '@/world/worldGen'
-import { tickSentience } from './factory'
+import { tickSentience, seedDrives } from './factory'
+import { DRIVE_DRIFT_RATE } from '@/engine/constants'
 
 // ─── Build terrain validation ────────────────────────────────────────────────
 
@@ -125,6 +126,28 @@ export function tickNeeds(creature: Creature, season: Season, biome?: string, we
 
   c.age += 1
 
+  // Drive drift: each tick, observed behavior nudges the relevant drive slightly.
+  // A creature that keeps fighting slowly becomes more dominance-driven over years.
+  // A creature that keeps bonding becomes more social. This is the core of emergent drift.
+  {
+    const d = c.drives ?? seedDrives(c.genome.personality, () => 0.5)
+    const rate = DRIVE_DRIFT_RATE
+    const upd: CreatureDrives = { ...d }
+    if (c.state === 'fighting')                               upd.dominance   = Math.min(1, d.dominance   + rate * 3)
+    if (c.state === 'wandering' || c.state === 'migrating')  upd.mobility    = Math.min(1, d.mobility    + rate * 2)
+    if (c.state === 'bonding'   || c.state === 'grooming')   upd.sociality   = Math.min(1, d.sociality   + rate * 2)
+    if (c.state === 'observing')                              upd.vigilance   = Math.min(1, d.vigilance   + rate * 2)
+    if (c.state === 'seeking_food' || c.state === 'harvesting') upd.acquisitive = Math.min(1, d.acquisitive + rate * 2)
+    if (c.state === 'mourning')                               upd.sociality   = Math.min(1, d.sociality   + rate)
+    if (c.territoryClaim !== null)                            upd.dominance   = Math.min(1, d.dominance   + rate)
+    // Counterdrift: drives not expressed slowly drift toward 0.3 (neutral)
+    for (const key of Object.keys(upd) as (keyof CreatureDrives)[]) {
+      if (upd[key] > 0.3) upd[key] = Math.max(0.3, upd[key] - rate * 0.3)
+      else if (upd[key] < 0.3) upd[key] = Math.min(0.3, upd[key] + rate * 0.3)
+    }
+    c.drives = upd
+  }
+
   // Thought symbol — live derivation from state every tick so it reflects
   // the creature's actual condition in real time, not on a 15-30 tick delay.
   // Timer stays at 20 while a meaningful thought is active (prevents flicker);
@@ -146,63 +169,105 @@ function computeNeedSatisfaction(c: Creature, dormancy?: { personality: boolean;
   // suppressed — the creature falls back to baseline satisfaction without trait penalties.
   if (dormancy?.personality) return Math.max(0, Math.min(100, base))
 
+  // Drive-weighted penalties: drives modulate how much each unmet need actually matters.
+  // A creature with high dominance drive cares more about lacking territory;
+  // one with high sociality drive suffers more from isolation. All penalties are
+  // gradient-based — no binary on/off; discomfort ramps up with deficit depth.
+  const drives = c.drives ?? seedDrives(c.genome.personality, () => 0.5)
   let traitPenalty = 0
+
   switch (c.genome.personality) {
     case 'Curious':
-      traitPenalty = c.state === 'idle' && c.stateTimer > 80 ? 20 : 0
+      // Restlessness grows gradually with idle time, scaled by curiosity drive
+      traitPenalty = c.state === 'idle'
+        ? Math.min(20, Math.max(0, c.stateTimer - 30) * 0.28 * (0.5 + drives.curiosity))
+        : 0
       break
     case 'Timid':
-      traitPenalty = c.stress > 50 ? 25 : 0
+      // Stress sensitivity: penalty ramps above threshold, scaled by vigilance drive
+      traitPenalty = c.stress > 30 ? Math.min(25, (c.stress - 30) * 0.45 * (0.5 + drives.vigilance)) : 0
       break
     case 'Aggressive':
-      traitPenalty = c.territoryClaim === null ? 15 : 0
+      // Territory deprivation: penalty rises with stress when unclaimed, dampened if low dominance
+      traitPenalty = c.territoryClaim === null
+        ? Math.min(15, c.stress * 0.18 * (0.4 + drives.dominance))
+        : 0
       break
     case 'Lazy':
-      break
+      break  // no drive-based penalty; laziness means low need pressure
     case 'Greedy':
-      traitPenalty = c.hunger > 25 ? 15 : 0
+      // Hunger pressure starts early, ramps steeply with acquisitive drive
+      traitPenalty = c.hunger > 10 ? Math.min(15, (c.hunger - 10) * 0.22 * (0.5 + drives.acquisitive)) : 0
       break
     case 'Nurturing':
-      traitPenalty = c.bonds.length === 0 ? 20 : 0
+      // Isolation penalty: no bonds = full penalty; one bond halves it; two+ bonds = none
+      traitPenalty = c.bonds.length === 0 ? 20 * (0.5 + drives.sociality * 0.5)
+        : c.bonds.length === 1 ? 10 * (0.5 + drives.sociality * 0.5)
+        : 0
       break
     case 'Wanderer':
-      traitPenalty = c.state === 'idle' && c.stateTimer > 50 ? 22 : 0
+      // Stasis penalty ramps with idle time, scaled by mobility drive
+      traitPenalty = c.state === 'idle'
+        ? Math.min(22, Math.max(0, c.stateTimer - 20) * 0.38 * (0.4 + drives.mobility))
+        : 0
       break
     case 'Recluse':
-      traitPenalty = c.stress > 45 ? 20 : 0  // crowding stress cascades to satisfaction
+      // Crowding discomfort: stress from proximity already captured; scale with reclusion drive
+      traitPenalty = c.stress > 30 ? Math.min(20, (c.stress - 30) * 0.40 * (0.5 + drives.reclusion)) : 0
       break
     case 'Hoarder':
-      traitPenalty = c.hunger > 20 ? 18 : 0  // never satisfied unless well-stocked
+      // Resource anxiety: continuous gradient from even low hunger, heavy acquisitive weight
+      traitPenalty = c.hunger > 5 ? Math.min(18, (c.hunger - 5) * 0.28 * (0.4 + drives.acquisitive)) : 0
       break
     case 'Empath':
-      traitPenalty = c.stress > 40 ? 12 : 0  // mirrors nearby stress; hard to ignore
+      // Stress resonance: mirroring nearby stress, scaled by sociality drive
+      traitPenalty = c.stress > 25 ? Math.min(12, (c.stress - 25) * 0.25 * (0.4 + drives.sociality)) : 0
       break
     case 'Furtive':
-      traitPenalty = c.stress > 35 ? 15 : 0  // open exposure is inherently stressful
+      // Exposure anxiety: stress from open ground, scaled by vigilance drive
+      traitPenalty = c.stress > 20 ? Math.min(15, (c.stress - 20) * 0.28 * (0.4 + drives.vigilance)) : 0
       break
     case 'Territorial':
-      traitPenalty = c.territoryClaim === null ? 18 : 0  // must hold ground to feel settled
+      // Groundlessness: penalty scales with dominance drive; active territory claim fully resolves it
+      traitPenalty = c.territoryClaim === null
+        ? Math.min(18, (c.stress * 0.20 + 4) * (0.4 + drives.dominance))
+        : 0
       break
-    case 'Social':
-      traitPenalty = c.bonds.length < 2 ? 20 : 0  // low-bond state feels deeply wrong
+    case 'Social': {
+      // Bond depth matters: no strong bonds = full penalty; one = partial; two+ = satisfied
+      const strongBonds = c.bonds.filter(b => b.strength >= 25).length
+      traitPenalty = strongBonds === 0 ? 20 * (0.5 + drives.sociality * 0.5)
+        : strongBonds < 2 ? 8 * (0.5 + drives.sociality * 0.5)
+        : 0
       break
+    }
     case 'Stoic':
-      traitPenalty = 0  // need satisfaction is never penalised by personality
+      traitPenalty = 0  // drives shape base stats; stoic is unbothered by deficits
       break
     case 'Scavenger':
-      traitPenalty = c.hunger > 10 ? 12 : 0  // perpetual foraging drive even at low hunger
+      // Foraging drive is always-on; continuous gradient even at low hunger
+      traitPenalty = c.hunger > 5 ? Math.min(12, (c.hunger - 5) * 0.18 * (0.4 + drives.acquisitive)) : 0
       break
     case 'Mimic':
-      traitPenalty = c.bonds.length === 0 ? 20 : 0  // needs someone to mirror
+      // Social mirror: needs someone to observe; one bond is enough
+      traitPenalty = c.bonds.length === 0 ? 20 * (0.4 + drives.sociality * 0.6) : 0
       break
     case 'Nomadic':
-      traitPenalty = c.state === 'idle' && c.stateTimer > 60 ? 22 : 0  // restless if stationary
+      // Restlessness: ramps faster than Wanderer; mobility drive amplifies it
+      traitPenalty = c.state === 'idle'
+        ? Math.min(22, Math.max(0, c.stateTimer - 15) * 0.44 * (0.4 + drives.mobility))
+        : 0
       break
     case 'Vigilant':
-      traitPenalty = c.stress > 30 ? 15 : 0  // lower stress tolerance; alertness is costly
+      // Threat sensitivity: low stress tolerance; vigilance drive amplifies cost
+      traitPenalty = c.stress > 15 ? Math.min(15, (c.stress - 15) * 0.30 * (0.5 + drives.vigilance)) : 0
       break
     case 'Symbiotic':
-      traitPenalty = c.bonds.length < 2 ? 18 : 0  // needs diverse social bonds
+      // Needs diverse bonds; two strong bonds = satisfied; one = partial
+      {
+        const sbonds = c.bonds.filter(b => b.strength >= 25).length
+        traitPenalty = sbonds < 2 ? (sbonds === 0 ? 18 : 9) * (0.4 + drives.sociality * 0.6) : 0
+      }
       break
   }
 
@@ -429,14 +494,26 @@ export function tickBehavior(
   }
 
   if (c.genome.mind === 'Sentinel' && c.state !== 'observing' && Math.random() < 0.010) {
-    const margin = Math.floor(WORLD_SIZE * 0.12)
-    const edge = c.x < margin || c.x > WORLD_SIZE - 1 - margin
-      || c.y < margin || c.y > WORLD_SIZE - 1 - margin
-    if (!edge) {
-      changes.state = 'observing'
-      const onLeft = Math.random() < 0.5
-      changes.targetX = onLeft ? 2 : WORLD_SIZE - 3
-      changes.targetY = Math.floor(WORLD_SIZE * 0.25 + Math.random() * WORLD_SIZE * 0.5)
+    // Patrol the colony's actual perimeter: centroid + current spread radius.
+    // This means Sentinels walk the boundary of WHERE THE COLONY ACTUALLY IS,
+    // not a hardcoded world-edge that may be empty.
+    if (aliveCreatures.length > 0) {
+      const cx = Math.round(aliveCreatures.reduce((s, o) => s + o.x, 0) / aliveCreatures.length)
+      const cy = Math.round(aliveCreatures.reduce((s, o) => s + o.y, 0) / aliveCreatures.length)
+      // Spread = RMS distance from centroid; minimum 12 so there's always a perimeter
+      const spread = Math.max(12, Math.sqrt(
+        aliveCreatures.reduce((s, o) => s + (o.x - cx) ** 2 + (o.y - cy) ** 2, 0) / aliveCreatures.length
+      ))
+      const angle = Math.random() * Math.PI * 2
+      const patrolRadius = spread * (0.8 + Math.random() * 0.5)
+      const tx = Math.max(2, Math.min(WORLD_SIZE - 3, Math.round(cx + Math.cos(angle) * patrolRadius)))
+      const ty = Math.max(2, Math.min(WORLD_SIZE - 3, Math.round(cy + Math.sin(angle) * patrolRadius)))
+      const destTile = tiles[ty]?.[tx]
+      if (destTile && isTilePassable(destTile)) {
+        changes.state = 'observing'
+        changes.targetX = tx
+        changes.targetY = ty
+      }
     }
   }
 
@@ -656,9 +733,10 @@ export function tickBehavior(
       break
 
     case 'Aggressive':
-      if (!c.territoryClaim && Math.random() < 0.008) {
+      if (!c.territoryClaim && Math.random() < 0.025) {
         const claimTile = tiles[c.y]?.[c.x]
-        if (claimTile && (claimTile.type === 'food_patch' || claimTile.type === 'bush' || claimTile.type === 'river')) {
+        if (claimTile && (claimTile.type === 'food_patch' || claimTile.type === 'bush'
+            || claimTile.type === 'river' || claimTile.type === 'grass' || claimTile.type === 'barren')) {
           changes.territoryClaim = { x: c.x, y: c.y }
         }
       }
@@ -871,9 +949,10 @@ export function tickBehavior(
 
     case 'Territorial':
       // Claim food or resource tiles; defend with aggression like Aggressive but narrower
-      if (!c.territoryClaim && Math.random() < 0.010) {
+      if (!c.territoryClaim && Math.random() < 0.030) {
         const here = tiles[c.y]?.[c.x]
-        if (here && (here.type === 'food_patch' || here.type === 'bush' || here.type === 'river')) {
+        if (here && (here.type === 'food_patch' || here.type === 'bush'
+            || here.type === 'river' || here.type === 'grass' || here.type === 'barren')) {
           changes.territoryClaim = { x: c.x, y: c.y }
         }
       }
@@ -1046,7 +1125,7 @@ export function tickBehavior(
     if (!c.carrying) {
       // Phase 1: find a nearby resource to harvest (tree → wood, rock → stone)
       const resourceTile = findNearest(['tree', 'shelter', 'rock', 'cave'], HARVEST_RADIUS)
-      if (resourceTile && Math.random() < 0.04) {
+      if (resourceTile && Math.random() < 0.10) {
         changes.state = 'harvesting'
         changes.targetX = resourceTile.x
         changes.targetY = resourceTile.y

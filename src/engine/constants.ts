@@ -629,6 +629,7 @@ export const SNOW_BIOMES = ['temperate', 'rocky', 'lush', 'wetland', 'arid'] as 
 // when divergencePressure crosses 0.40 (secondary path in factory.ts).
 export const LINEAGE_FORK_INTERVAL = 4    // generations between fork eligibility windows
 export const LINEAGE_FORK_CHANCE   = 0.55 // probability of fork when a window is open
+export const LINEAGE_FOUNDER_MIN   = 3    // min creatures (incl. offspring) in a new fork group
 
 // ─── Race lineage & latent ancestry ──────────────────────────────────────────
 export const LATENT_REVIVAL_BASE    = 0.025  // 2.5% base revival chance per latent race
@@ -672,14 +673,44 @@ export const LEGENDARY_LINEAGE_GEN_MIN = 20    // generation depth for last-of-l
 // Creatures with Territorial or Nurturing personality will harvest materials
 // from trees (wood) and rocks (stone), then build fence tiles near their
 // territory claim. Fences decay over time and creatures rebuild them.
-export const HARVEST_TRIGGER_SATISFACTION = 72  // min needSatisfaction to start harvesting
-export const HARVEST_RADIUS = 3                 // tile radius to search for harvestable resources
+export const HARVEST_TRIGGER_SATISFACTION = 60  // min needSatisfaction to start harvesting
+export const HARVEST_RADIUS = 6                 // tile radius to search for harvestable resources
 export const BUILD_TERRITORY_RADIUS = 5         // tile radius from territoryClaim to place fence
 export const FENCE_INITIAL_DURABILITY = 100     // durability on placement
 export const FENCE_DECAY_BASE = 0.012           // durability lost per tick (normal)
 export const FENCE_DECAY_STORM = 0.055          // durability lost per tick during storm/winter
 export const FENCE_STRESS_RADIUS = 3            // tile radius of fence stress-reduction effect
 export const FENCE_STRESS_REDUCTION = 0.22      // stress removed per tick when near own fence
+
+// ─── Creature drives ──────────────────────────────────────────────────────────
+// Personality seeds each drive at birth; drives then drift from behavioral history.
+// DRIVE_DRIFT_RATE: how fast a drive moves toward observed behavior each tick.
+// DRIVE_SEED_STRENGTH: how strongly personality biases the initial value (0-1).
+export const DRIVE_DRIFT_RATE       = 0.0004  // very slow; decades of behavior shift a drive
+export const DRIVE_SEED_STRENGTH    = 0.65    // personality accounts for 65% of starting value
+
+// Seed values per personality per drive; all unspecified drives default to 0.3
+export const DRIVE_PERSONALITY_SEEDS: Record<string, Partial<import('@/types').CreatureDrives>> = {
+  Curious:     { curiosity: 0.80, mobility: 0.65, vigilance: 0.40 },
+  Timid:       { vigilance: 0.75, reclusion: 0.55, sociality: 0.30 },
+  Aggressive:  { dominance: 0.85, vigilance: 0.65, curiosity: 0.35 },
+  Lazy:        { mobility: 0.10, acquisitive: 0.40, sociality: 0.30 },
+  Greedy:      { acquisitive: 0.85, dominance: 0.45, sociality: 0.25 },
+  Nurturing:   { sociality: 0.80, acquisitive: 0.50, dominance: 0.15 },
+  Wanderer:    { mobility: 0.85, curiosity: 0.70, reclusion: 0.45 },
+  Recluse:     { reclusion: 0.90, sociality: 0.10, mobility: 0.50 },
+  Hoarder:     { acquisitive: 0.90, dominance: 0.55, reclusion: 0.40 },
+  Empath:      { sociality: 0.75, vigilance: 0.55, curiosity: 0.50 },
+  Furtive:     { reclusion: 0.70, vigilance: 0.70, mobility: 0.40 },
+  Territorial: { dominance: 0.80, vigilance: 0.65, acquisitive: 0.55 },
+  Social:      { sociality: 0.90, curiosity: 0.50, reclusion: 0.05 },
+  Stoic:       { vigilance: 0.50, dominance: 0.40, sociality: 0.40 },
+  Scavenger:   { acquisitive: 0.75, mobility: 0.60, curiosity: 0.55 },
+  Mimic:       { sociality: 0.70, curiosity: 0.60, reclusion: 0.15 },
+  Nomadic:     { mobility: 0.90, curiosity: 0.65, reclusion: 0.50 },
+  Vigilant:    { vigilance: 0.85, dominance: 0.45, curiosity: 0.50 },
+  Symbiotic:   { sociality: 0.75, curiosity: 0.65, reclusion: 0.15 },
+}
 
 // ─── Mutation refinements ──────────────────────────────────────────────────────
 // Adaptive mutation: when parents are under crisis (high stress), offspring mutation
