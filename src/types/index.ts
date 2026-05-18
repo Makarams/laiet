@@ -12,6 +12,88 @@ export type ExperienceEventType =
   | 'long_solitude'        // alone for 20+ consecutive days
   | 'caretaker_contact'    // caretaker acted within close proximity
   | 'cross_lineage_bond'   // formed a meaningful bond with creature of different lineage
+  | 'witnessed_fire'       // was near a burning tile or fire spread
+  | 'witnessed_lightning'  // close to a lightning strike or saw the flash
+  | 'witnessed_birth'      // adjacent to a birth event
+  | 'reached_edge'         // touched the world boundary
+  | 'fled_predator'        // entered fleeing state from an Aggressive nearby
+  | 'patrolled_perimeter'  // Sentinel finished a perimeter loop without incident
+
+// ─── Death cause tracking ─────────────────────────────────────────────────────
+// Real, mechanically attributed cause assigned the tick a creature dies. Drives
+// extinction inference and chronicle composition — no prose keyword-matching.
+export type DeathCause =
+  | 'starvation' | 'dehydration' | 'cold' | 'old_age'
+  | 'sickness'   | 'combat'      | 'fire' | 'lightning'
+  | 'cannibalized' | 'drowning'  | 'unknown'
+
+// ─── Chronicle — the colony's real memory ────────────────────────────────────
+// A bounded log of notable mechanical events the engine actually produced. All
+// stage 1–5 colony messages are composed from these entries. If something is
+// not in the chronicle, the colony cannot speak about it as if it happened.
+export type ChronicleEventKind =
+  // Environmental upheaval
+  | 'lightning_strike'      // detail: 'auto' | 'storm' | 'caretaker'
+  | 'fire_outbreak'         // count = tiles burning at peak
+  | 'fire_swept'            // a fire consumed many tiles before burning out
+  | 'flood_event'           // count = flooded tiles
+  | 'heatwave_onset'        // weather entered heatwave
+  | 'drought_breaking'      // long drought ended
+  | 'storm_passed'          // storm cleared after sustained duration
+  | 'snow_blanket'          // global snow accumulation crossed a threshold
+  // Population dynamics
+  | 'mass_die_off'          // count = deaths within window; detail = dominant cause
+  | 'lineage_extinct'       // a lineage root reached 0 living members
+  | 'lineage_fork'          // a new sub-lineage suffix was minted
+  | 'hybrid_birth'          // cross-lineage offspring with blended lineageId
+  | 'rare_birth'            // mutation phenotype crossed a morphology threshold
+  | 'race_emerged'          // detail = race
+  | 'race_lost'             // detail = race
+  | 'race_revived'          // detail = race
+  | 'birth_burst'           // 3+ births in a single tick
+  | 'first_in_biome'        // detail = biome
+  // Social / cultural
+  | 'territory_claimed'     // creature claimed a tile
+  | 'kill_recorded'         // combat death attributed
+  | 'bond_milestone'        // pair bond crossed 70
+  | 'role_emerged'          // detail = role (first time the colony has this role)
+  | 'cross_lineage_bond'    // first cross-lineage strong bond between two roots
+  // Boundary / awareness
+  | 'edge_encounter'        // creature touched a world-edge tile
+  | 'patrol_completed'      // Sentinel finished a perimeter sweep
+  // Caretaker traces (real, observed by simulation)
+  | 'caretaker_food'        // food drop at (x,y)
+  | 'caretaker_thunder'     // strike at (x,y)
+  | 'caretaker_fire'        // ignition at (x,y)
+  | 'caretaker_heal'        // heal applied to creatureId
+  | 'caretaker_river'       // river redirect
+  | 'caretaker_plant'       // tree planted at (x,y)
+  | 'caretaker_returned'    // returned from long absence (detail = hours)
+  // Tribe lifecycle
+  | 'tribe_formed'          // detail = lineage root, count = member count
+  | 'tribe_split'           // detail = parent tribe id, count = new tribe size
+  | 'tribe_dissolved'       // detail = former tribe name, count = generations lasted
+  // Apex predator emergence
+  | 'apex_emerged'          // creatureId+name of the creature crossing apex threshold
+  // Subspecies recognition — a lineage has drifted enough in morphology + vocab
+  | 'subspecies_recognised' // detail = label, creatureName = representative
+  // Weather events that don't share other categories
+  | 'windstorm_passed'      // a windstorm cleared
+  | 'bloom_began'           // spring abundance pulse started
+  | 'ashfall_began'         // ashfall residue period started; count = recent fire count
+
+export interface ChronicleEvent {
+  id: string
+  kind: ChronicleEventKind
+  day: number
+  creatureId?: string
+  creatureName?: string
+  lineageId?: string
+  count?: number
+  x?: number
+  y?: number
+  detail?: string
+}
 
 // ─── Genetics ────────────────────────────────────────────────────────────────
 
@@ -189,7 +271,26 @@ export interface Creature {
   // cannibal trauma; game-day until which witness stress persists above baseline
   traumaUntil?: number
 
+  // (fractureFleeUntil removed — fracture response is now read directly from
+  // the colony chronicle by behavior.ts; no per-creature stamp needed.)
+
   immunity?: number            // 0-1; gained after surviving disease; reduces contact chance
+
+  // ─── Biome residence — drives terrain-affinity drive drift ───────────────
+  // Counter of ticks spent in each biome over the creature's lifetime.
+  // Bidirectional pressure on drives (long lush residence → +sociality; long
+  // rocky residence → +vigilance; long arid → +acquisitive; long wetland → +reclusion).
+  biomeResidence?: Partial<Record<string, number>>
+
+  // ─── Personal fear memory — perception-based, not engine-tagged ─────────
+  // Maps a creature-id → game-day they last did something the creature personally
+  // witnessed (kill near them, attack on a peer they bond to). Each entry decays
+  // after FEAR_MEMORY_DAYS; while present, the listener flees that specific
+  // creature at radius scaled by their own vigilance + memory freshness.
+  feared?: Record<string, number>
+  // Most recent attacker, used to attribute kills when a creature dies in combat.
+  // Set during resolveFight on the loser; cleared after fear marking.
+  lastAttackerId?: string
 
   // ─── Experience-driven sentience ──────────────────────────────────────────
   // Accumulated weight of distinct lived experiences; each type contributes once
@@ -223,6 +324,22 @@ export interface Creature {
 
   // continuous behavioral drives; seeded from personality, drift from actual history
   drives?: CreatureDrives
+
+  // ─── Lived observation log ────────────────────────────────────────────────
+  // Bounded ring of recent things the creature personally observed. Drives
+  // speech composition (what tokens they reach for) and message attribution.
+  // Pruned to the most recent ~24 entries per creature.
+  observedEvents?: {
+    kind: ChronicleEventKind | ExperienceEventType
+    day: number
+    creatureId?: string
+    detail?: string
+  }[]
+
+  // Mechanical cause of death set at the tick of death. Aggregated into
+  // GameState.deathCauseCounts; used by extinction inference and by chronicle
+  // composition. Null while alive.
+  deathCause?: DeathCause
 }
 
 export type MicroAnimType = 'jump' | 'shake' | 'sneeze' | 'groom' | 'wag'
@@ -348,7 +465,12 @@ export interface EnrichmentItem {
 
 export type Season = 'spring' | 'summer' | 'autumn' | 'winter'
 export type DayPhase = 'dawn' | 'day' | 'dusk' | 'night'
-export type WeatherState = 'clear' | 'rain' | 'storm' | 'drought' | 'snow' | 'heatwave' | 'fog'
+export type WeatherState =
+  | 'clear' | 'rain' | 'storm' | 'drought' | 'snow' | 'heatwave' | 'fog'
+  // ── Expanded weather, all with distinct mechanical signatures ──
+  | 'windstorm'  // dry violent wind; strips fruit, damages bushes, stresses creatures, slows movement
+  | 'bloom'      // spring abundance pulse; food_patch and bush regrowth amplified, brief
+  | 'ashfall'    // post-fire residue; food regrowth halved, mild stress, triggered by recent fire activity
 
 export interface GameTime {
   day: number
@@ -368,6 +490,15 @@ export interface Tribe {
   foundedOnDay: number
   color: string // hex for rendering
   tribalLexicon: string[]    // shared vocabulary pool; grows with elder/shaman knowledge, persists through generations
+  // Lineage root the tribe coalesced from (most-common at formation time)
+  lineageRoot?: string
+  // Parent tribe id if this tribe split off from a larger one
+  parentTribeId?: string
+  // Day the tribe dissolved (members dropped below threshold); null while alive
+  dissolvedOnDay?: number | null
+  // Centroid maintained per-tick from member positions; used for split detection
+  centroidX?: number
+  centroidY?: number
 }
 
 // ─── Cohort phase ────────────────────────────────────────────────────────────
@@ -448,27 +579,48 @@ export interface ExtinctionRecord {
 // Set once before the world is created. Shapes how the simulation behaves
 // throughout the entire playthrough. Each field maps to a ProfileScreen question.
 
+// Each profile field controls an orthogonal slice of the simulation. There is
+// no overlap: changing Focus does not change what World controls. Every choice
+// has a meaningful trade-off — no "neutral" option is strictly better.
+//
+// Presence    → caretaker capability (tool charges, cooldowns, intervention reach)
+// World       → environment baseline (food, water, weather severity, disease pressure)
+// Evolution   → genetic rates (mutation, adaptation inheritance, morphology drift)
+// Focus       → colony social emphasis (bond speed, tribe formation, enrichment density)
+// Expectation → narrative arc bias (lineage hostility baseline, fracture timing)
+// Visibility  → how the colony perceives you (caretaker_contact reach, awareness messages)
 export interface CaretakerProfile {
   presence:    'interventionist' | 'observer' | 'silent'
   world:       'fertile' | 'varied' | 'scarce'
-  evolution:   'fast' | 'slow'
+  evolution:   'fast' | 'drift' | 'slow'
   focus:       'bonds' | 'survival' | 'awareness'
-  expectation: 'persistence' | 'extinction'
+  expectation: 'persistence' | 'adaptation' | 'fracture'
   visibility:  'attentive' | 'neutral' | 'hidden'
 }
 
 // SimModifiers; derived from CaretakerProfile at world creation and stored
 // in GameState. The tick engine reads these instead of raw constants so the
 // profile shapes every subsequent generation without requiring runtime lookups.
+// All multipliers default to 1.0; setting-derived deltas compound from there.
 export interface SimModifiers {
-  foodRegrowMult: number        // ×1.0 default; scales food patch regrowth rate
-  droughtDurationMult: number   // ×1.0 default; longer drought phases if > 1
-  bondSpeedMult: number         // ×1.0 default; how fast proximity bonds strengthen
-  mutationChance: number        // 0.15 default; per discrete gene slot per birth
-  sentienceGrowthMult: number   // ×1.0 default; scales all SENTIENCE_GROWTH_BY_MIND values
-  awarenessMessageMult: number  // ×1.0 default; scales message cooldown (< 1 = more messages)
-  healCharges: number           // 3 default; daily heal uses available to caretaker
-  foodDropCooldownMs: number    // 5000 default; ms between food drop actions
+  foodRegrowMult: number          // ×1.0 default; scales food patch regrowth rate
+  droughtDurationMult: number     // ×1.0 default; longer drought phases if > 1
+  bondSpeedMult: number           // ×1.0 default; how fast proximity bonds strengthen
+  mutationChance: number          // base per discrete gene slot per birth
+  sentienceGrowthMult: number     // ×1.0 default; scales all SENTIENCE_GROWTH_BY_MIND values
+  awarenessMessageMult: number    // ×1.0 default; scales message cooldown (< 1 = more messages)
+  healCharges: number             // 3 default; daily heal uses available to caretaker
+  foodDropCooldownMs: number      // 5000 default; ms between food drop actions
+  // ── New axes (defaults present so pre-existing saves keep working) ──
+  weatherSeverityMult?: number    // ×1.0 default; storm/heatwave/windstorm duration & damage
+  diseasePressureMult?: number    // ×1.0 default; multiplies DISEASE_CONTACT_CHANCE
+  tribeFormationMult?: number     // ×1.0 default; how readily lineage clusters coalesce into named tribes
+  enrichmentSpawnMult?: number    // ×1.0 default; natural enrichment item spawn frequency
+  lineageHostilityBaseline?: number // 0 default; starting bias for new lineageRelations entries (-25..+25)
+  fractureEligibilityMult?: number  // ×1.0 default; multiplies how readily sustained conflict triggers fracture
+  adaptationInheritMult?: number    // ×1.0 default; scales ADAPTATION_INHERIT_CHANCE
+  morphologyDriftMult?: number      // ×1.0 default; scales per-birth morphology variance
+  caretakerVisibilityMult?: number  // ×1.0 default; scales radius/window for caretaker_contact registration
 }
 
 // ─── Caretaker Resources ─────────────────────────────────────────────────────
@@ -544,6 +696,7 @@ export interface GameState {
   weather: WeatherState
   weatherTimer: number  // game days remaining in this weather phase
   snowAccumulation: number  // 0-100; global snow coverage percent (derived from tile depths)
+  snowBlanketBaseline?: number  // slowly-drifted reference for snow_blanket delta detection
 
   // race population tracking; optional for backward compat with pre-race saves
   racePopulations?: Partial<Record<RaceTrait, number>>  // alive count per race (updated each tick)
@@ -573,6 +726,7 @@ export interface GameState {
   colonyDistressAccumulator?: number
 
   absenceImprint?: number      // in-game days of stress imprint after long absence
+  absenceHardship?: number     // hardship score during the absence (deaths+fires+lightnings); 0 = thrived
   tribeWarStart?: number       // game day when sustained inter-lineage conflict began
 
   // ─── Lineage relations ────────────────────────────────────────────────────
@@ -584,6 +738,21 @@ export interface GameState {
   // neglect & legendary tracking — optional for backward compat
   lastNeglectWarning?: number  // game day of last neglect warning message
   legendaryFired?: string[]    // creature IDs that have already had legendary events
+
+  // ─── Colony chronicle — real events used to compose colony speech ────────
+  // Bounded ring of notable mechanical events. Stage 1–5 messages are
+  // composed from these entries; if an event is not in here, the colony
+  // cannot reference it. Capped at ~150 events (drop oldest).
+  colonyChronicle?: ChronicleEvent[]
+
+  // Per-cause death totals over the colony's lifetime. Used by extinction
+  // inference instead of keyword-scanning prose. Increments at each death.
+  deathCauseCounts?: Partial<Record<DeathCause, number>>
+
+  // Set of (kind|lineageId|raceName) markers that have already been recorded
+  // as "first" events, so we don't re-fire role_emerged / first_in_biome /
+  // race_emerged for the same instance.
+  chronicleSeen?: Record<string, true>
 
   // stats
   totalCreaturesEver: number

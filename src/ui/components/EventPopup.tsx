@@ -5,33 +5,68 @@ import { sfxEvent } from '@/audio/chiptune'
 import { useEffect } from 'react'
 import { THEME } from '@/ui/theme'
 
-const slideIn = keyframes`from{transform:translateX(20px);opacity:0;}to{transform:translateX(0);opacity:1;}`
+const slideIn = keyframes`
+  from { transform: translateX(24px) scale(0.98); opacity:0; }
+  to   { transform: translateX(0) scale(1); opacity:1; }
+`
 
 const Container = styled.div`
-  position:absolute; top:14px; right:14px;
-  display:flex; flex-direction:column; gap:8px; z-index:10; max-width:290px;
+  position: absolute;
+  top: ${THEME.space.lg}px;
+  right: ${THEME.space.lg}px;
+  display: flex; flex-direction: column;
+  gap: ${THEME.space.md}px;
+  z-index: 10;
+  max-width: 300px;
 `
 const EventCard = styled.div`
-  background:#242424; border:2px solid ${THEME.border};
-  border-left:3px solid ${THEME.amber}; border-radius:6px;
-  padding:10px 12px 12px; font-family:${THEME.font}; font-size:12px;
-  color:${THEME.textPrimary}; animation:${slideIn} 0.25s ease;
+  background: ${THEME.panelGradient};
+  border: 1px solid ${THEME.borderMid};
+  border-left: 3px solid ${THEME.amber};
+  border-radius: ${THEME.radius.md}px;
+  padding: ${THEME.space.lg}px ${THEME.space.lg}px ${THEME.space.lg}px;
+  font-family: ${THEME.font};
+  font-size: ${THEME.type.md}px;
+  color: ${THEME.textPrimary};
+  animation: ${slideIn} ${THEME.motion.slow} ${THEME.motion.easeOut};
+  box-shadow: ${THEME.shadow.pop}, 0 0 24px ${THEME.amberGlow};
 `
 const EventHeader = styled.div`
-  font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:0.2em;
-  color:${THEME.amber}; margin-bottom:6px;
-  display:flex; align-items:center; gap:6px;
-  &::before { content:''; width:6px; height:6px; border-radius:50%; background:${THEME.amber}; }
+  font-size: ${THEME.type.xs}px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.22em;
+  color: ${THEME.amber};
+  margin-bottom: ${THEME.space.md}px;
+  display: flex; align-items: center; gap: ${THEME.space.sm}px;
+  &::before {
+    content: ''; width: 7px; height: 7px; border-radius: 50%;
+    background: ${THEME.amber};
+    box-shadow: 0 0 10px ${THEME.amberGlow};
+  }
 `
 const EventBody = styled.div`
-  color:${THEME.textSecondary}; margin-bottom:10px; line-height:1.6; font-size:12px;
+  color: ${THEME.textSecondary};
+  margin-bottom: ${THEME.space.lg}px;
+  line-height: 1.65;
+  font-size: ${THEME.type.md}px;
 `
-const OptionRow = styled.div`display:flex;gap:5px;flex-wrap:wrap;`
+const OptionRow = styled.div`display:flex;gap:${THEME.space.sm}px;flex-wrap:wrap;`
 const OptionBtn = styled.button`
-  background:transparent; border:2px solid ${THEME.border}; border-radius:4px;
-  color:${THEME.textSecondary}; font-family:${THEME.font}; font-size:11px; font-weight:600;
-  padding:5px 11px; cursor:pointer; letter-spacing:0.04em; transition:all 0.12s;
-  &:hover { border-color:${THEME.amber}; color:${THEME.amber}; }
+  background: transparent;
+  border: 1px solid ${THEME.border};
+  border-radius: ${THEME.radius.sm}px;
+  color: ${THEME.textSecondary};
+  font-family: ${THEME.font};
+  font-size: ${THEME.type.base}px; font-weight: 600;
+  padding: ${THEME.space.sm}px ${THEME.space.lg}px;
+  cursor: pointer;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  transition: all ${THEME.motion.fast} ${THEME.motion.easeOut};
+  &:hover {
+    border-color: ${THEME.amber};
+    color: ${THEME.amber};
+    box-shadow: 0 0 12px ${THEME.amberGlow};
+    transform: translateY(-1px);
+  }
 `
 
 function EventPopup({ event }: { event: GameEvent }) {

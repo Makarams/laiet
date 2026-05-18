@@ -220,14 +220,40 @@ export const CAVE_WARMTH_BONUS = 0.06             // warmth restored per tick in
 // ─── Weather ─────────────────────────────────────────────────────────────────
 // Durations: [min, max] game days in each state
 export const WEATHER_DURATION: Record<string, [number, number]> = {
-  clear:    [18, 38],
-  rain:     [ 5, 14],
-  storm:    [ 2,  7],
-  drought:  [12, 26],
-  snow:     [ 4, 12],
-  heatwave: [ 6, 18],
-  fog:      [ 2,  7],
+  clear:     [18, 38],
+  rain:      [ 5, 14],
+  storm:     [ 2,  7],
+  drought:   [12, 26],
+  snow:      [ 4, 12],
+  heatwave:  [ 6, 18],
+  fog:       [ 2,  7],
+  // ── New weather states ──
+  windstorm: [ 3,  9],  // sharp, brief; dry violent wind
+  bloom:     [ 4,  8],  // ephemeral spring abundance
+  ashfall:   [ 5, 12],  // triggered by sustained fire activity; lingers
 }
+
+// Windstorm-specific effects
+export const WINDSTORM_STRESS_PER_TICK    = 0.18  // baseline stress added to exposed creatures
+export const WINDSTORM_FRUIT_DROP_CHANCE  = 0.012 // per food_patch per tick; strips fruit
+export const WINDSTORM_FRUIT_LOSS         = 18    // foodAmount lost when stripped
+export const WINDSTORM_BUSH_DAMAGE_CHANCE = 0.0008 // per bush per tick; wither-pressure
+export const WINDSTORM_MOVE_PENALTY       = 0.75  // movement chance multiplier on exposed tiles
+
+// Bloom-specific effects
+export const BLOOM_FOOD_REGROW_MULT       = 1.85  // boosts food regrowth across the world
+export const BLOOM_PATCH_SPAWN_MULT       = 2.2   // multiplies SPRING_BLOOM_CHANCE during bloom
+export const BLOOM_BUSH_REGROW_MULT       = 1.6   // bushes regrow faster too
+export const BLOOM_STRESS_RELIEF          = 0.06  // passive stress relief; the world feels right
+
+// Ashfall: triggered when fire events have been frequent; transient.
+// Engine sets weather='ashfall' when ASHFALL_FIRE_THRESHOLD fire events have
+// occurred in the last ASHFALL_LOOKBACK_DAYS, and only if not already active.
+export const ASHFALL_FIRE_THRESHOLD       = 4     // recent fire events to trigger
+export const ASHFALL_LOOKBACK_DAYS        = 12    // window over which fires count
+export const ASHFALL_FOOD_REGROW_MULT     = 0.40  // food regrowth strongly suppressed
+export const ASHFALL_STRESS_PER_TICK      = 0.04  // mild persistent stress (acrid air)
+export const ASHFALL_VISIBILITY_TINT      = 0.55  // renderer hint (alpha tint over land)
 
 export const RAIN_WATER_BONUS       = 0.22   // water level gain per tick in river tiles
 export const RAIN_THIRST_REDUCTION  = 0.40   // fraction of THIRST_DECAY removed by rain
@@ -657,6 +683,39 @@ export const RIVAL_STRESS_PER_TICK = 0.14        // stress per tick when rival l
 export const TRIBE_BORDER_STRESS_PER_TICK = 0.28 // stress/tick when near an enemy-lineage cluster
 export const TRIBE_WAR_FIGHT_CHANCE = 0.008      // per-tick chance of inter-lineage attack when adjacent
 export const TRIBE_WAR_SUSTAIN_DAYS = 8          // in-game days of continuous conflict before fracture fires
+
+// ─── Tribe formation ─────────────────────────────────────────────────────────
+// A tribe coalesces when a spatial cluster of same-lineage creatures with deep
+// mutual bonds occupies a contiguous area. The colony does not assign tribes —
+// they form by adjacency + bond depth + shared lineage. Tribes dissolve when
+// membership collapses, and split when the cluster splits in space.
+export const TRIBE_FORMATION_CHECK_INTERVAL = 30  // ticks between formation passes
+export const TRIBE_FORM_MIN_MEMBERS         = 4   // min same-lineage cluster size to form
+export const TRIBE_FORM_RADIUS              = 8   // tile radius for "contiguous cluster"
+export const TRIBE_FORM_MIN_BOND_STRENGTH   = 30  // mutual bonds must exceed this to count
+export const TRIBE_FORM_MIN_BOND_FRACTION   = 0.5 // fraction of cluster pairs that must be bonded
+export const TRIBE_DISSOLVE_MIN_MEMBERS     = 2   // tribe ends when alive members drop below this
+export const TRIBE_SPLIT_MIN_MEMBERS        = 10  // tribe must be at least this size to split
+export const TRIBE_SPLIT_CENTROID_GAP       = 22  // tile gap between two sub-centroids that triggers a split
+
+// Tribe names are derived from the cluster's actual family-name composition —
+// the most-common family name in the cluster, or a hybrid of the two most
+// common. This means tribes inherit the lineage's own evolved naming language
+// (generated procedurally during reproduction via mutateFamily). There is no
+// authored syllable pool; the tribe's name is genuinely from the colony.
+
+// ─── Personal fear memory ────────────────────────────────────────────────────
+// When a creature witnesses a kill (or a kill of someone they bond to) within
+// FEAR_WITNESS_RADIUS, the killer's id is added to their .feared map with the
+// current game-day. Entries decay after FEAR_MEMORY_DAYS. While present, the
+// witness flees that specific creature at FEAR_BASE_RADIUS + (their own
+// vigilance × FEAR_VIGILANCE_BONUS). No global "apex" tag exists — fear is
+// per-witness, per-target, learned from real events.
+export const FEAR_WITNESS_RADIUS    = 6   // tiles around a kill to mark witnesses
+export const FEAR_MEMORY_DAYS       = 30  // a fear memory fades after this many days
+export const FEAR_BASE_RADIUS       = 6   // base tiles a witness flees from a feared creature
+export const FEAR_VIGILANCE_BONUS   = 8   // additional tiles scaled by listener vigilance drive
+export const FEAR_BONDED_LOSS_BOOST = 1.4 // memory boost when a bonded peer was killed
 
 // ─── Neglect warning ──────────────────────────────────────────────────────────
 export const NEGLECT_WARMTH_THRESHOLD  = 22    // avg warmth below which warning fires

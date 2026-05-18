@@ -5,6 +5,7 @@ import {
 } from '@/types'
 import { tickSimulation, computePassiveTicks, computeAbsenceHours } from '@/engine/tick'
 import { generateAbsenceMessage } from '@/engine/messages'
+import { pushChronicle } from '@/engine/chronicle'
 import { generateWorld, worldSeedFromTimestamp } from '@/world/worldGen'
 import { createStarterCreatures } from '@/creatures/factory'
 import { saveToCloud, loadBestAvailable, startAutoSave, stopAutoSave, resetUserData } from '@/db/persistence'
@@ -256,17 +257,37 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
 
         // Emit an absence message once for any notable away time. Inserted
         // before live ticking resumes so the player sees the colony's
-        // observation about their return immediately.
+        // observation about their return immediately. The chronicle records
+        // the absence so future colony messages can refer to it.
         if (hoursAway >= 0.5 && !advanced.endgame) {
-          const absenceMsg = generateAbsenceMessage(hoursAway, advanced.awarenessStage, advanced.totalGenerations)
+          advanced = pushChronicle(advanced, {
+            kind: 'caretaker_returned', day: advanced.time.day,
+            detail: `${Math.round(hoursAway)}h`,
+          })
+          // Compute hardship from chronicle entries within the absence window.
+          // Hardship is the colony's lived suffering; imprint only fires when
+          // it was actually meaningful.
+          const cutoff = advanced.time.day - Math.max(1, Math.round(hoursAway))
+          let hardship = 0
+          for (const e of advanced.colonyChronicle ?? []) {
+            if (e.day < cutoff) continue
+            if (e.kind === 'mass_die_off') hardship += (e.count ?? 0) * 2
+            else if (e.kind === 'lightning_strike') hardship += 1
+            else if (e.kind === 'fire_outbreak' || e.kind === 'fire_swept') hardship += (e.count ?? 1)
+            else if (e.kind === 'lineage_extinct') hardship += 4
+            else if (e.kind === 'flood_event') hardship += 2
+          }
+          const absenceMsg = generateAbsenceMessage(hoursAway, advanced.awarenessStage, advanced.totalGenerations, advanced)
           absenceMsg.day = advanced.time.day
           advanced = {
             ...advanced,
             messages: [...advanced.messages, absenceMsg].slice(-200),
+            absenceHardship: hardship,
           }
         }
 
-        // Absence imprint: long absences (>= 2 real hours) leave stress on the colony.
+        // Absence imprint: long absences (>= 2 real hours) leave stress on the
+        // colony, but only if hardship actually occurred (set above).
         if (hoursAway >= 2 && !advanced.endgame) {
           advanced = { ...advanced, absenceImprint: ABSENCE_IMPRINT_DAYS }
         }
@@ -448,11 +469,14 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     tiles[y] = state.tiles[y].slice()
     tiles[y][x] = { ...srcTile, type: 'food_patch', foodAmount: FOOD_PER_PATCH }
 
+    const withChronicle = pushChronicle(state, {
+      kind: 'caretaker_food', day: state.time.day, x, y,
+    })
     set({
       gameState: {
-        ...state,
+        ...withChronicle,
         tiles,
-        caretaker: { ...state.caretaker, lastFoodDrop: now, ...applyCaretakerPresence(state.caretaker, x, y) },
+        caretaker: { ...withChronicle.caretaker, lastFoodDrop: now, ...applyCaretakerPresence(withChronicle.caretaker, x, y) },
       }
     })
   },
@@ -467,7 +491,8 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     tiles[y] = state.tiles[y].slice()
     tiles[y][x] = { ...srcTile, type: 'tree', treeAge: 0, shelter: false }
 
-    set({ gameState: { ...state, tiles, caretaker: { ...state.caretaker, ...applyCaretakerPresence(state.caretaker, x, y) } } })
+    const withChronicle = pushChronicle(state, { kind: 'caretaker_plant', day: state.time.day, x, y })
+    set({ gameState: { ...withChronicle, tiles, caretaker: { ...withChronicle.caretaker, ...applyCaretakerPresence(withChronicle.caretaker, x, y) } } })
   },
 
   // ── Environmental: Thunder strike ─────────────────────────────────────────
@@ -548,9 +573,12 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
       read: false,
     })
 
+    const withChronicle = pushChronicle(state, {
+      kind: 'caretaker_thunder', day: state.time.day, x, y, count: killed,
+    })
     set({
       gameState: {
-        ...state,
+        ...withChronicle,
         tiles,
         creatures,
         messages: messages.slice(-200),
@@ -605,9 +633,10 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
       read: false,
     }]
 
+    const withChronicle = pushChronicle(state, { kind: 'caretaker_fire', day: state.time.day, x, y })
     set({
       gameState: {
-        ...state,
+        ...withChronicle,
         tiles,
         messages: messages.slice(-200),
         caretaker: {
@@ -679,14 +708,19 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
       state: 'idle',
     }
 
+    const withChronicle = pushChronicle(state, {
+      kind: 'caretaker_heal', day: state.time.day,
+      creatureId: creature.id, creatureName: creature.name,
+      x: creature.x, y: creature.y,
+    })
     set({
       gameState: {
-        ...state,
+        ...withChronicle,
         creatures,
         caretaker: {
-          ...state.caretaker,
-          healCharges: state.caretaker.healCharges - 1,
-          ...applyCaretakerPresence(state.caretaker, creature.x, creature.y, 'intervention'),
+          ...withChronicle.caretaker,
+          healCharges: withChronicle.caretaker.healCharges - 1,
+          ...applyCaretakerPresence(withChronicle.caretaker, creature.x, creature.y, 'intervention'),
         },
       }
     })
@@ -750,15 +784,18 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     if (state.tiles[fromY]?.[fromX]) tiles[fromY][fromX] = { ...state.tiles[fromY][fromX], type: 'mud' }
     if (state.tiles[toY]?.[toX]) tiles[toY][toX] = { ...state.tiles[toY][toX], type: 'river', waterLevel: 100 }
 
+    const withChronicle = pushChronicle(state, {
+      kind: 'caretaker_river', day: state.time.day, x: toX, y: toY,
+    })
     set({
       gameState: {
-        ...state,
+        ...withChronicle,
         tiles,
         caretaker: {
-          ...state.caretaker,
+          ...withChronicle.caretaker,
           riverRedirectUsed: true,
           lastSeasonRedirect: state.time.season,
-          ...applyCaretakerPresence(state.caretaker, toX, toY),
+          ...applyCaretakerPresence(withChronicle.caretaker, toX, toY),
         },
       }
     })

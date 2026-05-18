@@ -4,75 +4,119 @@ import { supabase } from '@/db/supabase'
 import { useLaietStore } from '@/store/gameStore'
 import { THEME } from '@/ui/theme'
 
-const fadeUp = keyframes`from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:translateY(0);}`
+const fadeUp = keyframes`from{opacity:0;transform:translateY(14px);}to{opacity:1;transform:translateY(0);}`
+const glow = keyframes`
+  0%, 100% { text-shadow: 0 0 24px ${THEME.amberGlow}; }
+  50%      { text-shadow: 0 0 40px ${THEME.amberGlow}, 0 0 60px ${THEME.amberDim}; }
+`
 
 const Screen = styled.div`
   min-height:100vh; display:flex; flex-direction:column;
   align-items:center; justify-content:center;
-  background:${THEME.bg}; font-family:${THEME.font};
-  color:${THEME.textPrimary}; padding:1rem;
-  animation:${fadeUp} 0.5s ease;
+  background:
+    radial-gradient(1000px 700px at 50% 30%, ${THEME.amberDim} 0%, transparent 60%),
+    radial-gradient(800px 600px at 80% 90%, ${THEME.waterDim} 0%, transparent 65%),
+    ${THEME.bg};
+  font-family:${THEME.font};
+  color:${THEME.textPrimary};
+  padding:1rem;
+  animation:${fadeUp} 0.55s ${THEME.motion.easeOut};
 `
 const Logo = styled.div`
-  font-size:40px; font-weight:700; color:${THEME.textPrimary};
-  letter-spacing:0.1em; margin-bottom:4px;
+  font-size:${THEME.type.hero}px; font-weight:700;
+  color:${THEME.textPrimary};
+  letter-spacing:0.10em;
+  margin-bottom:6px;
+  animation: ${glow} 4s ease-in-out infinite;
 `
 const LogoAccent = styled.span`color:${THEME.amber};`
 const Subtitle = styled.div`
-  font-size:10px; font-weight:700; text-transform:uppercase;
-  letter-spacing:0.3em; color:${THEME.textTertiary}; margin-bottom:3.5rem;
+  font-size:${THEME.type.sm}px; font-weight:700;
+  text-transform:uppercase; letter-spacing:0.32em;
+  color:${THEME.textTertiary};
+  margin-bottom:3.5rem;
 `
 const Form = styled.div`
-  display:flex; flex-direction:column; gap:10px; width:320px;
-  padding:24px; background:#242424;
-  border:2px solid ${THEME.border}; border-radius:8px;
+  display:flex; flex-direction:column;
+  gap:${THEME.space.md}px;
+  width:340px;
+  padding:${THEME.space.xxl}px ${THEME.space.xxl}px ${THEME.space.xl}px;
+  background:${THEME.panelGradient};
+  border:1px solid ${THEME.borderMid};
+  border-radius:${THEME.radius.lg}px;
+  box-shadow: ${THEME.shadow.pop};
 `
 const FormTitle = styled.div`
-  font-size:11px; font-weight:700; text-transform:uppercase;
-  letter-spacing:0.2em; color:${THEME.textTertiary}; margin-bottom:4px; text-align:center;
+  font-size:${THEME.type.base}px; font-weight:700;
+  text-transform:uppercase; letter-spacing:0.22em;
+  color:${THEME.textTertiary};
+  margin-bottom:${THEME.space.xs}px;
+  text-align:center;
 `
 const Input = styled.input`
-  background:${THEME.bgDeep}; border:2px solid ${THEME.border};
-  border-radius:5px; color:${THEME.textPrimary};
-  font-family:${THEME.font}; font-size:13px; font-weight:500;
-  padding:9px 12px; outline:none; width:100%; box-sizing:border-box;
-  transition:border-color 0.15s;
-  &:focus { border-color:${THEME.amber}; }
+  background:${THEME.bgDeep};
+  border:1px solid ${THEME.border};
+  border-radius:${THEME.radius.sm}px;
+  color:${THEME.textPrimary};
+  font-family:${THEME.font};
+  font-size:${THEME.type.lg}px; font-weight:500;
+  padding:${THEME.space.md}px ${THEME.space.lg}px;
+  outline:none; width:100%; box-sizing:border-box;
+  transition: border-color ${THEME.motion.fast} ${THEME.motion.easeOut},
+              box-shadow ${THEME.motion.fast} ${THEME.motion.easeOut};
+  &:focus {
+    border-color:${THEME.amber};
+    box-shadow: 0 0 0 3px ${THEME.amberDim};
+  }
   &::placeholder { color:${THEME.textTertiary}; }
 `
 const PrimaryBtn = styled.button`
-  background:${THEME.amber}; border:none; border-radius:5px;
-  color:#1c1c1c; font-family:${THEME.font}; font-size:12px; font-weight:700;
-  padding:11px; cursor:pointer; letter-spacing:0.06em; text-transform:uppercase;
-  transition:opacity 0.12s;
-  &:hover { opacity:0.88; }
-  &:disabled { opacity:0.35; cursor:not-allowed; }
+  background:${THEME.amber};
+  border:none; border-radius:${THEME.radius.sm}px;
+  color:${THEME.textInverse};
+  font-family:${THEME.font};
+  font-size:${THEME.type.md}px; font-weight:700;
+  padding:${THEME.space.lg}px;
+  cursor:pointer;
+  letter-spacing:0.08em; text-transform:uppercase;
+  transition: opacity ${THEME.motion.fast} ${THEME.motion.easeOut},
+              transform ${THEME.motion.fast} ${THEME.motion.easeOut},
+              box-shadow ${THEME.motion.fast} ${THEME.motion.easeOut};
+  box-shadow: 0 0 18px ${THEME.amberGlow};
+  &:hover { opacity:0.92; transform: translateY(-1px); box-shadow: 0 0 26px ${THEME.amberGlow}; }
+  &:disabled { opacity:0.35; cursor:not-allowed; transform: none; box-shadow: none; }
 `
 const GhostBtn = styled.button`
-  background:transparent; border:2px solid ${THEME.border}; border-radius:5px;
-  color:${THEME.textTertiary}; font-family:${THEME.font}; font-size:11px; font-weight:600;
-  padding:9px; cursor:pointer; letter-spacing:0.08em;
-  transition:all 0.12s;
+  background:transparent;
+  border:1px solid ${THEME.border};
+  border-radius:${THEME.radius.sm}px;
+  color:${THEME.textTertiary};
+  font-family:${THEME.font};
+  font-size:${THEME.type.base}px; font-weight:600;
+  padding:${THEME.space.md}px;
+  cursor:pointer; letter-spacing:0.08em;
+  transition: all ${THEME.motion.fast} ${THEME.motion.easeOut};
   &:hover { border-color:${THEME.textSecondary}; color:${THEME.textSecondary}; }
 `
-const Divider = styled.div`height:1px;background:${THEME.border};margin:2px 0;`
-const ErrorMsg  = styled.div`color:${THEME.threat};font-size:11px;font-weight:600;text-align:center;`
-const SuccessMsg= styled.div`color:${THEME.alive};font-size:11px;font-weight:600;text-align:center;`
+const Divider = styled.div`height:1px;background:${THEME.border};margin:${THEME.space.xs}px 0;`
+const ErrorMsg  = styled.div`color:${THEME.threat};font-size:${THEME.type.base}px;font-weight:600;text-align:center;`
+const SuccessMsg= styled.div`color:${THEME.alive};font-size:${THEME.type.base}px;font-weight:600;text-align:center;`
 const Footer = styled.div`
-  margin-top:2.5rem; font-size:11px; font-weight:400; color:${THEME.textTertiary};
-  text-align:center; line-height:1.9; letter-spacing:0.08em;
+  margin-top:3rem;
+  font-size:${THEME.type.base}px; font-weight:400;
+  color:${THEME.textTertiary};
+  text-align:center; line-height:2;
+  letter-spacing:0.1em;
 `
 
-const INVITE_HASH = '3039373833340a' // sha-equivalent omitted; checked inline
+const INVITE_HASH = '3039373833340a'
 
 function checkInvite(code: string): boolean {
-  // Constant-time-ish comparison to avoid trivial timing analysis
   const expected = [57, 55, 56, 51, 52]
   const buf = [...code].map(c => c.charCodeAt(0))
   if (buf.length !== expected.length) return false
   return expected.every((v, i) => buf[i] === v)
 }
-// suppress unused warning on INVITE_HASH — it documents the code source
 void INVITE_HASH
 
 export function AuthScreen() {

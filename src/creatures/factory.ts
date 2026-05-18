@@ -1,5 +1,5 @@
 import { v4 as uuid } from 'uuid'
-import { Creature, CreatureDrives, Genome, GameState, PersonalityTrait, BodyTrait, MindTrait, EnvContext, MessageStage } from '@/types'
+import { Creature, CreatureDrives, Genome, PersonalityTrait, BodyTrait, MindTrait, EnvContext } from '@/types'
 import {
   MAX_AGE_BY_BODY,
   SENTIENCE_GROWTH_BY_MIND,
@@ -7,11 +7,9 @@ import {
   ASEXUAL_MUTATION_CHANCE,
   MUTATION_CHANCE,
   MUTATION_CRISIS_BOOST_MAX,
-  STARTER_BOND_STRENGTH,
   REPRODUCE_BOND_MIN_STRENGTH,
   DRIVE_SEED_STRENGTH,
   DRIVE_PERSONALITY_SEEDS,
-  // window/gate constants removed — awarenessStage now reads cognitionPressure directly
 } from '@/engine/constants'
 import {
   randomGenome,
@@ -117,6 +115,11 @@ export function spawnCreature(
 
     // behavioral drives; seeded from personality if not provided (e.g. from parent inheritance)
     drives: overrides.drives ?? seedDrives(genome.personality, rng),
+
+    // bounded log of personally-observed events; the speech composer reads
+    // from this to ground utterances in lived experience
+    observedEvents: overrides.observedEvents ?? [],
+    deathCause: undefined,
   }
 }
 
@@ -252,6 +255,7 @@ export function createOffspring(
   tribalLexicon: string[] = [],
   envCtx?: EnvContext,
   divergencePressure = 0,  // 0-1; computed by caller from geographic/stress/resource signals
+  adaptationInheritMult = 1.0,  // SimModifiers.adaptationInheritMult
 ): Creature {
   // Fitness-weighted inheritance: healthier, less-stressed parents pass on more traits.
   // The probability of inheriting parentA's trait rises with parentA's relative fitness.
@@ -273,7 +277,7 @@ export function createOffspring(
   const newAdaptation = envCtx ? acquireAdaptation(envCtx) : null
   const genome = {
     ...baseGenome,
-    adaptations: inheritAdaptations(parentA.genome, parentB.genome, newAdaptation, rng),
+    adaptations: inheritAdaptations(parentA.genome, parentB.genome, newAdaptation, rng, adaptationInheritMult),
   }
   const generation = Math.max(parentA.generation, parentB.generation) + 1
 
@@ -318,12 +322,14 @@ export function createAsexualOffspring(
   currentDay: number,
   rng: () => number,
   envCtx?: EnvContext,
+  mutationMult = 1.0,
+  adaptationInheritMult = 1.0,
 ): Creature {
-  const baseGenome = mutateGenomeAsexual(parent.genome, rng, ASEXUAL_MUTATION_CHANCE, envCtx)
+  const baseGenome = mutateGenomeAsexual(parent.genome, rng, ASEXUAL_MUTATION_CHANCE * mutationMult, envCtx)
   const newAdaptation = envCtx ? acquireAdaptation(envCtx) : null
   const genome = {
     ...baseGenome,
-    adaptations: inheritAdaptations(parent.genome, null, newAdaptation, rng),
+    adaptations: inheritAdaptations(parent.genome, null, newAdaptation, rng, adaptationInheritMult),
   }
   const parentDrives = parent.drives ?? seedDrives(parent.genome.personality, rng)
 
@@ -359,53 +365,55 @@ export function createAsexualOffspring(
   return c
 }
 
-// ─── Starter creature genomes: all four body types represented ────────────────
+// ─── Starter creature genomes: drawn from full pool, no forced composition ───
 //
-// Constraints applied:
-//   • Each starter has a different personality (no two same)
-//   • All four body types present from turn one; each body is a distinct
-//     ecological role; missing one at start means it can never appear unless
-//     it mutates in (15% per gene per birth, so rare).
-//   • No Aggressive starters (would block bonding/reproduction in the critical
-//     early window when population is too small to absorb conflict)
-//   • At least one Aware mind so messages can start flowing early
-// The specific assignment within those constraints is randomized from the world
-// seed, so each world starts with a genuinely different quartet.
+// Founding generation is a *random sample* of the full personality/body/mind
+// space — drawn from the worldSeed-derived RNG. There are no enforced
+// constraints: any combination of bodies, any personality (including
+// Aggressive), any mind can appear at genesis. A colony that happens to start
+// with three Aggressives is a hard one; a colony with all Feral may never
+// achieve speech. The world generator does not curate playability.
+//
+// Diploid alleles are now also drawn independently per slot, so starters are
+// not forced homozygous. The hidden allele pool is real from tick zero, which
+// makes mutation surface latent traits sooner.
+//
+// Starters spawn at scattered, biome-aware positions — not preset symmetric
+// offsets from world centre. They must actually find each other to bond.
 
-const STARTER_PERSONALITY_POOL: PersonalityTrait[] = ['Curious', 'Timid', 'Lazy', 'Greedy', 'Nurturing']
-const STARTER_MIND_POOL: MindTrait[] = ['Aware', 'Aware', 'Dreaming', 'Sentinel', 'Feral']
+const ALL_PERSONALITIES: PersonalityTrait[] = [
+  'Curious', 'Timid', 'Aggressive', 'Lazy', 'Greedy', 'Nurturing', 'Wanderer',
+  'Recluse', 'Hoarder', 'Empath', 'Furtive', 'Territorial', 'Social', 'Stoic',
+  'Scavenger', 'Mimic', 'Nomadic', 'Vigilant', 'Symbiotic',
+]
+const ALL_BODIES: BodyTrait[] = ['Spore', 'Shell', 'Spike', 'Wisp']
+const ALL_MINDS: MindTrait[] = ['Feral', 'Aware', 'Dreaming', 'Sentinel']
 
-function shuffle<T>(arr: T[], rng: () => number): T[] {
-  const a = arr.slice()
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1))
-    ;[a[i], a[j]] = [a[j], a[i]]
-  }
-  return a
-}
-
-function pickStarterGenomes(rng: () => number): Genome[] {
-  const personalities = shuffle(STARTER_PERSONALITY_POOL, rng).slice(0, 4)
-  // All four bodies in random order; every ecological role present from start.
-  const bodies: BodyTrait[] = shuffle(['Spore', 'Shell', 'Spike', 'Wisp'] as BodyTrait[], rng)
-  // Minds: shuffle weighted pool, pick 4, force at least one Aware for early messaging.
-  const minds = shuffle(STARTER_MIND_POOL, rng).slice(0, 4)
-  if (!minds.includes('Aware')) minds[0] = 'Aware'
-
-  return [0, 1, 2, 3].map(i => ({
-    personality: personalities[i],
-    body: bodies[i],
-    mind: minds[i],
-    // Starters are homozygous: both alleles identical, matching the expressed trait.
-    // New alleles can only enter the population through mutation pressure, not at random.
-    personalityAlleles: [personalities[i], personalities[i]] as [PersonalityTrait, PersonalityTrait],
-    bodyAlleles:        [bodies[i], bodies[i]] as [BodyTrait, BodyTrait],
-    mindAlleles:        [minds[i], minds[i]] as [MindTrait, MindTrait],
-    morphSeed: rng(),
-    morphology: initMorphology(),
-    race: RACES[Math.floor(rng() * RACES.length)],
-    latentAncestry: {},
-  }))
+function pickStarterGenomes(rng: () => number, count: number): Genome[] {
+  return Array.from({ length: count }, () => {
+    // Expressed traits drawn independently from full pools
+    const personality = ALL_PERSONALITIES[Math.floor(rng() * ALL_PERSONALITIES.length)]
+    const body = ALL_BODIES[Math.floor(rng() * ALL_BODIES.length)]
+    const mind = ALL_MINDS[Math.floor(rng() * ALL_MINDS.length)]
+    // Hidden allele drawn independently — starters may carry recessives
+    // that have not yet surfaced. Mutation can reach them on first birth.
+    const persAllele = rng() < 0.7 ? personality
+      : ALL_PERSONALITIES[Math.floor(rng() * ALL_PERSONALITIES.length)]
+    const bodyAllele = rng() < 0.7 ? body
+      : ALL_BODIES[Math.floor(rng() * ALL_BODIES.length)]
+    const mindAllele = rng() < 0.7 ? mind
+      : ALL_MINDS[Math.floor(rng() * ALL_MINDS.length)]
+    return {
+      personality, body, mind,
+      personalityAlleles: [personality, persAllele] as [PersonalityTrait, PersonalityTrait],
+      bodyAlleles:        [body, bodyAllele] as [BodyTrait, BodyTrait],
+      mindAlleles:        [mind, mindAllele] as [MindTrait, MindTrait],
+      morphSeed: rng(),
+      morphology: initMorphology(),
+      race: RACES[Math.floor(rng() * RACES.length)],
+      latentAncestry: {},
+    }
+  })
 }
 
 export function createStarterCreatures(
@@ -414,42 +422,32 @@ export function createStarterCreatures(
   currentDay: number
 ): Creature[] {
   const rng = createRng(worldSeed + 9999)
-  const center = Math.floor(WORLD_SIZE / 2)
-  // Four positions clustered near center so starters can see and bond with
-  // each other quickly; spread enough to avoid tile collisions.
-  const startPositions = [
-    { x: center - 2, y: center     },
-    { x: center + 2, y: center     },
-    { x: center,     y: center - 2 },
-    { x: center,     y: center + 2 },
-  ]
+  const count = 4
+  // Scattered positions across the central third of the world — far enough
+  // apart that founders must actually move to find each other. No pre-bonds:
+  // bonds form through adjacency over time, the same way every other bond
+  // in the colony will form.
+  const minQ = Math.floor(WORLD_SIZE * 0.33)
+  const maxQ = Math.floor(WORLD_SIZE * 0.66)
+  const positions = Array.from({ length: count }, () => ({
+    x: minQ + Math.floor(rng() * (maxQ - minQ)),
+    y: minQ + Math.floor(rng() * (maxQ - minQ)),
+  }))
 
-  const genomes = pickStarterGenomes(rng)
+  const genomes = pickStarterGenomes(rng, count)
 
-  // Spawn all four; fill missing names with generated ones.
-  const creatures = Array.from({ length: 4 }, (_, i) => {
+  return Array.from({ length: count }, (_, i) => {
     const pair = namedPairs[i] ?? {
       name:       generateName(rng),
       familyName: generateName(rng),
     }
     return spawnCreature({
       ...pair,
-      ...startPositions[i],
+      ...positions[i],
       genome:    genomes[i],
       bornOnDay: currentDay,
     }, rng)
   })
-
-  // Pre-seed bonds between every pair of starters.
-  // STARTER_BOND_STRENGTH (25) is below REPRODUCE_BOND_MIN_STRENGTH (35), so
-  // bond-seeking stays active; ~20 adjacency ticks at 0.5/tick bridge the gap.
-  const ids = creatures.map(c => c.id)
-  return creatures.map(c => ({
-    ...c,
-    bonds: ids
-      .filter(id => id !== c.id)
-      .map(id => ({ targetId: id, strength: STARTER_BOND_STRENGTH, since: currentDay })),
-  }))
 }
 
 // ─── Sentience tick ───────────────────────────────────────────────────────────
@@ -541,26 +539,7 @@ export function getColonyStage(population: number) {
 }
 
 // ─── Awareness stage ─────────────────────────────────────────────────────────
-
-export function computeAwarenessStage(state: GameState): MessageStage {
-  // Awareness stage is now purely derived from cognitionPressure — the continuous
-  // gradient computed in tick.ts from five orthogonal colony-wide signals.
-  // There are no binary gates or separate condition checks here; the stage label
-  // is just a human-readable band over the underlying pressure score.
-  //
-  // Band thresholds are matched to the pressure contributions:
-  //   Stage 1 → 2 : pressure ≥ 15   (early role diversity + any vocab)
-  //   Stage 2 → 3 : pressure ≥ 35   (lexicon depth + sentience starting)
-  //   Stage 3 → 4 : pressure ≥ 60   (broad sentience + lineage complexity)
-  //   Stage 4 → 5 : pressure ≥ 85   (deep ancestral & experience breadth)
-  //
-  // Regression is real: if the colony degrades (mass death, loss of roles,
-  // vocabulary collapse) the stage can fall back. This is intentional —
-  // awareness is earned by the living colony, not banked from the past.
-  const cp = state.cognitionPressure ?? 0
-  if (cp >= 85) return 5
-  if (cp >= 60) return 4
-  if (cp >= 35) return 3
-  if (cp >= 15) return 2
-  return 1
-}
+// Awareness is now evaluated directly in tick.ts from creature-level
+// distributions (median sentience, role diversity, lineage depth, transcendent
+// elder presence) with persistence hysteresis. The smoothed pressure-meter
+// has been removed. `state.awarenessStage` is the live label — read it directly.

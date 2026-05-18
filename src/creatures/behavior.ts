@@ -26,7 +26,7 @@ import {
 } from '@/engine/constants'
 import { findNearestTileOfType, findNearestInIndex, getTile, isTilePassable, TileTypeIndex } from '@/world/worldGen'
 import { tickSentience, seedDrives } from './factory'
-import { DRIVE_DRIFT_RATE } from '@/engine/constants'
+import { DRIVE_DRIFT_RATE, FEAR_BASE_RADIUS, FEAR_VIGILANCE_BONUS } from '@/engine/constants'
 
 // ─── Build terrain validation ────────────────────────────────────────────────
 
@@ -313,7 +313,9 @@ export function tickBehavior(
   aliveCreatures: Creature[],       // pre-filtered alive array; avoids repeated Object.values
   tileIdx?: TileTypeIndex,          // pre-built index; avoids O(d²) tile scans
   enrichmentItems?: Record<string, EnrichmentItem>,
-  weather?: WeatherState
+  weather?: WeatherState,
+  recentFractureDay?: number,       // most-recent fracture chronicle day; behavior reads this directly
+  currentDay?: number,              // today's game day, for fracture-window comparison
 ): Partial<Creature> {
   const c = creature
   const changes: Partial<Creature> = {}
@@ -373,12 +375,25 @@ export function tickBehavior(
   // Flees away from the centroid of nearby creatures toward map edges.
   const fearTrigger = (c.health < 28)
     || (c.genome.personality === 'Timid' && !dormancy.personality && c.stress > 65)
+    || (c.feared && Object.keys(c.feared).length > 0)  // any personally-feared creature is alarm enough
   if (fearTrigger && c.state !== 'fleeing') {
-    const threats = aliveCreatures.filter(
-      o => o.id !== c.id
-        && Math.abs(o.x - c.x) <= 6 && Math.abs(o.y - c.y) <= 6
-        && (o.genome.personality === 'Aggressive' || o.state === 'fighting' || o.state === 'scavenging'),
-    )
+    // Fear is now per-witness, per-target. Radius scales with the witness's
+    // own vigilance drive and how fresh the fear memory is. No global apex tag.
+    const myVigilance = c.drives?.vigilance ?? 0.4
+    const fearedIds = c.feared ?? {}
+    const threats = aliveCreatures.filter(o => {
+      if (o.id === c.id) return false
+      const personalFearDay = fearedIds[o.id]
+      const isPersonallyFeared = personalFearDay !== undefined
+      const fleeRadius = isPersonallyFeared
+        ? FEAR_BASE_RADIUS + Math.round(myVigilance * FEAR_VIGILANCE_BONUS)
+        : 6
+      if (Math.abs(o.x - c.x) > fleeRadius || Math.abs(o.y - c.y) > fleeRadius) return false
+      return isPersonallyFeared
+        || o.genome.personality === 'Aggressive'
+        || o.state === 'fighting'
+        || o.state === 'scavenging'
+    })
     if (threats.length > 0) {
       const cx = threats.reduce((s, o) => s + o.x, 0) / threats.length
       const cy = threats.reduce((s, o) => s + o.y, 0) / threats.length
@@ -483,24 +498,52 @@ export function tickBehavior(
     }
   }
 
-  // ── 4. Mind-specific behaviors ──
-  if (c.genome.mind === 'Dreaming' && Math.random() < 0.018) {
-    const dreamTile = findNearest(['river', 'death_site'], 20)
-    if (dreamTile) {
+  // ── 4. Mind-specific behaviors — state-driven, not random ───────────────
+  // Dreaming creatures enter a dreaming state when they're calm enough to
+  // reflect AND something proximal triggers reflection: an adjacent death
+  // site, a river they can stare into, or a recent loss. No random dice.
+  if (c.genome.mind === 'Dreaming'
+      && c.state !== 'dreaming'
+      && c.health > 50
+      && c.hunger < 50
+      && c.thirst < 50
+      && c.stress < 60) {
+    const reflectiveTile = findNearest(['death_site', 'river'], 8)
+    const hasRecentLoss = c.bonds.some(bond => {
+      const target = _allCreatures[bond.targetId]
+      return target?.diedOnDay !== null && season  // grief draws to reflection
+    })
+    const driveCuriosity = c.drives?.curiosity ?? 0.3
+    // Only enter dreaming when the world offers a focus (proximity matters);
+    // otherwise the creature is just resting, not dreaming.
+    if (reflectiveTile && (hasRecentLoss || driveCuriosity > 0.5) && Math.random() < 0.06) {
       changes.state = 'dreaming'
-      changes.targetX = dreamTile.x
-      changes.targetY = dreamTile.y
+      changes.targetX = reflectiveTile.x
+      changes.targetY = reflectiveTile.y
     }
   }
 
-  if (c.genome.mind === 'Sentinel' && c.state !== 'observing' && Math.random() < 0.010) {
-    // Patrol the colony's actual perimeter: centroid + current spread radius.
-    // This means Sentinels walk the boundary of WHERE THE COLONY ACTUALLY IS,
-    // not a hardcoded world-edge that may be empty.
-    if (aliveCreatures.length > 0) {
+  // Sentinels patrol when there is something to patrol against — perceived
+  // threat in the form of rival-lineage proximity, recent edge encounters,
+  // or low-tide colony stress that asks for vigilance. Their vigilance drive
+  // gates how readily they undertake a sweep.
+  if (c.genome.mind === 'Sentinel'
+      && c.state !== 'observing'
+      && c.health > 45) {
+    const vigilance = c.drives?.vigilance ?? 0.45
+    // Real signals that justify a patrol
+    const rivalNearby = aliveCreatures.some(o =>
+      o.id !== c.id && o.lineageId !== c.lineageId
+      && Math.abs(o.x - c.x) <= 14 && Math.abs(o.y - c.y) <= 14)
+    const colonyStress = aliveCreatures.length > 0
+      ? aliveCreatures.reduce((s, o) => s + o.stress, 0) / aliveCreatures.length
+      : 0
+    const patrolPressure = (rivalNearby ? 0.05 : 0)
+      + (colonyStress > 40 ? 0.02 : 0)
+      + vigilance * 0.04   // their own internal drive
+    if (Math.random() < patrolPressure && aliveCreatures.length > 0) {
       const cx = Math.round(aliveCreatures.reduce((s, o) => s + o.x, 0) / aliveCreatures.length)
       const cy = Math.round(aliveCreatures.reduce((s, o) => s + o.y, 0) / aliveCreatures.length)
-      // Spread = RMS distance from centroid; minimum 12 so there's always a perimeter
       const spread = Math.max(12, Math.sqrt(
         aliveCreatures.reduce((s, o) => s + (o.x - cx) ** 2 + (o.y - cy) ** 2, 0) / aliveCreatures.length
       ))
@@ -517,173 +560,144 @@ export function tickBehavior(
     }
   }
 
-  // ── 4.8. Role-driven behaviors — role shapes what a creature actually does ──
-  // Roles earned from behavioral history now feed back into future behavior,
-  // creating a self-reinforcing loop: a guardian patrols and fights, which keeps
-  // them a guardian; a healer seeks the sick, which deepens their bonds and role.
-  // This is the bridge that was missing: roles were labels, now they drive action.
+  // ── 4.8. Drive-pattern opportunity scan (no role label in decision) ─────
+  // Every creature evaluates the same opportunity catalogue every tick. The
+  // role label is no longer in the decision — only drives. A nurturer who has
+  // drifted to high dominance pursues territory-defence opportunities; a
+  // guardian who has drifted to high sociality reaches for patients. Behaviour
+  // is what the drives push, not what the role tag dictates.
   {
-    const role = c.role
-    if (role && c.health > 35) {
-      switch (role) {
-        case 'guardian': {
-          // Guardians actively patrol the colony's perimeter and intercept threats
-          if (Math.random() < 0.08 && c.territoryClaim) {
-            const intruder = aliveCreatures.find(
-              o => o.id !== c.id
-                && o.lineageId !== c.lineageId
-                && Math.abs(o.x - c.territoryClaim!.x) <= 8
-                && Math.abs(o.y - c.territoryClaim!.y) <= 8
-            )
-            if (intruder) {
-              changes.state = 'fighting'
-              changes.targetX = intruder.x
-              changes.targetY = intruder.y
-            }
-          }
-          // Rally toward any bonded ally who is fighting
-          if (!changes.state && Math.random() < 0.12) {
-            const fightingAlly = aliveCreatures.find(
-              o => o.id !== c.id
-                && o.state === 'fighting'
-                && c.bonds.some(b => b.targetId === o.id && b.strength > 20)
-                && Math.abs(o.x - c.x) <= 20 && Math.abs(o.y - c.y) <= 20
-            )
-            if (fightingAlly) {
-              changes.state = 'fighting'
-              changes.targetX = fightingAlly.x
-              changes.targetY = fightingAlly.y
-            }
-          }
-          break
+    const drives = c.drives
+    if (drives && c.health > 35) {
+      // Defend held territory — pure dominance signal
+      if (!changes.state && c.territoryClaim && Math.random() < drives.dominance * 0.15) {
+        const intruder = aliveCreatures.find(
+          o => o.id !== c.id && o.lineageId !== c.lineageId
+            && Math.abs(o.x - c.territoryClaim!.x) <= 8
+            && Math.abs(o.y - c.territoryClaim!.y) <= 8
+        )
+        if (intruder) {
+          changes.state = 'fighting'
+          changes.targetX = intruder.x
+          changes.targetY = intruder.y
         }
-
-        case 'healer': {
-          // Healers actively seek sick or injured tribemates and move to groom them
-          if (Math.random() < 0.10) {
-            const patient = aliveCreatures.find(
-              o => o.id !== c.id
-                && (o.state === 'sick' || o.health < 45 || o.stress > 70)
-                && Math.abs(o.x - c.x) <= 18 && Math.abs(o.y - c.y) <= 18
-            )
-            if (patient) {
-              changes.state = c.carrying === 'healroot' ? 'bonding' : 'grooming'
-              changes.targetX = patient.x
-              changes.targetY = patient.y
-            }
-          }
-          // Carry healroot to sick creatures if nearby
-          if (!changes.state && !c.carrying && Math.random() < 0.06) {
-            const hrTile = findNearest(['healroot'], 14)
-            if (hrTile && (hrTile.healrootAmount ?? 0) > 10) {
-              changes.state = 'seeking_healroot'
-              changes.targetX = hrTile.x
-              changes.targetY = hrTile.y
-            }
-          }
-          break
+      }
+      // Rally to bonded fighter — sociality + dominance
+      if (!changes.state && Math.random() < (drives.sociality + drives.dominance) * 0.08) {
+        const fightingAlly = aliveCreatures.find(
+          o => o.id !== c.id && o.state === 'fighting'
+            && c.bonds.some(b => b.targetId === o.id && b.strength > 20)
+            && Math.abs(o.x - c.x) <= 20 && Math.abs(o.y - c.y) <= 20
+        )
+        if (fightingAlly) {
+          changes.state = 'fighting'
+          changes.targetX = fightingAlly.x
+          changes.targetY = fightingAlly.y
         }
-
-        case 'forager': {
-          // Foragers pre-emptively seek food and share by carrying fruit to bonded creatures
-          if (!c.carrying && c.hunger < 50 && Math.random() < 0.07) {
-            const richPatch = findNearest(['food_patch', 'bush'], 24)
-            if (richPatch && richPatch.foodAmount > 40) {
-              changes.state = 'seeking_food'
-              changes.targetX = richPatch.x
-              changes.targetY = richPatch.y
-            }
-          }
-          // Carry fruit to a bonded hungry partner
-          if (c.carrying === 'fruit' && c.carryingTargetId && Math.random() < 0.12) {
-            const target = aliveCreatures.find(o => o.id === c.carryingTargetId)
-            if (target) {
-              changes.state = 'bonding'
-              changes.targetX = target.x
-              changes.targetY = target.y
-            }
-          } else if (!c.carrying && Math.random() < 0.04) {
-            // Find a hungry bonded creature to bring food to
-            const hungryBonded = aliveCreatures.find(
-              o => o.id !== c.id && o.hunger > 60
-                && c.bonds.some(b => b.targetId === o.id && b.strength > 30)
-                && Math.abs(o.x - c.x) <= 20 && Math.abs(o.y - c.y) <= 20
-            )
-            if (hungryBonded) {
-              changes.carryingTargetId = hungryBonded.id
-            }
-          }
-          break
+      }
+      // Tend to a patient — sociality
+      if (!changes.state && Math.random() < drives.sociality * 0.15) {
+        const patient = aliveCreatures.find(
+          o => o.id !== c.id
+            && (o.state === 'sick' || o.health < 45 || o.stress > 70)
+            && Math.abs(o.x - c.x) <= 18 && Math.abs(o.y - c.y) <= 18
+        )
+        if (patient) {
+          changes.state = c.carrying === 'healroot' ? 'bonding' : 'grooming'
+          changes.targetX = patient.x
+          changes.targetY = patient.y
         }
-
-        case 'scout': {
-          // Scouts range further and return with territory knowledge
-          if (Math.random() < 0.05) {
-            const farDist = 35 + Math.floor(Math.random() * 30)
-            const angle = Math.random() * Math.PI * 2
-            const tx = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(c.x + Math.cos(angle) * farDist)))
-            const ty = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(c.y + Math.sin(angle) * farDist)))
-            const destTile = tiles[ty]?.[tx]
-            if (destTile && isTilePassable(destTile)) {
-              changes.state = 'migrating'
-              changes.targetX = tx
-              changes.targetY = ty
-            }
-          }
-          break
+      }
+      // Gather healroot to share — acquisitive + sociality
+      if (!changes.state && !c.carrying && Math.random() < (drives.acquisitive + drives.sociality) * 0.06) {
+        const hrTile = findNearest(['healroot'], 14)
+        if (hrTile && (hrTile.healrootAmount ?? 0) > 10) {
+          changes.state = 'seeking_healroot'
+          changes.targetX = hrTile.x
+          changes.targetY = hrTile.y
         }
-
-        case 'nurturer': {
-          // Nurturers move toward offspring or juveniles and groom them
-          if (Math.random() < 0.08) {
-            const juvenile = aliveCreatures.find(
-              o => o.id !== c.id && o.age < 15
-                && Math.abs(o.x - c.x) <= 16 && Math.abs(o.y - c.y) <= 16
-            )
-            if (juvenile) {
-              changes.state = 'bonding'
-              changes.targetX = juvenile.x
-              changes.targetY = juvenile.y
-            }
-          }
-          break
+      }
+      // Pre-emptive foraging — acquisitive
+      if (!changes.state && !c.carrying && c.hunger < 50
+          && Math.random() < drives.acquisitive * 0.13) {
+        const richPatch = findNearest(['food_patch', 'bush'], 24)
+        if (richPatch && richPatch.foodAmount > 40) {
+          changes.state = 'seeking_food'
+          changes.targetX = richPatch.x
+          changes.targetY = richPatch.y
         }
-
-        case 'shaman': {
-          // Shamans seek death sites and rivers to dream; they also initiate speech near elders
-          if (Math.random() < 0.025) {
-            const sacredTile = findNearest(['death_site', 'river'], 22)
-            if (sacredTile) {
-              changes.state = 'dreaming'
-              changes.targetX = sacredTile.x
-              changes.targetY = sacredTile.y
-            }
-          }
-          break
+      }
+      // Deliver fruit to a bonded peer — sociality + carrying
+      if (!changes.state && c.carrying === 'fruit' && c.carryingTargetId
+          && Math.random() < drives.sociality * 0.18) {
+        const target = aliveCreatures.find(o => o.id === c.carryingTargetId)
+        if (target) {
+          changes.state = 'bonding'
+          changes.targetX = target.x
+          changes.targetY = target.y
         }
-
-        case 'elder': {
-          // Elders move slowly toward younger creatures and groom/teach (socialise)
-          if (Math.random() < 0.04) {
-            const youngCreature = aliveCreatures.find(
-              o => o.id !== c.id && o.generation > c.generation
-                && Math.abs(o.x - c.x) <= 12 && Math.abs(o.y - c.y) <= 12
-            )
-            if (youngCreature) {
-              changes.state = 'grooming'
-              changes.targetX = youngCreature.x
-              changes.targetY = youngCreature.y
-            }
-          }
-          break
+      }
+      // Mark a hungry bonded peer as carrying target — sociality
+      if (!changes.state && !c.carrying && Math.random() < drives.sociality * 0.08) {
+        const hungryBonded = aliveCreatures.find(
+          o => o.id !== c.id && o.hunger > 60
+            && c.bonds.some(b => b.targetId === o.id && b.strength > 30)
+            && Math.abs(o.x - c.x) <= 20 && Math.abs(o.y - c.y) <= 20
+        )
+        if (hungryBonded) changes.carryingTargetId = hungryBonded.id
+      }
+      // Long-range exploration — mobility + curiosity
+      if (!changes.state && Math.random() < (drives.mobility + drives.curiosity) * 0.05) {
+        const farDist = 30 + Math.floor(drives.mobility * 40)
+        const angle = Math.random() * Math.PI * 2
+        const tx = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(c.x + Math.cos(angle) * farDist)))
+        const ty = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(c.y + Math.sin(angle) * farDist)))
+        const destTile = tiles[ty]?.[tx]
+        if (destTile && isTilePassable(destTile)) {
+          changes.state = 'migrating'
+          changes.targetX = tx
+          changes.targetY = ty
         }
-
-        // recluse: no additional behavior; isolation already handled in personality section
-        default:
-          break
+      }
+      // Approach a juvenile — sociality
+      if (!changes.state && Math.random() < drives.sociality * 0.10) {
+        const juvenile = aliveCreatures.find(
+          o => o.id !== c.id && o.age < 15
+            && Math.abs(o.x - c.x) <= 16 && Math.abs(o.y - c.y) <= 16
+        )
+        if (juvenile) {
+          changes.state = 'bonding'
+          changes.targetX = juvenile.x
+          changes.targetY = juvenile.y
+        }
+      }
+      // Sacred-place reflection — curiosity + reclusion (the Dreaming pattern)
+      if (!changes.state && Math.random() < (drives.curiosity * 0.5 + drives.reclusion * 0.3) * 0.10) {
+        const sacredTile = findNearest(['death_site', 'river'], 22)
+        if (sacredTile) {
+          changes.state = 'dreaming'
+          changes.targetX = sacredTile.x
+          changes.targetY = sacredTile.y
+        }
+      }
+      // Teach a younger generation — sociality + own depth
+      if (!changes.state && c.generation >= 2 && Math.random() < drives.sociality * 0.07) {
+        const youngCreature = aliveCreatures.find(
+          o => o.id !== c.id && o.generation > c.generation
+            && Math.abs(o.x - c.x) <= 12 && Math.abs(o.y - c.y) <= 12
+        )
+        if (youngCreature) {
+          changes.state = 'grooming'
+          changes.targetX = youngCreature.x
+          changes.targetY = youngCreature.y
+        }
       }
     }
   }
+
+  // Legacy role switch removed; the drive-pattern catalogue above replaces
+  // the per-role gates with drive-only decisions. Role labels still exist for
+  // vocabulary and identity but no longer alter behaviour.
 
   // ── 5. Personality-driven behaviors ──
   let targetSet = changes.targetX !== undefined
@@ -712,403 +726,248 @@ export function tickBehavior(
     }
   }
 
-  switch (c.genome.personality) {
-    case 'Curious':
-      // Explores within a bounded range; curious, not migrating across the world
-      if (!targetSet && (c.targetX === null || Math.random() < 0.025)) {
-        const range = c.generation <= EARLY_GEN_MAX ? 12 : 30
-        for (let attempt = 0; attempt < 6; attempt++) {
-          const tx = Math.max(0, Math.min(WORLD_SIZE - 1, c.x + Math.floor(Math.random() * (range * 2 + 1)) - range))
-          const ty = Math.max(0, Math.min(WORLD_SIZE - 1, c.y + Math.floor(Math.random() * (range * 2 + 1)) - range))
-          const dest = tiles[ty]?.[tx]
-          if (dest && isTilePassable(dest)) {
-            changes.state = 'wandering'
+  // ── 5. Drive-weighted action selection (replaces the personality switch) ──
+  //
+  // Every creature builds a small set of action candidates each tick. Each
+  // candidate's weight is computed from the creature's current drives × the
+  // current opportunity (is there a peer to bond with? a crowd to flee? a
+  // territory to claim?). One candidate is picked by weighted-random — this
+  // is the *only* personality-bias path. Personality only seeded the drives
+  // at birth; drives drift from actual behavior; behavior now reads back
+  // from drives. The loop is closed, the magic-number bias is gone.
+  //
+  // A creature with high mobility wanders far; one with high reclusion
+  // disperses from crowds; one with high acquisitive seeks food early; one
+  // with high curiosity targets unknown ground — without their genome
+  // ever being branched on. Two creatures with the same personality but
+  // different drive drift will behave differently after enough ticks.
+  if (!targetSet) {
+    const d = c.drives ?? { dominance: 0.3, curiosity: 0.3, sociality: 0.3, vigilance: 0.3, acquisitive: 0.3, reclusion: 0.3, mobility: 0.3 }
+    type Candidate = { weight: number; apply: () => void }
+    const candidates: Candidate[] = []
+
+    // ── Mobility candidate: long-range migration ─────────────────────────
+    if (d.mobility > 0.25) {
+      candidates.push({
+        weight: d.mobility * 100,
+        apply: () => {
+          // Distance scales smoothly with mobility: 0.3 → 12, 0.9 → 50
+          const dist = 8 + d.mobility * 50
+          const angle = Math.random() * Math.PI * 2
+          const tx = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(c.x + Math.cos(angle) * dist)))
+          const ty = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(c.y + Math.sin(angle) * dist)))
+          if (tiles[ty]?.[tx] && isTilePassable(tiles[ty][tx])) {
+            changes.state = d.mobility > 0.7 ? 'migrating' : 'wandering'
             changes.targetX = tx
             changes.targetY = ty
             targetSet = true
-            break
           }
-        }
-      }
-      break
+        },
+      })
+    }
 
-    case 'Aggressive':
-      if (!c.territoryClaim && Math.random() < 0.025) {
-        const claimTile = tiles[c.y]?.[c.x]
-        if (claimTile && (claimTile.type === 'food_patch' || claimTile.type === 'bush'
-            || claimTile.type === 'river' || claimTile.type === 'grass' || claimTile.type === 'barren')) {
-          changes.territoryClaim = { x: c.x, y: c.y }
-        }
-      }
-      // Defend territory from rival lineages
-      if (!targetSet && c.territoryClaim && Math.random() < 0.10) {
-        const intruder = aliveCreatures.find(
-          o => o.id !== c.id
-            && o.lineageId !== c.lineageId
-            && Math.abs(o.x - c.territoryClaim!.x) <= 5
-            && Math.abs(o.y - c.territoryClaim!.y) <= 5
-        )
-        if (intruder) {
-          changes.state = 'fighting'
-          changes.targetX = intruder.x
-          changes.targetY = intruder.y
-          targetSet = true
-        }
-      }
-      // Pursue rival Aggressives from different lineages
-      if (!targetSet && Math.random() < 0.05) {
-        const rival = aliveCreatures.find(
-          o => o.id !== c.id
-            && o.lineageId !== c.lineageId
-            && o.genome.personality === 'Aggressive'
-            && Math.abs(o.x - c.x) <= 14 && Math.abs(o.y - c.y) <= 14
-        )
-        if (rival) {
-          changes.state = 'fighting'
-          changes.targetX = rival.x
-          changes.targetY = rival.y
-          targetSet = true
-        }
-      }
-      // Wander within a personal zone
-      if (!targetSet && c.targetX === null && Math.random() < 0.15) {
-        const range = 6
-        for (let attempt = 0; attempt < 5; attempt++) {
-          const tx = Math.max(0, Math.min(WORLD_SIZE - 1, c.x + Math.floor(Math.random() * (range * 2 + 1)) - range))
-          const ty = Math.max(0, Math.min(WORLD_SIZE - 1, c.y + Math.floor(Math.random() * (range * 2 + 1)) - range))
+    // ── Curiosity candidate: explore unknown direction / observed-edge call ──
+    if (d.curiosity > 0.25) {
+      candidates.push({
+        weight: d.curiosity * 90,
+        apply: () => {
+          // Bias direction away from previously-visited terrain memory
+          const memory = c.terrainMemory ?? {}
+          const myTile = tiles[c.y]?.[c.x]
+          // If standing on a well-known tile, pick a far direction; else nearby
+          const familiar = myTile && (memory[myTile.type] ?? 0) > 2
+          const range = familiar ? 25 + d.curiosity * 20 : 12 + d.curiosity * 15
+          const angle = Math.random() * Math.PI * 2
+          const tx = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(c.x + Math.cos(angle) * range)))
+          const ty = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(c.y + Math.sin(angle) * range)))
           if (tiles[ty]?.[tx] && isTilePassable(tiles[ty][tx])) {
             changes.state = 'wandering'
             changes.targetX = tx
             changes.targetY = ty
             targetSet = true
-            break
           }
-        }
-      }
-      break
-
-    case 'Nurturing': {
-      // Seek out sick, young, or injured creatures to bond with
-      const needyCreature = aliveCreatures.find(
-        other => other.id !== c.id &&
-          (other.state === 'sick' || other.age < 8 || other.health < 45)
-      )
-      if (needyCreature && !targetSet && Math.random() < 0.04) {
-        changes.state = 'bonding'
-        changes.targetX = needyCreature.x
-        changes.targetY = needyCreature.y
-        targetSet = true
-      }
-      break
+        },
+      })
     }
 
-    case 'Greedy':
-      // Pre-emptively seek food even when not that hungry
-      if (!targetSet && c.hunger > 30 && Math.random() < 0.06) {
-        const foodTile = findNearest(['food_patch', 'bush'], 10)
-        if (foodTile && foodTile.foodAmount > 20) {
-          changes.state = 'seeking_food'
-          changes.targetX = foodTile.x
-          changes.targetY = foodTile.y
-          targetSet = true
-        }
+    // ── Sociality candidate: seek a peer (any non-hostile creature) ──────
+    if (d.sociality > 0.30) {
+      const peer = aliveCreatures.find(
+        o => o.id !== c.id
+          && o.genome.personality !== 'Aggressive'
+          && Math.abs(o.x - c.x) <= 18 && Math.abs(o.y - c.y) <= 18
+      )
+      if (peer) {
+        candidates.push({
+          weight: d.sociality * 110,
+          apply: () => {
+            const jitter = 3
+            const tx = Math.max(0, Math.min(WORLD_SIZE - 1, peer.x + Math.floor(Math.random() * (jitter * 2 + 1)) - jitter))
+            const ty = Math.max(0, Math.min(WORLD_SIZE - 1, peer.y + Math.floor(Math.random() * (jitter * 2 + 1)) - jitter))
+            if (tiles[ty]?.[tx] && isTilePassable(tiles[ty][tx])) {
+              changes.state = 'bonding'
+              changes.targetX = tx
+              changes.targetY = ty
+              targetSet = true
+            }
+          },
+        })
       }
-      break
+    }
 
-    case 'Timid':
-      // Seek bush cover when stressed; concealment calms Timid creatures
-      if (!targetSet && c.stress > 40 && Math.random() < 0.08) {
-        const bushTile = findNearest(['bush'], 12)
-        if (bushTile) {
-          changes.state = 'seeking_shelter'
-          changes.targetX = bushTile.x
-          changes.targetY = bushTile.y
-          targetSet = true
-        }
-      }
-      break
-
-    case 'Lazy':
-      // Drift toward nearest food patch; barely moves otherwise
-      if (!targetSet && c.targetX === null && Math.random() < 0.04) {
-        const foodTile = findNearest(['food_patch', 'bush'], 8)
-        if (foodTile) {
-          changes.state = 'wandering'
-          changes.targetX = foodTile.x
-          changes.targetY = foodTile.y
-          targetSet = true
-        }
-      }
-      break
-
-    case 'Wanderer':
-      // Constantly on the move; picks distant destinations across the whole map
-      if (!targetSet && (c.targetX === null || Math.random() < 0.03)) {
-        const dist = 20 + Math.floor(Math.random() * 30)
-        const angle = Math.random() * Math.PI * 2
-        const tx = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(c.x + Math.cos(angle) * dist)))
-        const ty = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(c.y + Math.sin(angle) * dist)))
-        changes.state = 'migrating'
-        changes.targetX = tx
-        changes.targetY = ty
-        targetSet = true
-      }
-      break
-
-    case 'Recluse':
-      // Actively disperses away from clusters; a natural colony spreader
-      if (!targetSet && Math.random() < 0.12) {
-        const crowdNearby = aliveCreatures.filter(
-          o => o.id !== c.id
-            && Math.abs(o.x - c.x) <= RECLUSE_CROWD_RADIUS
-            && Math.abs(o.y - c.y) <= RECLUSE_CROWD_RADIUS
-        )
-        if (crowdNearby.length > RECLUSE_CROWD_THRESHOLD) {
-          const cx = crowdNearby.reduce((s, o) => s + o.x, 0) / crowdNearby.length
-          const cy = crowdNearby.reduce((s, o) => s + o.y, 0) / crowdNearby.length
-          const dx = Math.sign(c.x - cx) || (Math.random() < 0.5 ? -1 : 1)
-          const dy = Math.sign(c.y - cy) || (Math.random() < 0.5 ? -1 : 1)
-          const dist = 14 + Math.floor(Math.random() * 12)
-          changes.state = 'wandering'
-          changes.targetX = Math.max(0, Math.min(WORLD_SIZE - 1, c.x + dx * dist))
-          changes.targetY = Math.max(0, Math.min(WORLD_SIZE - 1, c.y + dy * dist))
-          targetSet = true
-        } else if (c.targetX === null && Math.random() < 0.4) {
-          // When alone, wanders freely in a moderate range
-          const range = 14
-          for (let attempt = 0; attempt < 5; attempt++) {
-            const tx = Math.max(0, Math.min(WORLD_SIZE - 1, c.x + Math.floor(Math.random() * (range * 2 + 1)) - range))
-            const ty = Math.max(0, Math.min(WORLD_SIZE - 1, c.y + Math.floor(Math.random() * (range * 2 + 1)) - range))
+    // ── Reclusion candidate: disperse from local crowd ───────────────────
+    if (d.reclusion > 0.30) {
+      const crowdNear = aliveCreatures.filter(
+        o => o.id !== c.id
+          && Math.abs(o.x - c.x) <= RECLUSE_CROWD_RADIUS
+          && Math.abs(o.y - c.y) <= RECLUSE_CROWD_RADIUS
+      )
+      // Only weight reclusion when a crowd actually exists nearby
+      if (crowdNear.length > RECLUSE_CROWD_THRESHOLD) {
+        candidates.push({
+          weight: d.reclusion * 120,
+          apply: () => {
+            const cx = crowdNear.reduce((s, o) => s + o.x, 0) / crowdNear.length
+            const cy = crowdNear.reduce((s, o) => s + o.y, 0) / crowdNear.length
+            const dx = Math.sign(c.x - cx) || (Math.random() < 0.5 ? -1 : 1)
+            const dy = Math.sign(c.y - cy) || (Math.random() < 0.5 ? -1 : 1)
+            const dist = 14 + Math.floor(d.reclusion * 18)
+            const tx = Math.max(0, Math.min(WORLD_SIZE - 1, c.x + dx * dist))
+            const ty = Math.max(0, Math.min(WORLD_SIZE - 1, c.y + dy * dist))
             if (tiles[ty]?.[tx] && isTilePassable(tiles[ty][tx])) {
               changes.state = 'wandering'
               changes.targetX = tx
               changes.targetY = ty
               targetSet = true
-              break
             }
-          }
-        }
+          },
+        })
       }
-      break
-
-    case 'Hoarder':
-      // Pre-emptively seek food at all times; stays near the richest patches
-      if (!targetSet && c.hunger > 15 && Math.random() < 0.09) {
-        const foodTile = findNearest(['food_patch', 'bush'], 12)
-        if (foodTile && foodTile.foodAmount > 15) {
-          changes.state = 'seeking_food'
-          changes.targetX = foodTile.x
-          changes.targetY = foodTile.y
-          targetSet = true
-        }
-      }
-      // Wanders within a close range; reluctant to leave their stash area
-      if (!targetSet && c.targetX === null && Math.random() < 0.05) {
-        const range = 6
-        for (let attempt = 0; attempt < 5; attempt++) {
-          const tx = Math.max(0, Math.min(WORLD_SIZE - 1, c.x + Math.floor(Math.random() * (range * 2 + 1)) - range))
-          const ty = Math.max(0, Math.min(WORLD_SIZE - 1, c.y + Math.floor(Math.random() * (range * 2 + 1)) - range))
-          if (tiles[ty]?.[tx] && isTilePassable(tiles[ty][tx])) {
-            changes.state = 'wandering'
-            changes.targetX = tx
-            changes.targetY = ty
-            targetSet = true
-            break
-          }
-        }
-      }
-      break
-
-    case 'Empath': {
-      // Seeks out stressed or sick creatures and moves toward them
-      const stressedPeer = aliveCreatures.find(
-        o => o.id !== c.id && (o.stress > 60 || o.state === 'sick')
-          && Math.abs(o.x - c.x) <= 14 && Math.abs(o.y - c.y) <= 14
-      )
-      if (!targetSet && stressedPeer && Math.random() < 0.07) {
-        changes.state = 'bonding'
-        changes.targetX = stressedPeer.x
-        changes.targetY = stressedPeer.y
-        targetSet = true
-      }
-      break
     }
 
-    case 'Furtive':
-      // Avoids open ground; seeks concealment tiles (bush, tree, cave)
-      if (!targetSet && Math.random() < 0.10) {
-        const hideTile = findNearest(['bush', 'tree', 'shelter', 'cave'], 10)
-        if (hideTile) {
-          changes.state = 'wandering'
-          changes.targetX = hideTile.x
-          changes.targetY = hideTile.y
-          targetSet = true
-        }
+    // ── Acquisitive candidate: pre-emptive resource gathering ────────────
+    if (d.acquisitive > 0.30 && c.hunger > 12) {
+      const foodTile = findNearest(['food_patch', 'bush'], 14)
+      if (foodTile && foodTile.foodAmount > 8) {
+        candidates.push({
+          weight: d.acquisitive * 90 * (c.hunger / 50),
+          apply: () => {
+            changes.state = 'seeking_food'
+            changes.targetX = foodTile.x
+            changes.targetY = foodTile.y
+            targetSet = true
+          },
+        })
       }
-      break
-
-    case 'Territorial':
-      // Claim food or resource tiles; defend with aggression like Aggressive but narrower
-      if (!c.territoryClaim && Math.random() < 0.030) {
-        const here = tiles[c.y]?.[c.x]
-        if (here && (here.type === 'food_patch' || here.type === 'bush'
-            || here.type === 'river' || here.type === 'grass' || here.type === 'barren')) {
-          changes.territoryClaim = { x: c.x, y: c.y }
-        }
-      }
-      // Patrol their claimed tile; chase off non-bonded intruders
-      if (!targetSet && c.territoryClaim && Math.random() < 0.08) {
-        const intruder = aliveCreatures.find(
-          o => o.id !== c.id
-            && Math.abs(o.x - c.territoryClaim!.x) <= 4
-            && Math.abs(o.y - c.territoryClaim!.y) <= 4
-            && !c.bonds.some(b => b.targetId === o.id && b.strength >= 20)
-        )
-        if (intruder) {
-          changes.state = 'fighting'
-          changes.targetX = intruder.x
-          changes.targetY = intruder.y
-          targetSet = true
-        }
-      }
-      // Return to claim zone when drifting away
-      if (!targetSet && c.territoryClaim) {
-        const dx = Math.abs(c.x - c.territoryClaim.x)
-        const dy = Math.abs(c.y - c.territoryClaim.y)
-        if (dx + dy > 6 && Math.random() < 0.06) {
-          changes.state = 'wandering'
-          changes.targetX = c.territoryClaim.x
-          changes.targetY = c.territoryClaim.y
-          targetSet = true
-        }
-      }
-      break
-
-    case 'Social': {
-      // Maximises bonds; actively seeks any creature to be near
-      const anyPeer = aliveCreatures.find(
-        o => o.id !== c.id
-          && Math.abs(o.x - c.x) <= 14 && Math.abs(o.y - c.y) <= 14
-      )
-      if (!targetSet && anyPeer && Math.random() < 0.09) {
-        changes.state = 'bonding'
-        changes.targetX = anyPeer.x
-        changes.targetY = anyPeer.y
-        targetSet = true
-      }
-      break
     }
 
-    case 'Stoic':
-      // Low displacement; steady moderate wander with no panic or rush
-      if (!targetSet && c.targetX === null && Math.random() < 0.05) {
-        const range = 10
-        for (let attempt = 0; attempt < 5; attempt++) {
-          const tx = Math.max(0, Math.min(WORLD_SIZE - 1, c.x + Math.floor(Math.random() * (range * 2 + 1)) - range))
-          const ty = Math.max(0, Math.min(WORLD_SIZE - 1, c.y + Math.floor(Math.random() * (range * 2 + 1)) - range))
-          if (tiles[ty]?.[tx] && isTilePassable(tiles[ty][tx])) {
-            changes.state = 'wandering'
-            changes.targetX = tx
-            changes.targetY = ty
+    // ── Dominance candidate: claim territory or pursue rival ─────────────
+    if (d.dominance > 0.35 && !c.territoryClaim) {
+      const here = tiles[c.y]?.[c.x]
+      if (here && (here.type === 'food_patch' || here.type === 'bush'
+          || here.type === 'river' || here.type === 'grass' || here.type === 'barren')) {
+        candidates.push({
+          weight: d.dominance * 60,
+          apply: () => {
+            changes.territoryClaim = { x: c.x, y: c.y }
             targetSet = true
-            break
-          }
-        }
+          },
+        })
       }
-      break
-
-    case 'Scavenger':
-      // Seeks death sites and food patches regardless of hunger; always foraging
-      if (!targetSet && Math.random() < 0.08) {
-        const deathTile = findNearest(['death_site'], 15)
-        const foodTile  = findNearest(['food_patch', 'bush'], 20)
-        const scavTarget = deathTile || foodTile
-        if (scavTarget) {
-          changes.state = 'wandering'
-          changes.targetX = scavTarget.x
-          changes.targetY = scavTarget.y
-          targetSet = true
-        }
-      }
-      break
-
-    case 'Mimic':
-      // Follows and mirrors strongest-bonded partner
-      if (!targetSet && c.bonds.length > 0 && Math.random() < 0.10) {
-        const partner = aliveCreatures.find(o => o.id === c.bonds[0].targetId && !o.diedOnDay)
-        if (partner && Math.abs(partner.x - c.x) + Math.abs(partner.y - c.y) > 3) {
-          const jitter = 2
-          const tx = Math.max(0, Math.min(WORLD_SIZE - 1,
-            partner.x + Math.floor(Math.random() * (jitter * 2 + 1)) - jitter))
-          const ty = Math.max(0, Math.min(WORLD_SIZE - 1,
-            partner.y + Math.floor(Math.random() * (jitter * 2 + 1)) - jitter))
-          if (tiles[ty]?.[tx] && isTilePassable(tiles[ty][tx])) {
-            changes.state = 'wandering'
-            changes.targetX = tx
-            changes.targetY = ty
+    }
+    if (d.dominance > 0.5) {
+      const rival = aliveCreatures.find(
+        o => o.id !== c.id && o.lineageId !== c.lineageId
+          && o.genome.personality === 'Aggressive'
+          && Math.abs(o.x - c.x) <= 14 && Math.abs(o.y - c.y) <= 14
+      )
+      if (rival) {
+        candidates.push({
+          weight: d.dominance * 80,
+          apply: () => {
+            changes.state = 'fighting'
+            changes.targetX = rival.x
+            changes.targetY = rival.y
             targetSet = true
-          }
-        }
+          },
+        })
       }
-      break
+    }
 
-    case 'Nomadic':
-      // Extreme long-range displacement; resets target often; natural colony spreader
-      if (!targetSet && (c.targetX === null || Math.random() < 0.06)) {
-        const dist = 35 + Math.floor(Math.random() * 40)
-        const angle = Math.random() * Math.PI * 2
-        const tx = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(c.x + Math.cos(angle) * dist)))
-        const ty = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(c.y + Math.sin(angle) * dist)))
-        if (tiles[ty]?.[tx] && isTilePassable(tiles[ty][tx])) {
-          changes.state = 'wandering'
-          changes.targetX = tx
-          changes.targetY = ty
-          targetSet = true
-        }
-      }
-      break
-
-    case 'Vigilant':
-      // Arc patrols; raises alert stress in bonded peers when threat is near
-      if (!targetSet && Math.random() < 0.07) {
-        const angle = Math.random() * Math.PI * 2
-        const dist  = 8 + Math.floor(Math.random() * 12)
-        const tx = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(c.x + Math.cos(angle) * dist)))
-        const ty = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(c.y + Math.sin(angle) * dist)))
-        if (tiles[ty]?.[tx] && isTilePassable(tiles[ty][tx])) {
-          changes.state = 'wandering'
-          changes.targetX = tx
-          changes.targetY = ty
-          targetSet = true
-        }
-      }
-      break
-
-    case 'Symbiotic':
-      // Actively seeks creatures from a different lineage root
-      if (!targetSet && Math.random() < 0.08) {
-        const myRoot = c.lineageId.includes('_') ? c.lineageId.split('_')[0] : c.lineageId
-        const crossPartner = aliveCreatures.find(o =>
-          o.id !== c.id
-          && Math.abs(o.x - c.x) <= 25 && Math.abs(o.y - c.y) <= 25
-          && (o.lineageId.includes('_') ? o.lineageId.split('_')[0] : o.lineageId) !== myRoot
-        )
-        if (crossPartner) {
-          const jitter = 3
-          const tx = Math.max(0, Math.min(WORLD_SIZE - 1,
-            crossPartner.x + Math.floor(Math.random() * (jitter * 2 + 1)) - jitter))
-          const ty = Math.max(0, Math.min(WORLD_SIZE - 1,
-            crossPartner.y + Math.floor(Math.random() * (jitter * 2 + 1)) - jitter))
+    // ── Vigilance candidate: short-radius watch-walk ─────────────────────
+    if (d.vigilance > 0.40) {
+      candidates.push({
+        weight: d.vigilance * 55,
+        apply: () => {
+          const dist = 6 + Math.floor(d.vigilance * 8)
+          const angle = Math.random() * Math.PI * 2
+          const tx = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(c.x + Math.cos(angle) * dist)))
+          const ty = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(c.y + Math.sin(angle) * dist)))
           if (tiles[ty]?.[tx] && isTilePassable(tiles[ty][tx])) {
             changes.state = 'wandering'
             changes.targetX = tx
             changes.targetY = ty
             targetSet = true
           }
+        },
+      })
+    }
+
+    // Pick one candidate by weighted random. Candidates are NOT mutually
+    // exclusive in concept, but a single tick selects one action — this is
+    // the moment the creature commits to a behavior.
+    if (candidates.length > 0) {
+      const totalWeight = candidates.reduce((s, k) => s + k.weight, 0)
+      // Only roll the selector with a probability scaled by total drive press;
+      // a creature whose drives are all near baseline shouldn't constantly
+      // be picking up new actions.
+      const actChance = Math.min(0.5, totalWeight / 600)
+      if (Math.random() < actChance) {
+        let r = Math.random() * totalWeight
+        for (const cand of candidates) {
+          r -= cand.weight
+          if (r <= 0) { cand.apply(); break }
         }
       }
-      break
+    }
   }
+
+  // ── Fracture flee response — emerges from individual perception ──
+  // After a colony fracture is chronicled, every creature carries a brief
+  // `fractureFleeUntil` window. Whether they actually disperse depends on
+  // their own drives and what they perceive: high-vigilance/high-reclusion/
+  // low-dominance creatures who see a rival lineage nearby choose a flee
+  // target away from the rival's centroid. High-dominance creatures stay.
+  // Fracture flee response — read directly from the chronicle, no engine stamp.
+  // The creature considers fleeing when (a) a recent fracture event exists in
+  // the colony's chronicle within ~3 days, AND (b) they personally perceive a
+  // rival-lineage creature nearby, AND (c) their drives tip toward flight.
+  if (!targetSet && recentFractureDay !== undefined && currentDay !== undefined
+      && (currentDay - recentFractureDay) <= 3) {
+    const d = c.drives
+    const fleeProp = d ? (d.vigilance * 0.4 + d.reclusion * 0.5 - d.dominance * 0.5 + 0.2) : 0.3
+    if (fleeProp > 0.25 && Math.random() < fleeProp * 0.10) {
+      const rivals = aliveCreatures.filter(o =>
+        o.id !== c.id && o.lineageId !== c.lineageId
+        && Math.abs(o.x - c.x) <= 16 && Math.abs(o.y - c.y) <= 16
+      )
+      if (rivals.length > 0) {
+        const rcx = rivals.reduce((s, r) => s + r.x, 0) / rivals.length
+        const rcy = rivals.reduce((s, r) => s + r.y, 0) / rivals.length
+        const dx = Math.sign(c.x - rcx) || (Math.random() < 0.5 ? -1 : 1)
+        const dy = Math.sign(c.y - rcy) || (Math.random() < 0.5 ? -1 : 1)
+        const dist = 20 + Math.floor((d?.mobility ?? 0.4) * 30)
+        changes.state = 'migrating'
+        changes.targetX = Math.max(2, Math.min(WORLD_SIZE - 3, c.x + dx * dist))
+        changes.targetY = Math.max(2, Math.min(WORLD_SIZE - 3, c.y + dy * dist))
+        targetSet = true
+      }
+    }
+  }
+
+  // (Vestigial legacy switch deleted — drive selector above is sole behavior
+  // arbiter for personality-mediated wandering, dispersal, territory claim,
+  // and bonding pursuit.)
 
   // ── 5.4. Harvesting & construction; Territorial/Aggressive creatures build fences ──
   // Only triggers when needs are satisfied — building is an expression of security,
@@ -1729,16 +1588,20 @@ export function resolveFight(
   const attackerLoserMult = ridgeArmored(attacker) ? RIDGE_ARMOR_DAMAGE_MULT : 1.0
   const defenderLoserMult = ridgeArmored(defender) ? RIDGE_ARMOR_DAMAGE_MULT : 1.0
 
+  // lastAttackerId on the loser records who hit them — used downstream when
+  // they die in combat to attribute the kill for fear-marking witnesses.
   return {
     attackerWon,
     attacker: attackerWon
       ? { ...attacker, killCount: attacker.killCount + 1,
           health: Math.max(0, attacker.health - winnerDamage) }
       : { ...attacker, health: Math.max(0, attacker.health - Math.round(loserDamage * attackerLoserMult)),
-          stress: Math.min(100, attacker.stress + 20) },
+          stress: Math.min(100, attacker.stress + 20),
+          lastAttackerId: defender.id },
     defender: attackerWon
       ? { ...defender, health: Math.max(0, defender.health - Math.round(loserDamage * defenderLoserMult)),
-          stress: Math.min(100, defender.stress + 20) }
+          stress: Math.min(100, defender.stress + 20),
+          lastAttackerId: attacker.id }
       : { ...defender, killCount: defender.killCount + 1,
           health: Math.max(0, defender.health - winnerDamage) },
   }

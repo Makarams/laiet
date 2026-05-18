@@ -10,78 +10,128 @@ const fadeUp = keyframes`from{opacity:0;transform:translateY(10px);}to{opacity:1
 const Screen = styled.div`
   height:100vh; height:100dvh;
   display:flex; flex-direction:column; align-items:center; justify-content:center;
-  background:${THEME.bg}; font-family:${THEME.font}; color:${THEME.textPrimary};
+  background:
+    radial-gradient(900px 600px at 50% 30%, ${THEME.amberDim} 0%, transparent 60%),
+    ${THEME.bg};
+  font-family:${THEME.font};
+  color:${THEME.textPrimary};
   padding:1.25rem; box-sizing:border-box; width:100%; overflow:hidden;
   @media(max-height:640px){justify-content:flex-start;padding-top:1rem;overflow-y:auto;}
 `
 const Cabinet = styled.div`
-  width:min(560px,100%); display:flex; flex-direction:column;
-  animation:${fadeUp} 0.35s ease-out both;
+  width:min(580px,100%); display:flex; flex-direction:column;
+  animation:${fadeUp} 0.4s ${THEME.motion.easeOut} both;
 `
 const Header = styled.div`
-  display:flex; flex-direction:column; align-items:center; gap:4px; margin-bottom:14px;
+  display:flex; flex-direction:column; align-items:center;
+  gap:${THEME.space.xs}px;
+  margin-bottom:${THEME.space.lg}px;
 `
 const Logo = styled.div`
-  font-size:clamp(14px,3.5vw,20px); font-weight:700; color:${THEME.textPrimary}; letter-spacing:0.08em;
+  font-size:clamp(16px, 3.5vw, ${THEME.type.xxl}px);
+  font-weight:700; color:${THEME.textPrimary};
+  letter-spacing:0.10em;
+  text-shadow: 0 0 18px ${THEME.amberGlow};
 `
 const LogoAccent = styled.span`color:${THEME.amber};`
 const Eyebrow = styled.div`
-  font-size:9px; font-weight:700; text-transform:uppercase;
-  letter-spacing:0.28em; color:${THEME.textTertiary};
+  font-size:${THEME.type.xs}px; font-weight:700;
+  text-transform:uppercase; letter-spacing:0.32em;
+  color:${THEME.textTertiary};
 `
 const Prose = styled.div`
-  font-size:12px; color:${THEME.textSecondary}; text-align:center;
-  line-height:1.7; font-style:italic; padding:11px 0 14px;
-  border-top:1px solid ${THEME.border}; border-bottom:1px solid ${THEME.border}; margin-bottom:14px;
+  font-size:${THEME.type.md}px;
+  color:${THEME.textSecondary};
+  text-align:center; line-height:1.8;
+  font-style:italic;
+  padding:${THEME.space.lg}px 0;
+  border-top:1px solid ${THEME.border};
+  border-bottom:1px solid ${THEME.border};
+  margin-bottom:${THEME.space.lg}px;
 `
 const Form = styled.div`
-  background:#242424; border:2px solid ${THEME.border}; border-radius:8px; overflow:hidden;
+  background:${THEME.panelGradient};
+  border:1px solid ${THEME.borderMid};
+  border-radius:${THEME.radius.lg}px;
+  overflow:hidden;
+  box-shadow:${THEME.shadow.panel};
 `
 const Grid = styled.div`display:grid; grid-template-columns:1fr 1fr; gap:0;`
 const Cell = styled.div<{ $pos:'tl'|'tr'|'bl'|'br' }>`
-  padding:13px 15px 15px;
-  display:flex; flex-direction:column; gap:8px;
+  padding:${THEME.space.lg}px ${THEME.space.xl}px;
+  display:flex; flex-direction:column; gap:${THEME.space.md}px;
   border-right:${p => (p.$pos==='tl'||p.$pos==='bl') ? `1px solid ${THEME.border}` : 'none'};
   border-bottom:${p => (p.$pos==='tl'||p.$pos==='tr') ? `1px solid ${THEME.border}` : 'none'};
 `
-const CellTop = styled.div`display:flex; align-items:center; gap:7px;`
+const CellTop = styled.div`display:flex; align-items:center; gap:${THEME.space.sm}px;`
 const TypeBadge = styled.span<{ $color: string }>`
-  font-size:9px; font-weight:700; padding:2px 7px; border-radius:3px; letter-spacing:0.1em;
-  text-transform:uppercase; background:${p => p.$color}15; border:1px solid ${p => p.$color}30;
+  font-size:${THEME.type.xs}px; font-weight:700;
+  padding:2px 8px; border-radius:${THEME.radius.xs}px;
+  letter-spacing:0.12em; text-transform:uppercase;
+  background:${p => p.$color}1c;
+  border:1px solid ${p => p.$color}55;
   color:${p => p.$color};
+  box-shadow:0 0 8px ${p => p.$color}33;
 `
-const CellId = styled.span`font-size:10px;font-weight:600;color:${THEME.textTertiary};`
+const CellId = styled.span`
+  font-size:${THEME.type.sm}px; font-weight:600;
+  color:${THEME.textTertiary};
+`
 const RequiredDot = styled.span`
-  width:5px;height:5px;border-radius:50%;background:${THEME.amber};margin-left:auto;
+  width:6px;height:6px;border-radius:50%;
+  background:${THEME.amber};
+  box-shadow:0 0 6px ${THEME.amberGlow};
+  margin-left:auto;
 `
-const FieldRow = styled.div`display:flex;flex-direction:column;gap:3px;`
+const FieldRow = styled.div`display:flex;flex-direction:column;gap:${THEME.space.xs}px;`
 const FieldLabel = styled.label`
-  font-size:9px; font-weight:700; text-transform:uppercase;
-  letter-spacing:0.2em; color:${THEME.textTertiary};
+  font-size:${THEME.type.xs}px; font-weight:700;
+  text-transform:uppercase; letter-spacing:0.22em;
+  color:${THEME.textTertiary};
 `
 const Input = styled.input`
-  background:${THEME.bgDeep}; border:2px solid ${THEME.border};
-  border-radius:4px; color:${THEME.textPrimary};
-  font-family:${THEME.font}; font-size:12px; font-weight:500;
-  padding:6px 9px; outline:none; width:100%; box-sizing:border-box;
-  transition:border-color 0.12s;
-  &:focus { border-color:${THEME.amber}; }
+  background:${THEME.bgDeep};
+  border:1px solid ${THEME.border};
+  border-radius:${THEME.radius.xs}px;
+  color:${THEME.textPrimary};
+  font-family:${THEME.font};
+  font-size:${THEME.type.md}px; font-weight:500;
+  padding:${THEME.space.sm}px ${THEME.space.md}px;
+  outline:none; width:100%; box-sizing:border-box;
+  transition: border-color ${THEME.motion.fast} ${THEME.motion.easeOut},
+              box-shadow ${THEME.motion.fast} ${THEME.motion.easeOut};
+  &:focus {
+    border-color:${THEME.amber};
+    box-shadow: 0 0 0 3px ${THEME.amberDim};
+  }
   &::placeholder { color:${THEME.textTertiary}; }
 `
 const Footer = styled.div`
-  padding:11px 16px; border-top:1px solid ${THEME.border};
-  display:flex; align-items:center; gap:14px;
+  padding:${THEME.space.lg}px ${THEME.space.xl}px;
+  border-top:1px solid ${THEME.border};
+  display:flex; align-items:center; gap:${THEME.space.lg}px;
 `
 const FooterNote = styled.div`
-  font-size:10px; font-weight:500; color:${THEME.textTertiary}; line-height:1.7; flex:1;
+  font-size:${THEME.type.sm}px; font-weight:500;
+  color:${THEME.textTertiary};
+  line-height:1.7; flex:1;
 `
 const BeginBtn = styled.button`
-  background:${THEME.amber}; border:none; border-radius:5px;
-  color:#1c1c1c; font-family:${THEME.font}; font-size:12px; font-weight:700;
-  padding:10px 20px; cursor:pointer; letter-spacing:0.06em; white-space:nowrap;
-  flex-shrink:0; transition:opacity 0.12s;
-  &:hover:not(:disabled) { opacity:0.88; }
-  &:disabled { opacity:0.3; cursor:not-allowed; }
+  background:${THEME.amber};
+  border:none; border-radius:${THEME.radius.sm}px;
+  color:${THEME.textInverse};
+  font-family:${THEME.font};
+  font-size:${THEME.type.md}px; font-weight:700;
+  padding:${THEME.space.md}px ${THEME.space.xxl}px;
+  cursor:pointer;
+  letter-spacing:0.08em; text-transform:uppercase;
+  white-space:nowrap; flex-shrink:0;
+  transition: opacity ${THEME.motion.fast} ${THEME.motion.easeOut},
+              transform ${THEME.motion.fast} ${THEME.motion.easeOut},
+              box-shadow ${THEME.motion.fast} ${THEME.motion.easeOut};
+  box-shadow: 0 0 18px ${THEME.amberGlow};
+  &:hover:not(:disabled) { opacity:0.92; transform: translateY(-1px); box-shadow: 0 0 26px ${THEME.amberGlow}; }
+  &:disabled { opacity:0.3; cursor:not-allowed; transform: none; box-shadow: none; }
 `
 
 const BODY_LABELS   = ['Spore','Shell','Spike','Wisp'] as const

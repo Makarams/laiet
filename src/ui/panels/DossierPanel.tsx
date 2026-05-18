@@ -17,111 +17,216 @@ const STATE_LABELS: Record<CreatureState, string> = {
 }
 
 const Panel = styled.div`
-  background: ${THEME.bgPanel}; border: 2px solid ${THEME.border}; border-radius: 6px;
-  padding: 14px 16px; font-family: ${THEME.font}; font-size: 13px; color: ${THEME.textPrimary};
-  flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column;
+  background: ${THEME.panelGradient};
+  border: 1px solid ${THEME.borderMid};
+  border-radius: ${THEME.radius.lg}px;
+  padding: ${THEME.space.lg}px ${THEME.space.xl}px;
+  font-family: ${THEME.font};
+  font-size: ${THEME.type.lg}px;
+  color: ${THEME.textPrimary};
+  flex:1; min-height:0; overflow-y:auto;
+  display:flex; flex-direction:column;
   box-sizing:border-box;
-  &::-webkit-scrollbar { width:4px; }
-  &::-webkit-scrollbar-thumb { background:${THEME.borderMid}; border-radius:2px; }
+  box-shadow: ${THEME.shadow.panel};
+  &::-webkit-scrollbar { width:5px; }
+  &::-webkit-scrollbar-thumb { background:${THEME.borderMid}; border-radius:999px; }
 `
 const PanelHeader = styled.div`
   display:flex; justify-content:space-between; align-items:baseline;
-  padding-bottom:8px; margin-bottom:12px; border-bottom:2px solid ${THEME.border};
+  padding-bottom:${THEME.space.md}px;
+  margin-bottom:${THEME.space.lg}px;
+  border-bottom:1px solid ${THEME.border};
 `
 const PanelTitle = styled.div`
-  font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.2em;
-  color:${THEME.textSecondary}; display:flex; align-items:center; gap:6px;
+  font-size:${THEME.type.base}px; font-weight:700;
+  text-transform:uppercase; letter-spacing:0.22em;
+  color:${THEME.textSecondary};
+  display:flex; align-items:center; gap:${THEME.space.sm}px;
 `
-const ActiveDot = styled.span`width:6px;height:6px;border-radius:50%;background:${THEME.amber};display:inline-block;`
-const PanelTag = styled.div`font-size:10px;font-weight:600;color:${THEME.textTertiary};letter-spacing:0.1em;`
-const Section = styled.div`margin-top:14px;`
+const ActiveDot = styled.span`
+  width:7px; height:7px; border-radius:50%;
+  background:${THEME.amber};
+  box-shadow:0 0 8px ${THEME.amberGlow};
+  display:inline-block;
+`
+const PanelTag = styled.div`
+  font-size:${THEME.type.sm}px; font-weight:600;
+  color:${THEME.textTertiary}; letter-spacing:0.12em;
+`
+const Section = styled.div`margin-top:${THEME.space.lg}px;`
 const SectionTitle = styled.div`
-  font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:0.22em;
-  color:${THEME.textTertiary}; margin-bottom:8px; display:flex; align-items:center; gap:6px;
+  font-size:${THEME.type.xs}px; font-weight:700;
+  text-transform:uppercase; letter-spacing:0.24em;
+  color:${THEME.textTertiary};
+  margin-bottom:${THEME.space.md}px;
+  display:flex; align-items:center; gap:${THEME.space.sm}px;
   &::after { content:''; flex:1; height:1px; background:${THEME.border}; }
 `
 const Row = styled.div`
-  display:flex; justify-content:space-between; align-items:center; padding:3px 0; line-height:1.5;
+  display:flex; justify-content:space-between; align-items:center;
+  padding:3px 0; line-height:1.55;
 `
-const Label = styled.span`font-size:12px;font-weight:500;color:${THEME.textSecondary};`
+const Label = styled.span`font-size:${THEME.type.md}px;font-weight:500;color:${THEME.textSecondary};`
 const Value = styled.span<{ $color?: string }>`
-  font-size:13px; font-weight:700; color:${p => p.$color ?? THEME.textPrimary};
+  font-size:${THEME.type.lg}px; font-weight:700;
+  color:${p => p.$color ?? THEME.textPrimary};
 `
 
 // ─── Creature name & identity ─────────────────────────────────────────────────
 
 const CreatureName = styled.div<{ $color: string }>`
-  font-size:22px; font-weight:700; color:${p => p.$color};
-  margin-bottom:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  font-size:${THEME.type.title}px; font-weight:700;
+  color:${p => p.$color};
+  margin-bottom:${THEME.space.md}px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  text-shadow: 0 0 18px ${p => p.$color}55;
+  letter-spacing: 0.01em;
 `
 const IdLine = styled.div`
-  font-size:11px; font-weight:500; color:${THEME.textTertiary}; letter-spacing:0.05em;
+  font-size:${THEME.type.base}px; font-weight:500;
+  color:${THEME.textTertiary}; letter-spacing:0.05em;
 `
 const StateLine = styled.div`
   display:flex; align-items:center; justify-content:space-between;
-  margin-top:6px; margin-bottom:4px;
+  margin-top:${THEME.space.sm}px; margin-bottom:${THEME.space.xs}px;
+  padding:${THEME.space.sm}px ${THEME.space.md}px;
+  background:${THEME.bgChip};
+  border-radius:${THEME.radius.sm}px;
 `
-const StateLabel = styled.span`font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.2em;color:${THEME.textTertiary};`
-const StateValue = styled.span`font-size:11px;font-weight:600;color:${THEME.alive};`
+const StateLabel = styled.span`
+  font-size:${THEME.type.xs}px;font-weight:700;
+  text-transform:uppercase;letter-spacing:0.2em;
+  color:${THEME.textTertiary};
+`
+const StateValue = styled.span`
+  font-size:${THEME.type.base}px;font-weight:700;
+  color:${THEME.alive};
+  letter-spacing: 0.04em;
+`
 
 // ─── Trait badges ─────────────────────────────────────────────────────────────
 
-const TraitRow = styled.div`display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px;`
+const TraitRow = styled.div`
+  display:flex;gap:${THEME.space.sm}px;
+  flex-wrap:wrap;margin-bottom:${THEME.space.sm}px;
+`
 const TraitBadge = styled.span<{ $color: string }>`
-  font-size:10px; font-weight:700; padding:3px 9px; border-radius:4px;
-  background:${p => p.$color}18; border:1px solid ${p => p.$color}44; color:${p => p.$color};
+  font-size:${THEME.type.sm}px; font-weight:700;
+  padding:${THEME.space.xs}px ${THEME.space.md}px;
+  border-radius:${THEME.radius.xs}px;
+  background:${p => p.$color}1a;
+  border:1px solid ${p => p.$color}55;
+  color:${p => p.$color};
   text-transform:uppercase; letter-spacing:0.06em;
+  box-shadow:0 0 10px ${p => p.$color}22;
 `
 const RoleBadge = styled.span`
-  font-size:10px; font-weight:700; padding:3px 9px; border-radius:4px;
-  background:${THEME.amber}15; border:1px solid ${THEME.amber}55; color:${THEME.amber};
+  font-size:${THEME.type.sm}px; font-weight:700;
+  padding:${THEME.space.xs}px ${THEME.space.md}px;
+  border-radius:${THEME.radius.xs}px;
+  background:${THEME.amberDim};
+  border:1px solid ${THEME.amber}66;
+  color:${THEME.amber};
   letter-spacing:0.04em;
+  box-shadow:0 0 10px ${THEME.amberGlow};
 `
 
 // ─── Stat bars ────────────────────────────────────────────────────────────────
 
-const StatRow = styled.div`display:flex;align-items:center;gap:7px;margin-bottom:5px;`
-const StatLabel = styled.span`
-  font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;
-  color:${THEME.textTertiary};width:66px;flex-shrink:0;
+const StatRow = styled.div`
+  display:flex;align-items:center;
+  gap:${THEME.space.md}px;
+  margin-bottom:${THEME.space.sm}px;
 `
-const BarTrack = styled.div`flex:1;height:4px;background:${THEME.bgDeep};border-radius:2px;overflow:hidden;`
+const StatLabel = styled.span`
+  font-size:${THEME.type.sm}px;font-weight:700;
+  text-transform:uppercase;letter-spacing:0.12em;
+  color:${THEME.textTertiary};
+  width:70px;flex-shrink:0;
+`
+const BarTrack = styled.div`
+  flex:1; height:5px;
+  background:${THEME.bgDeep};
+  border-radius:${THEME.radius.pill}px;
+  overflow:hidden;
+  box-shadow: inset 0 1px 1px rgba(0,0,0,0.4);
+`
 const BarFill = styled.div<{ $w: number; $color: string }>`
-  width:${p => Math.min(100,Math.max(0,p.$w))}%;height:100%;background:${p => p.$color};border-radius:2px;
+  width:${p => Math.min(100,Math.max(0,p.$w))}%; height:100%;
+  background: linear-gradient(90deg, ${p => p.$color}cc, ${p => p.$color});
+  border-radius:${THEME.radius.pill}px;
+  box-shadow: 0 0 6px ${p => p.$color}66;
+  transition: width 0.4s ${THEME.motion.easeOut};
 `
 const StatValue = styled.span<{ $accent?: string }>`
-  font-size:11px;font-weight:700;color:${p => p.$accent ?? THEME.textSecondary};width:32px;text-align:right;
+  font-size:${THEME.type.base}px;font-weight:700;
+  color:${p => p.$accent ?? THEME.textSecondary};
+  width:34px;text-align:right;
 `
 
 // ─── Bonds ────────────────────────────────────────────────────────────────────
 
-const BondList = styled.div`display:flex;flex-direction:column;gap:4px;`
-const BondRow = styled.div`display:flex;align-items:center;gap:7px;`
-const BondName = styled.span`font-size:12px;font-weight:600;color:${THEME.textPrimary};width:70px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;`
-const BondBar = styled.div`flex:1;height:4px;background:${THEME.bgDeep};border-radius:2px;overflow:hidden;`
+const BondList = styled.div`display:flex;flex-direction:column;gap:${THEME.space.sm}px;`
+const BondRow = styled.div`display:flex;align-items:center;gap:${THEME.space.md}px;`
+const BondName = styled.span`
+  font-size:${THEME.type.md}px;font-weight:600;
+  color:${THEME.textPrimary};
+  width:74px;flex-shrink:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+`
+const BondBar = styled.div`
+  flex:1;height:5px;
+  background:${THEME.bgDeep};
+  border-radius:${THEME.radius.pill}px;
+  overflow:hidden;
+  box-shadow: inset 0 1px 1px rgba(0,0,0,0.4);
+`
 const BondFill = styled.div<{ $pct: number; $strength: number }>`
-  width:${p => Math.min(100,p.$pct)}%;height:100%;
-  background:${p => p.$strength > 70 ? THEME.water : p.$strength > 40 ? '#a870c0' : THEME.borderMid};
+  width:${p => Math.min(100,p.$pct)}%; height:100%;
+  background: ${p => p.$strength > 70
+    ? `linear-gradient(90deg, ${THEME.water}cc, ${THEME.water})`
+    : p.$strength > 40
+      ? `linear-gradient(90deg, ${THEME.stage3}cc, ${THEME.stage3})`
+      : THEME.borderMid};
+  border-radius:${THEME.radius.pill}px;
+  box-shadow: ${p => p.$strength > 40 ? `0 0 6px ${p.$strength > 70 ? THEME.waterGlow : 'rgba(206,134,245,0.30)'}` : 'none'};
+  transition: width 0.4s ${THEME.motion.easeOut};
 `
 const BondStrength = styled.span<{ $strength: number }>`
-  font-size:10px;font-weight:700;
-  color:${p => p.$strength > 70 ? THEME.water : p.$strength > 40 ? '#a870c0' : THEME.textTertiary};
-  width:24px;text-align:right;
+  font-size:${THEME.type.sm}px;font-weight:700;
+  color:${p => p.$strength > 70 ? THEME.water : p.$strength > 40 ? THEME.stage3 : THEME.textTertiary};
+  width:26px;text-align:right;
 `
 
 // ─── Heal button ──────────────────────────────────────────────────────────────
 
 const HealBtn = styled.button`
-  background:rgba(120,200,120,0.10); border:1px solid #3a6a3a; color:${THEME.alive};
-  font-family:${THEME.font}; font-size:11px; font-weight:700;
-  padding:7px 12px; cursor:pointer; border-radius:4px; margin-bottom:6px; width:100%;
-  letter-spacing:0.06em; transition:all 0.12s;
-  &:hover { background:rgba(120,200,120,0.18); border-color:${THEME.alive}; }
+  background: ${THEME.aliveDim};
+  border: 1px solid ${THEME.alive}55;
+  color: ${THEME.alive};
+  font-family: ${THEME.font};
+  font-size: ${THEME.type.base}px; font-weight: 700;
+  padding: ${THEME.space.md}px ${THEME.space.lg}px;
+  cursor: pointer;
+  border-radius: ${THEME.radius.sm}px;
+  margin-bottom: ${THEME.space.sm}px;
+  width: 100%;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  transition: all ${THEME.motion.fast} ${THEME.motion.easeOut};
+  box-shadow: 0 0 12px ${THEME.aliveGlow};
+  &:hover {
+    background: ${THEME.alive}22;
+    border-color: ${THEME.alive};
+    transform: translateY(-1px);
+  }
 `
 
 const Empty = styled.div`
-  color:${THEME.textTertiary}; font-size:12px; text-align:center;
-  margin-top:1.5rem; line-height:2; font-style:italic;
+  color:${THEME.textTertiary}; font-size:${THEME.type.md}px;
+  text-align:center;
+  margin-top:${THEME.space.xxl}px;
+  line-height:2; font-style:italic;
+  letter-spacing: 0.04em;
 `
 
 // ─── Stat bar helper ──────────────────────────────────────────────────────────

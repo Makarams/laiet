@@ -134,13 +134,15 @@ export function inheritAdaptations(
   parentB: Genome | null,
   newAdaptation: AdaptationTrait | null,
   rng: () => number,
+  inheritMult = 1.0,  // SimModifiers.adaptationInheritMult; default 1
 ): AdaptationTrait[] {
+  const p = Math.min(0.99, ADAPTATION_INHERIT_CHANCE * inheritMult)
   const pool = new Set<AdaptationTrait>()
   for (const a of (parentA.adaptations ?? []))
-    if (rng() < ADAPTATION_INHERIT_CHANCE) pool.add(a)
+    if (rng() < p) pool.add(a)
   if (parentB) {
     for (const a of (parentB.adaptations ?? []))
-      if (rng() < ADAPTATION_INHERIT_CHANCE) pool.add(a)
+      if (rng() < p) pool.add(a)
   }
   if (newAdaptation) pool.add(newAdaptation)
   return [...pool].slice(0, ADAPTATION_MAX)

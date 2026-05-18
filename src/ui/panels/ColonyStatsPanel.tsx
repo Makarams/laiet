@@ -2,132 +2,222 @@ import styled from 'styled-components'
 import { useLaietStore } from '@/store/gameStore'
 import { ColonyStage, WeatherState } from '@/types'
 import { HEAL_CHARGES_PER_DAY } from '@/engine/constants'
-import { THEME, stageColor } from '@/ui/theme'
+import { THEME, stageColor, weatherColor } from '@/ui/theme'
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
 const Panel = styled.div`
-  background: ${THEME.bgPanel};
-  border: 2px solid ${THEME.border};
-  border-radius: 6px;
-  padding: 12px 14px;
+  background: ${THEME.panelGradient};
+  border: 1px solid ${THEME.borderMid};
+  border-radius: ${THEME.radius.lg}px;
+  padding: ${THEME.space.lg}px ${THEME.space.xl}px;
   font-family: ${THEME.font};
-  font-size: 13px;
+  font-size: ${THEME.type.lg}px;
   color: ${THEME.textPrimary};
   flex: 1; min-height: 0; overflow-y: auto; box-sizing: border-box;
-  &::-webkit-scrollbar { width: 4px; }
-  &::-webkit-scrollbar-thumb { background: ${THEME.borderMid}; border-radius: 2px; }
+  box-shadow: ${THEME.shadow.panel};
+  &::-webkit-scrollbar { width: 5px; }
+  &::-webkit-scrollbar-thumb { background: ${THEME.borderMid}; border-radius: 999px; }
 `
 const PanelHeader = styled.div`
   display: flex; justify-content: space-between; align-items: baseline;
-  padding-bottom: 8px; margin-bottom: 10px; border-bottom: 2px solid ${THEME.border};
+  padding-bottom: ${THEME.space.md}px;
+  margin-bottom: ${THEME.space.lg}px;
+  border-bottom: 1px solid ${THEME.border};
 `
 const PanelTitle = styled.div`
-  font-size: 11px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.2em; color: ${THEME.textSecondary};
-  display: flex; align-items: center; gap: 6px;
+  font-size: ${THEME.type.base}px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.22em;
+  color: ${THEME.textSecondary};
+  display: flex; align-items: center; gap: ${THEME.space.sm}px;
 `
 const ActiveDot = styled.span`
-  width: 6px; height: 6px; border-radius: 50%; background: ${THEME.amber};
+  width: 7px; height: 7px; border-radius: 50%;
+  background: ${THEME.amber};
+  box-shadow: 0 0 8px ${THEME.amberGlow};
   display: inline-block;
 `
-const PanelTag = styled.div`font-size: 10px; font-weight: 600; color: ${THEME.textTertiary}; letter-spacing: 0.1em;`
-const Section = styled.div`margin-bottom: 12px;`
+const PanelTag = styled.div`
+  font-size: ${THEME.type.sm}px; font-weight: 600;
+  color: ${THEME.textTertiary}; letter-spacing: 0.12em;
+`
+const Section = styled.div`margin-bottom: ${THEME.space.lg}px;`
 const SectionTitle = styled.div`
-  font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.22em;
-  color: ${THEME.textTertiary}; margin-bottom: 7px; display: flex; align-items: center; gap: 6px;
+  font-size: ${THEME.type.xs}px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.24em;
+  color: ${THEME.textTertiary};
+  margin-bottom: ${THEME.space.md}px;
+  display: flex; align-items: center; gap: ${THEME.space.sm}px;
   &::after { content: ''; flex: 1; height: 1px; background: ${THEME.border}; }
 `
 const Row = styled.div`
   display: flex; justify-content: space-between; align-items: center;
-  padding: 3px 0; line-height: 1.5;
+  padding: 3px 0; line-height: 1.55;
 `
-const Label = styled.span`font-size: 12px; font-weight: 500; color: ${THEME.textSecondary};`
+const Label = styled.span`
+  font-size: ${THEME.type.md}px; font-weight: 500;
+  color: ${THEME.textSecondary};
+`
 const Value = styled.span<{ $color?: string }>`
-  font-size: 13px; font-weight: 700;
+  font-size: ${THEME.type.lg}px; font-weight: 700;
   color: ${p => p.$color ?? THEME.textPrimary};
 `
 
 // ─── Stat bar ─────────────────────────────────────────────────────────────────
 
-const BarRow = styled.div`display: flex; align-items: center; gap: 7px; margin-bottom: 5px;`
-const BarLabel = styled.span`font-size: 11px; font-weight: 600; color: ${THEME.textTertiary}; width: 44px; flex-shrink: 0;`
-const BarTrack = styled.div`flex: 1; height: 4px; background: ${THEME.bgDeep}; border-radius: 2px; overflow: hidden;`
+const BarRow = styled.div`display: flex; align-items: center; gap: ${THEME.space.md}px; margin-bottom: ${THEME.space.sm}px;`
+const BarLabel = styled.span`
+  font-size: ${THEME.type.base}px; font-weight: 600;
+  color: ${THEME.textTertiary}; width: 48px; flex-shrink: 0;
+  letter-spacing: 0.04em;
+`
+const BarTrack = styled.div`
+  flex: 1; height: 5px;
+  background: ${THEME.bgDeep};
+  border-radius: ${THEME.radius.pill}px;
+  overflow: hidden;
+  box-shadow: inset 0 1px 1px rgba(0,0,0,0.4);
+`
 const BarFill = styled.div<{ $w: number; $color: string }>`
   width: ${p => Math.min(100, Math.max(0, p.$w))}%; height: 100%;
-  background: ${p => p.$color}; border-radius: 2px;
+  background: linear-gradient(90deg, ${p => p.$color}cc, ${p => p.$color});
+  border-radius: ${THEME.radius.pill}px;
+  box-shadow: 0 0 6px ${p => p.$color}66;
+  transition: width 0.4s ${THEME.motion.easeOut};
 `
-const BarNum = styled.span`font-size: 10px; font-weight: 600; color: ${THEME.textSecondary}; width: 30px; text-align: right;`
+const BarNum = styled.span`
+  font-size: ${THEME.type.sm}px; font-weight: 700;
+  color: ${THEME.textSecondary}; width: 32px; text-align: right;
+`
 
 // ─── Body type grid ───────────────────────────────────────────────────────────
 
-const BodyGrid = styled.div`display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; margin-top: 2px;`
-const BodyCell = styled.div`display: flex; align-items: center; gap: 6px;`
-const BodyDot = styled.span<{ $color: string }>`
-  width: 8px; height: 8px; border-radius: 50%; background: ${p => p.$color}; flex-shrink: 0;
+const BodyGrid = styled.div`
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: ${THEME.space.sm}px ${THEME.space.lg}px;
+  margin-top: ${THEME.space.xs}px;
 `
-const BodyCount = styled.span`font-size: 12px; font-weight: 700; color: ${THEME.textPrimary}; width: 22px;`
-const BodyLabel = styled.span`font-size: 11px; font-weight: 500; color: ${THEME.textSecondary};`
+const BodyCell = styled.div`
+  display: flex; align-items: center; gap: ${THEME.space.sm}px;
+  padding: ${THEME.space.xs}px ${THEME.space.sm}px;
+  background: ${THEME.bgChip};
+  border-radius: ${THEME.radius.sm}px;
+`
+const BodyDot = styled.span<{ $color: string }>`
+  width: 9px; height: 9px; border-radius: 50%;
+  background: ${p => p.$color};
+  box-shadow: 0 0 6px ${p => p.$color}88;
+  flex-shrink: 0;
+`
+const BodyCount = styled.span`
+  font-size: ${THEME.type.md}px; font-weight: 700;
+  color: ${THEME.textPrimary}; width: 22px;
+`
+const BodyLabel = styled.span`
+  font-size: ${THEME.type.base}px; font-weight: 500;
+  color: ${THEME.textSecondary};
+`
 
 // ─── Stage bar ────────────────────────────────────────────────────────────────
 
 const StageBar = styled.div<{ $stage: ColonyStage }>`
-  margin-top: 4px; font-size: 10px; font-weight: 700; padding: 6px 10px;
-  border-radius: 4px;
-  background: ${p => stageColor(p.$stage)}18;
-  border: 1px solid ${p => stageColor(p.$stage)}44;
+  margin-top: ${THEME.space.xs}px;
+  font-size: ${THEME.type.sm}px; font-weight: 700;
+  padding: ${THEME.space.md}px ${THEME.space.lg}px;
+  border-radius: ${THEME.radius.md}px;
+  background: linear-gradient(180deg, ${p => stageColor(p.$stage)}1c, ${p => stageColor(p.$stage)}10);
+  border: 1px solid ${p => stageColor(p.$stage)}55;
   color: ${p => stageColor(p.$stage)};
-  text-align: center; letter-spacing: 0.2em; text-transform: uppercase;
+  text-align: center; letter-spacing: 0.22em; text-transform: uppercase;
+  box-shadow: 0 0 14px ${p => stageColor(p.$stage)}22;
 `
 const StageProgress = styled.div<{ $pct: number; $stage: ColonyStage }>`
-  margin-top: 5px; height: 3px; background: ${THEME.bgDeep};
-  border-radius: 2px; overflow: hidden; position: relative;
+  margin-top: ${THEME.space.sm}px; height: 3px;
+  background: ${THEME.bgDeep};
+  border-radius: ${THEME.radius.pill}px;
+  overflow: hidden; position: relative;
   &::after {
     content: ''; position: absolute; top: 0; left: 0; bottom: 0;
     width: ${p => p.$pct}%;
-    background: ${p => stageColor(p.$stage)};
-    transition: width 0.5s ease;
+    background: linear-gradient(90deg, ${p => stageColor(p.$stage)}aa, ${p => stageColor(p.$stage)});
+    box-shadow: 0 0 8px ${p => stageColor(p.$stage)}66;
+    transition: width 0.5s ${THEME.motion.easeOut};
   }
 `
 
 // ─── Awareness ────────────────────────────────────────────────────────────────
 
-const AwarenessTrack = styled.div`display: flex; align-items: center; gap: 6px; margin-top: 3px;`
+const AwarenessTrack = styled.div`
+  display: flex; align-items: center; gap: ${THEME.space.sm}px;
+  margin-top: ${THEME.space.xs}px;
+`
 const AwDot = styled.div<{ $active: boolean; $level: number }>`
-  width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0;
+  width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
   background: ${p => p.$active
-    ? p.$level === 5 ? '#d0eeff'
-    : p.$level === 4 ? '#f0a040'
-    : p.$level === 3 ? '#c878f0'
-    : p.$level === 2 ? THEME.water
-    : THEME.alive
+    ? p.$level === 5 ? THEME.stage5
+    : p.$level === 4 ? THEME.stage4
+    : p.$level === 3 ? THEME.stage3
+    : p.$level === 2 ? THEME.stage2
+    : THEME.stage1
     : THEME.bgDeep};
-  border: 2px solid ${p => p.$active ? 'transparent' : THEME.borderMid};
+  border: 1.5px solid ${p => p.$active ? 'transparent' : THEME.borderMid};
+  box-shadow: ${p => {
+    if (!p.$active) return 'none'
+    const c = p.$level === 5 ? THEME.stage5
+            : p.$level === 4 ? THEME.stage4
+            : p.$level === 3 ? THEME.stage3
+            : p.$level === 2 ? THEME.stage2
+            : THEME.stage1
+    return `0 0 12px ${c}88`
+  }};
 `
 const AwarenessLabel = styled.div`
-  margin-top: 6px; font-size: 11px; font-weight: 400; color: ${THEME.textSecondary};
+  margin-top: ${THEME.space.sm}px;
+  font-size: ${THEME.type.base}px; font-weight: 400;
+  color: ${THEME.textSecondary};
   font-style: italic; line-height: 1.5;
 `
 
 // ─── Weather row ──────────────────────────────────────────────────────────────
 
-const WeatherRow = styled.div`display: flex; align-items: center; gap: 8px; margin: 4px 0;`
-const WeatherGlyph = styled.span<{ $color: string }>`font-size: 17px; color: ${p => p.$color};`
-const WeatherName = styled.span<{ $color: string }>`
-  font-size: 12px; font-weight: 700; color: ${p => p.$color}; letter-spacing: 0.06em;
+const WeatherRow = styled.div`
+  display: flex; align-items: center;
+  gap: ${THEME.space.md}px;
+  padding: ${THEME.space.sm}px ${THEME.space.md}px;
+  background: ${THEME.bgChip};
+  border-radius: ${THEME.radius.sm}px;
+  margin: ${THEME.space.xs}px 0;
 `
-const WeatherTimer = styled.span`font-size: 11px; color: ${THEME.textTertiary}; margin-left: auto;`
+const WeatherGlyph = styled.span<{ $color: string }>`
+  font-size: ${THEME.type.xl}px;
+  color: ${p => p.$color};
+  filter: drop-shadow(0 0 6px ${p => p.$color}88);
+  line-height: 1;
+`
+const WeatherName = styled.span<{ $color: string }>`
+  font-size: ${THEME.type.md}px; font-weight: 700;
+  color: ${p => p.$color};
+  letter-spacing: 0.06em;
+`
+const WeatherTimer = styled.span`
+  font-size: ${THEME.type.base}px;
+  color: ${THEME.textTertiary};
+  margin-left: auto;
+`
 
 // ─── Snow accumulation widget ─────────────────────────────────────────────────
 
 const SnowBar = styled.div<{ $pct: number }>`
-  margin-top: 4px; height: 5px; background: ${THEME.bgDeep};
-  border-radius: 3px; overflow: hidden; position: relative;
+  margin-top: ${THEME.space.xs}px; height: 6px;
+  background: ${THEME.bgDeep};
+  border-radius: ${THEME.radius.pill}px;
+  overflow: hidden; position: relative;
   &::after {
     content: ''; position: absolute; top: 0; left: 0; bottom: 0;
     width: ${p => p.$pct}%;
-    background: linear-gradient(90deg, #a0c8f0, #d0eeff);
-    transition: width 0.5s ease;
+    background: linear-gradient(90deg, ${THEME.weatherStorm}, ${THEME.weatherSnow});
+    box-shadow: 0 0 8px ${THEME.weatherSnow}66;
+    transition: width 0.5s ${THEME.motion.easeOut};
   }
 `
 
@@ -135,11 +225,10 @@ const SnowBar = styled.div<{ $pct: number }>`
 
 const WEATHER_GLYPH: Record<WeatherState, string> = {
   clear:'☀', rain:'☂', storm:'⚡', drought:'◌', snow:'❄', heatwave:'🌡', fog:'≋',
+  windstorm: '↯', bloom: '✿', ashfall: '░',
 }
-const WEATHER_COLOR: Record<string, string> = {
-  clear: THEME.amber, rain: THEME.water, storm: '#a0c8f0',
-  drought: THEME.threat, snow: '#d0eeff',
-}
+// Single source of truth for weather colors lives in theme; alias for readability
+const WEATHER_COLOR = (w: string) => weatherColor(w)
 const BODY_COLOR: Record<string, string> = {
   Spore: THEME.spore, Shell: THEME.shell, Spike: THEME.spike, Wisp: THEME.wisp,
 }
@@ -265,10 +354,10 @@ export function ColonyStatsPanel() {
           </Value>
         </Row>
         <WeatherRow>
-          <WeatherGlyph $color={WEATHER_COLOR[currentWeather] ?? THEME.amber}>
+          <WeatherGlyph $color={WEATHER_COLOR(currentWeather)}>
             {WEATHER_GLYPH[currentWeather] ?? '?'}
           </WeatherGlyph>
-          <WeatherName $color={WEATHER_COLOR[currentWeather] ?? THEME.amber}>
+          <WeatherName $color={WEATHER_COLOR(currentWeather)}>
             {currentWeather.charAt(0).toUpperCase() + currentWeather.slice(1)}
           </WeatherName>
           <WeatherTimer>{Math.round(weatherTimer ?? 0)}d</WeatherTimer>

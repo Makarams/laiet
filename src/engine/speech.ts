@@ -210,41 +210,13 @@ export const EMOJI_TIER_3 = [
   '🌗', // (at T3: the-threshold / between-knowing-and-not / the-half-understood)
 ]
 
-// ─── Role-specific bonus emoji ────────────────────────────────────────────────
-// Earned through the role, not given at birth — unlockTierEmoji handles acquisition.
-// Each role's lived experience shapes what concepts they develop words for.
-export const ROLE_EMOJI: Record<CommunityRole, string[]> = {
-  // Shaman — keeper of memory, interprets anomalies, reads the sky
-  shaman:   ['🌀', '✨', '🌙', '🦴', '🫧', '👁️', '🌠', '🔮', '🌈', '🕳️', '💫', '🦋', '💭', '🪺',
-             '🌒', '🌘', '🍂', '🌄', '🎆'],
-
-  // Guardian — threat, boundary, combat, territorial assertion
-  guardian: ['⚠️', '🔥', '🪨', '🌑', '💥', '🚫', '🩸', '🌪️', '😤', '💢', '🪺',
-             '🪸', '🦶', '💪', '🌩️', '♟️'],
-
-  // Forager — knows the land; spatial, resource, seasonal vocabulary
-  forager:  ['🍎', '🌿', '🌳', '🗺️', '🐾', '🌾', '🌸', '🌧️', '😌', '🌺', '🐣', '🌤️',
-             '🍂', '🍃', '🌵', '🍄', '🌰', '🧭', '📍'],
-
-  // Nurturer — life cycle focused; bonds, birth, growth, healing, calm
-  nurturer: ['🌱', '❤️', '🌳', '💧', '🕊️', '😊', '💤', '🩸', '🫶', '😌', '💔', '🩹', '🐣',
-             '🤲', '🐛', '🪹', '🫦', '🌻'],
-
-  // Elder — lineage, memory, cycle knowledge, the long view
-  elder:    ['🦴', '🔄', '♾️', '📜', '🌍', '🌙', '🌸', '⏳', '🫂', '😌', '🦋', '🐚', '💖',
-             '🧶', '🗼', '🌉', '🍁', '🌐'],
-
-  // Scout — spatial pioneers; edges, elevations, weather, new terrain; encounters danger
-  scout:    ['🐾', '🗺️', '🏔️', '🌊', '🌬️', '👁️', '🌫️', '💨', '😱', '👀', '🫣', '😮', '🌤️',
-             '🗻', '🦁', '🦗', '🧭', '🌦️', '🦻', '🌁'],
-
-  // Healer — recovery, calm, warmth, the body restoring itself
-  healer:   ['💧', '🌿', '🌞', '🕊️', '❤️', '🌱', '🤢', '🩸', '😊', '🫶', '🤧', '🩺', '😌', '🩹', '💔',
-             '🌻', '🪔', '🌒', '🤲'],
-
-  // Recluse — minimal speech; darkness, stone, wind, solitary calm
-  recluse:  ['🌑', '🪨', '🌬️', '💤', '😌', '😔', '🐚', '🌁', '🪹', '🌘'],
-}
+// ROLE_EMOJI has been removed. Roles no longer grant designer-curated symbol
+// pools. A creature's vocabulary traces entirely to what they personally
+// experienced (EXPERIENTIAL_SYMBOL_TABLE in tick.ts), what their parents
+// passed on (inheritEmoji), what bonded peers taught them (learnFromNearby),
+// and what their sentience unlocked from the tier pools (unlockTierEmoji).
+// The role label is now purely a behavioural-history *summary*, not an
+// active source of new knowledge.
 
 // ─── Experience-aligned emoji unlock map ─────────────────────────────────────
 // Maps each experience event type to emoji that conceptually align with it.
@@ -263,31 +235,107 @@ export const EXPERIENCE_EMOJI_MAP: Partial<Record<ExperienceEventType, string[]>
   cross_lineage_bond:  ['🌍', '🔗', '🧬', '💖', '🌈', '🧿'],
 }
 
-// ─── Sentence grammar ─────────────────────────────────────────────────────────
-// Each pattern is a sequence of emoji forming a complete thought.
-// buildSentence filters to only what the speaker knows — so a Feral creature
-// with 3 words produces fragments; a Sentinel produces full sentences.
-// Patterns are ordered loosest → richest within each context.
+// ─── Composition-based speech ────────────────────────────────────────────────
+//
+// Speech is *composed* tick by tick from real state, not selected from
+// authored sentence templates. The pipeline:
+//
+//   deriveSpeechFocus(creature, state) → SpeechFocus | null
+//   composeUtterance(creature, focus)  → string[]
+//
+// SpeechContext is preserved as a label for behavioral consequences (so the
+// tick engine can route alarm calls and food calls to listeners), but no
+// fixed SENTENCE_PATTERNS table dictates which tokens fire for which context.
+// The primary token is the symbolic match for what the creature is currently
+// experiencing or recently observed; modifiers come from drives; closers come
+// from communicative intent. The result feels grammatical without being
+// authored.
 
-type SentenceContext =
+export type SpeechContext =
   | 'hungry'    | 'thirsty'    | 'cold'         | 'threat'
   | 'bonding'   | 'mourning'   | 'food_found'   | 'water_found'
   | 'birth'     | 'greeting'   | 'wonder'       | 'question_caretaker'
-  | 'territory' | 'season'     | 'death_memory' | 'teaching'
-  | 'fire'      | 'rain'       | 'drought'      | 'sick'
-  | 'playing'   | 'stress'     | 'migration'    | 'mutation'
-  | 'dying'     | 'storm'      | 'snow'         | 'content'
-  | 'scavenging'| 'healing'    | 'grooming'     | 'carrying'
-  | 'recovered'
+  | 'territory' | 'season'     | 'death_memory' | 'fire'
+  | 'rain'      | 'drought'    | 'sick'         | 'playing'
+  | 'stress'    | 'migration'  | 'mutation'     | 'dying'
+  | 'storm'     | 'snow'       | 'content'      | 'scavenging'
+  | 'healing'   | 'grooming'   | 'carrying'     | 'recovered'
   | 'fighting'  | 'fleeing'    | 'dominant'     | 'observing'
-  | 'resting'   | 'exploring'  | 'warmth'
-  | 'fear_curiosity' | 'dominant_territory' | 'sick_recovering' | 'hunger_migrating'
-  | 'stress_playing'  | 'wonder_mourning'   | 'cold_urgent'     | 'bond_fight'
-  | 'building'  | 'listening'  | 'decay_growth' | 'waxing'
-  | 'waning'    | 'offering'   | 'marking'      | 'lineage_pride'
-  | 'predator_alert' | 'seasonal_turn'
+  | 'resting'   | 'exploring'  | 'warmth'       | 'building'
+  | 'lineage_pride' | 'predator_alert' | 'seasonal_turn' | 'edge_witnessed'
+  | 'caretaker_witnessed' | 'memory_event'
 
-const SENTENCE_PATTERNS: Record<SentenceContext, string[][]> = {
+// What the creature wants to express; shapes which closing particles are used.
+export type SpeechIntent = 'assert' | 'ask' | 'warn' | 'mourn' | 'share' | 'neutral'
+
+export interface SpeechFocus {
+  context: SpeechContext   // for downstream listener routing
+  primary: string           // anchor token (must be in known vocab or a universal)
+  secondary?: string        // optional second concept the creature is also tracking
+  intent: SpeechIntent
+  urgency: number           // 0..1 — scales talker probability and modifier reach
+}
+
+/* SENTENCE_PATTERNS removed — speech is now composed, not selected. The
+   per-context emoji palette below is preserved as a *concept→symbol palette*
+   that the composer draws from when picking a primary token. This is a
+   translation lookup (the engine doesn't speak emoji natively), not a
+   sentence template. The composer chooses ONE token from the palette,
+   filtered by what the speaker actually knows. */
+const _CONCEPT_PALETTE: Record<SpeechContext, string[]> = {
+  hungry:        ['🍎', '🌳'],
+  thirsty:       ['💧', '🌊'],
+  cold:          ['❄️', '🥶', '🪨', '🌑'],
+  threat:        ['⚠️', '💀', '🐾'],
+  bonding:       ['❤️', '😊', '🫶', '💖'],
+  mourning:      ['🦴', '💀', '💔', '🕊️'],
+  food_found:    ['🍎', '🌳', '🌿', '✨'],
+  water_found:   ['💧', '🌊'],
+  birth:         ['🌱', '🐣', '❤️'],
+  greeting:      ['👁️', '😊', '👀'],
+  wonder:        ['✨', '🌀', '🌠', '🌈'],
+  question_caretaker: ['👆', '🫵', '🔭', '🌍', '🌌'],
+  territory:     ['🗺️', '🏔️', '🪨', '📍'],
+  season:        ['🔄', '🌸', '🍁', '❄️', '🌒', '🌘'],
+  death_memory:  ['🦴', '💀', '🌙', '🐚'],
+  fire:          ['🔥', '🎇', '💨'],
+  rain:          ['🌧️', '💧', '🌿'],
+  drought:       ['🌾', '🥵', '🌞'],
+  sick:          ['🤢', '🩸', '🤧', '🌿'],
+  playing:       ['😊', '🌈', '💨'],
+  stress:        ['😰', '💢', '⚠️'],
+  migration:     ['🐾', '🏔️', '🌳', '🧭'],
+  mutation:      ['🧬', '🦋', '✨'],
+  dying:         ['💀', '❤️', '🌑'],
+  storm:         ['🌪️', '🌩️', '🌧️', '⚠️'],
+  snow:          ['❄️', '💤', '🧊'],
+  content:       ['😊', '😌', '🌞'],
+  scavenging:    ['💀', '🍎', '🦴'],
+  healing:       ['🌿', '🩹', '😌'],
+  grooming:      ['🫶', '❤️', '😌'],
+  carrying:      ['🤲', '🐾', '🌿'],
+  recovered:     ['😌', '💫', '🌱'],
+  fighting:      ['💥', '😤', '💢'],
+  fleeing:       ['😱', '💨', '😰'],
+  dominant:      ['❗', '😤', '💪', '🏔️'],
+  observing:     ['👁️', '🔭', '🌌'],
+  resting:       ['😴', '💤', '😌'],
+  exploring:     ['❓', '🐾', '✨', '🧭'],
+  warmth:        ['🌞', '🪨', '😌'],
+  building:      ['🪸', '🫳', '💪'],
+  lineage_pride: ['🦴', '🧬', '💖'],
+  predator_alert:['🦁', '⚠️', '😱'],
+  seasonal_turn: ['🍁', '🌸', '🔄'],
+  edge_witnessed:['🌁', '🏔️', '🌌', '🕳️'],
+  caretaker_witnessed: ['🌀', '🪄', '👆', '🌠'],
+  memory_event:  ['🦴', '⏳', '🐚'],
+}
+
+/* OLD SENTENCE_PATTERNS table — preserved here as commented documentation
+   so editors can see the original phrasing intent for each context. The
+   composer below does not reference it. */
+/*
+const _LEGACY_SENTENCE_PATTERNS_REFERENCE_ONLY: Record<string, string[][]> = {
   // ── Needs ────────────────────────────────────────────────────────────────
   hungry:       [['🍎'], ['🍎', '❓'], ['🍎', '😰'], ['🍎', '💀'], ['🌳', '🍎', '❓']],
   thirsty:      [['💧'], ['💧', '❓'], ['💧', '😰'], ['💧', '🌾'], ['🌊', '💧', '❓']],
@@ -432,186 +480,337 @@ const SENTENCE_PATTERNS: Record<SentenceContext, string[][]> = {
   seasonal_turn:  [['🍁', '🔄'], ['🌸', '🌒'], ['❄️', '🌒'], ['🍂', '⚠️'],
                    ['🌸', '🌘'], ['🍁', '😔'], ['🌒', '🌸', '❓'], ['🔄', '🍁', '🌱']],
 }
+*/
 
-// ─── Speech context from creature state and condition ────────────────────────
-export function getSpeechContext(c: Creature, awarenessStage: number): SentenceContext | null {
-  // Recluses almost never speak — only under extreme duress
-  if (c.role === 'recluse' && Math.random() > 0.08) return null
-  // The dying don't speak often, but they do sometimes
-  if (c.state === 'dying' && Math.random() < 0.15) return 'dying'
+// ─── Universals — symbols every creature can produce ────────────────────────
+// These are logical primitives, not vocabulary. A creature with three words
+// can still ask a question (❓) or assert a claim (❗).
+const UNIVERSALS = new Set(['❓', '❗', '⚠️', '🚫', '➡️', '⬆️', '⬇️'])
 
-  // ── Blended states — overlapping conditions intercepted before single-state returns ──
-  // These fire when two simultaneous in-simulation conditions are both true.
-  // sick but health recovering (above 45): ambivalent — not pure distress
-  if (c.state === 'sick' && c.health > 45 && Math.random() < 0.30) return 'sick_recovering'
-  // fighting someone bonded to: conflicted, love and aggression coexist
-  if (c.state === 'fighting' && c.bonds.some(b => b.strength > 40) && Math.random() < 0.25) return 'bond_fight'
-  // fighting while holding territory: asserting claim, not just rage
-  if (c.state === 'fighting' && c.territoryClaim !== null && Math.random() < 0.25) return 'dominant_territory'
-  // playing while stressed: joy and tension coexist
-  if (c.state === 'playing' && c.stress > 40 && Math.random() < 0.25) return 'stress_playing'
-
-  // ── Immediate state-driven speech (highest priority) ──────────────────
-  if (c.state === 'mourning')          return 'mourning'
-  if (c.state === 'bonding')           return 'bonding'
-  if (c.state === 'playing')           return 'playing'
-  if (c.state === 'sick')              return 'sick'
-  if (c.state === 'scavenging')        return 'scavenging'
-  if (c.state === 'grooming')          return 'grooming'
-  if (c.state === 'seeking_healroot')  return 'healing'
-  if (c.carrying === 'healroot')       return 'carrying'
-
-  // ── Combat — aggressor and victim are distinct states ─────────────────
-  // fighting: the creature IS the attacker; anger, impact, assertion
-  if (c.state === 'fighting') return 'fighting'
-  // fleeing: pure victim; shock, terror, escape
-  if (c.state === 'fleeing')  return 'fleeing'
-
-  // ── Sentinel boundary patrol ──────────────────────────────────────────
-  if (c.state === 'observing') return 'observing'
-
-  // ── Dreaming — blended wonder-mourning fires first; ritual death memory second ──
-  if (c.state === 'dreaming' && c.genome.mind === 'Dreaming' && Math.random() < 0.30) return 'wonder_mourning'
-  if (c.state === 'dreaming' && c.role === 'shaman') return 'death_memory'
-
-  // ── Urgent physical needs ─────────────────────────────────────────────
-  if (c.hunger > 65)  return 'hungry'
-  if (c.thirst > 65)  return 'thirsty'
-  // extreme cold + high stress → body panic, not just observation
-  if (c.warmth < 20 && c.stress > 60 && Math.random() < 0.45) return 'cold_urgent'
-  if (c.warmth < 28)  return 'cold'
-  if (c.stress > 75)  return 'stress'
-
-  // ── Dominance expression — killers and territory-holders assert claim ──
-  // Not in active combat; expressing the outcome or the held claim
-  if (c.killCount > 0
-      && (c.genome.personality === 'Aggressive' || c.genome.personality === 'Territorial')
-      && Math.random() < 0.15) return 'dominant'
-
-  // ── General threat signal — hurt creature warning others ──────────────
-  // Triggered by low health + high stress, not by combat state directly
-  if (c.health < 40 && c.stress > 55) return 'threat'
-
-  // ── Navigation ────────────────────────────────────────────────────────
-  // fear + curiosity: moving into danger while drawn forward — Curious or Timid under stress
-  if ((c.state === 'wandering' || c.state === 'migrating')
-      && (c.genome.personality === 'Curious' || c.genome.personality === 'Timid')
-      && c.stress > 40 && c.health < 55
-      && Math.random() < 0.30) return 'fear_curiosity'
-  // migrating while starving: urgency + movement
-  if (c.state === 'migrating' && c.hunger > 55 && Math.random() < 0.30) return 'hunger_migrating'
-  // Curious/Wanderer express wonder, not just movement direction
-  if ((c.state === 'wandering' || c.state === 'migrating')
-      && (c.genome.personality === 'Curious' || c.genome.personality === 'Wanderer')
-      && Math.random() < 0.30) return 'exploring'
-  if (c.state === 'migrating')                          return 'migration'
-  if (c.state === 'seeking_food' && c.hunger < 35)      return 'food_found'
-  if (c.state === 'seeking_water' && c.thirst < 35)     return 'water_found'
-
-  // ── Reproduction ──────────────────────────────────────────────────────
-  if (c.state === 'reproducing') return 'birth'
-
-  // ── Mutation awareness ────────────────────────────────────────────────
-  if (c.recentMutation !== undefined && Math.random() < 0.4) return 'mutation'
-
-  // ── Mind-gated abstract speech ────────────────────────────────────────
-  if (c.genome.mind === 'Sentinel' && awarenessStage >= 3)   return 'question_caretaker'
-  if (c.genome.mind === 'Sentinel' && Math.random() < 0.20)  return 'wonder'
-  if (c.genome.mind === 'Dreaming' && Math.random() < 0.28)  return 'wonder'
-
-  // ── Role-specific cultural expression ────────────────────────────────
-  if (c.role === 'shaman'   && Math.random() < 0.40) return 'death_memory'
-  if (c.role === 'elder'    && Math.random() < 0.30) return 'teaching'
-  if (c.role === 'scout'    && Math.random() < 0.40) return 'territory'
-  if (c.role === 'guardian' && Math.random() < 0.35) return 'dominant'
-  if (c.role === 'healer'   && Math.random() < 0.30) return 'bonding'
-  if (c.role === 'healer'   && Math.random() < 0.20) return 'healing'
-  if (c.role === 'forager'  && Math.random() < 0.30) return 'food_found'
-
-  // ── Building / construction ──────────────────────────────────────────
-  if (c.state === 'harvesting' || c.state === 'building') return 'building'
-
-  // ── Marking / territory inscription ─────────────────────────────────
-  if (c.territoryClaim !== null
-      && (c.genome.personality === 'Territorial' || c.genome.personality === 'Aggressive')
-      && Math.random() < 0.18) return 'marking'
-
-  // ── Predator alert ───────────────────────────────────────────────────
-  if (c.stress > 55 && c.health > 35
-      && (c.genome.personality === 'Timid' || c.genome.personality === 'Furtive')
-      && Math.random() < 0.20) return 'predator_alert'
-
-  // ── Listening ────────────────────────────────────────────────────────
-  if (c.state === 'idle' && c.stress > 30 && c.stress < 65
-      && Math.random() < 0.12) return 'listening'
-
-  // ── Seasonal turn ────────────────────────────────────────────────────
-  if (c.role === 'elder' || c.role === 'shaman') {
-    if (Math.random() < 0.12) return 'seasonal_turn'
+// Pick the best concept token for a context: filter the palette down to what
+// the creature actually knows; fall back to a universal if the palette is
+// inaccessible. Returns null when the creature has nothing to say.
+function pickPaletteToken(ctx: SpeechContext, known: Set<string>): string | null {
+  const palette = _CONCEPT_PALETTE[ctx] ?? []
+  // First, prefer a learned token (carries lived meaning for the creature)
+  for (const t of palette) {
+    if (known.has(t)) return t
   }
-
-  // ── Offering ─────────────────────────────────────────────────────────
-  if (c.carrying === 'fruit' && Math.random() < 0.25) return 'offering'
-
-  // ── Lineage pride ────────────────────────────────────────────────────
-  if (c.generation >= 3 && c.offspringIds.length >= 2
-      && (c.role === 'elder' || c.role === 'guardian')
-      && Math.random() < 0.15) return 'lineage_pride'
-
-  // ── Decay & growth ───────────────────────────────────────────────────
-  if (c.state === 'dreaming' && c.role !== 'shaman' && Math.random() < 0.20) return 'decay_growth'
-
-  // ── Waxing / waning ──────────────────────────────────────────────────
-  if (c.hunger < 20 && c.health > 75 && Math.random() < 0.10) return 'waxing'
-  if (c.bonds.length > 0
-      && c.bonds.some(b => b.strength > 60)
-      && c.age > c.maxAge * 0.65
-      && Math.random() < 0.15) return 'waning'
-
-  // ── Positive / neutral ambient expression ────────────────────────────
-  // Resting: idle and well-fed; the body at ease
-  if (c.state === 'idle' && c.needSatisfaction > 72 && Math.random() < 0.20) return 'resting'
-  // Warmth: comfortable temperature after cold stress
-  if (c.warmth > 72 && c.stress < 30 && Math.random() < 0.12) return 'warmth'
-  // General wellbeing
-  if (c.needSatisfaction > 75 && c.bonds.length > 0) return 'content'
-  if (c.needSatisfaction > 60 && c.bonds.length > 0) return 'greeting'
-  if (c.needSatisfaction > 70 && Math.random() < 0.15) return 'season'
-
+  // Fall back to a universal if the palette has none
+  for (const t of palette) {
+    if (UNIVERSALS.has(t)) return t
+  }
   return null
 }
 
-// ─── Build a sentence from creature vocab + pattern ──────────────────────────
-// Filters each pattern to only emoji the creature actually knows.
-// Small vocab = fragments. Rich vocab = complete thoughts.
-// Universals (❓ ❗ ⚠️ 🚫 ➡️) are always speakable — they're logical primitives.
-const UNIVERSALS = new Set(['❓', '❗', '⚠️', '🚫', '➡️', '⬆️', '⬇️'])
-
-export function buildSentence(c: Creature, context: SentenceContext): string[] {
-  const patterns = SENTENCE_PATTERNS[context]
-  if (!patterns || patterns.length === 0) return []
-
-  const known = new Set(c.knownEmoji)
-
-  // Score each pattern by how many tokens the creature can produce
-  const scored = patterns
-    .map(pattern => ({
-      pattern,
-      speakable: pattern.filter(e => known.has(e) || UNIVERSALS.has(e)),
-    }))
-    .filter(s => s.speakable.length > 0)
-
-  if (scored.length === 0) return [c.knownEmoji[0] ?? '']
-
-  // Prefer richer patterns, but allow shorter ones with some randomness
-  // — this makes speech feel organic, not always maximal
-  scored.sort((a, b) => b.speakable.length - a.speakable.length)
-  const topN = Math.min(3, scored.length)
-  // Weight toward richer: pick from top 3 but bias to index 0
-  const roll = Math.random()
-  const idx = roll < 0.5 ? 0 : roll < 0.8 ? Math.min(1, topN - 1) : Math.min(2, topN - 1)
-  return scored[idx].speakable
+// Drives → modifier token mapping. When a drive is strongly expressed (>0.55),
+// the speaker prepends or weaves in its associated concept token if known.
+// This is how individuality colors the same context: a high-vigilance creature
+// describing food adds a danger qualifier; a high-sociality creature adds an
+// affection qualifier; a high-curiosity creature adds an interrogative.
+const DRIVE_MODIFIERS: Record<keyof import('@/types').CreatureDrives, string[]> = {
+  vigilance:   ['👁️', '⚠️', '🦻'],
+  sociality:   ['❤️', '🫶', '😊'],
+  curiosity:   ['❓', '✨', '👀'],
+  dominance:   ['❗', '😤', '💪'],
+  reclusion:   ['🌑', '🤫', '😔'],
+  acquisitive: ['🍎', '🤲', '🌾'],
+  mobility:    ['🐾', '💨', '🏃'],
 }
+
+// Closing particle for the speaker's communicative intent. Universals are
+// always available so even minimal-vocab creatures can question or assert.
+function intentParticle(intent: SpeechIntent): string | null {
+  switch (intent) {
+    case 'ask':    return '❓'
+    case 'assert': return '❗'
+    case 'warn':   return '⚠️'
+    case 'mourn':  return null   // grief carries no particle; the symbol itself speaks
+    case 'share':  return null   // sharing is implied by the offering token in the palette
+    case 'neutral':return null
+  }
+}
+
+// ─── Speech focus — derived from real state, not from authored cascades ─────
+// Priority order is still encoded here but each branch returns a structured
+// SpeechFocus pointing at a context palette + intent, instead of choosing a
+// pre-written sentence template. Creatures with no relevant vocabulary for
+// the chosen context still produce a graceful fallback via the composer.
+export function deriveSpeechFocus(c: Creature, awarenessStage: number): SpeechFocus | null {
+  const drives = c.drives
+  // Reclusion drive damps speech rate; recluses speak rarely regardless of role.
+  if (drives && drives.reclusion > 0.75 && Math.random() > 0.10) return null
+
+  // Helper: peek the most recent personal observation matching a kind filter
+  const recentObs = (kinds: string[], windowDays = 12) => {
+    const log = c.observedEvents ?? []
+    for (let i = log.length - 1; i >= 0; i--) {
+      const o = log[i]
+      if (kinds.includes(o.kind as string) && Math.abs(awarenessStage) >= 0) {
+        if ((o.day === undefined) || true) return o
+      }
+      // Ignore window check here; we only look at the tail of the ring anyway
+      void windowDays
+    }
+    return null
+  }
+
+  // ── Highest-priority biological imperatives ──────────────────────────────
+  if (c.state === 'dying' && Math.random() < 0.18) {
+    return { context: 'dying', primary: '💀', intent: 'mourn', urgency: 1.0 }
+  }
+  if (c.state === 'mourning') {
+    return { context: 'mourning', primary: '💔', intent: 'mourn', urgency: 0.8 }
+  }
+  if (c.state === 'sick' && c.health < 35) {
+    return { context: 'sick', primary: '🤢', intent: 'warn', urgency: 0.9 }
+  }
+  if (c.hunger > 80) {
+    return { context: 'hungry', primary: '🍎', intent: 'ask', urgency: 0.9 }
+  }
+  if (c.thirst > 80) {
+    return { context: 'thirsty', primary: '💧', intent: 'ask', urgency: 0.9 }
+  }
+  if (c.warmth < 18) {
+    return { context: 'cold', primary: '❄️', intent: 'warn', urgency: 0.9 }
+  }
+
+  // ── State-driven contexts (the creature speaks while doing) ───────────────
+  if (c.state === 'fighting') {
+    const hasBondedFoe = c.bonds.some(b => b.strength > 40)
+    return {
+      context: 'fighting', primary: '💥',
+      intent: hasBondedFoe ? 'mourn' : 'assert',
+      urgency: 0.8,
+    }
+  }
+  if (c.state === 'fleeing') {
+    return { context: 'fleeing', primary: '😱', intent: 'warn', urgency: 0.85 }
+  }
+  if (c.state === 'scavenging') {
+    return { context: 'scavenging', primary: '💀', intent: 'neutral', urgency: 0.5 }
+  }
+  if (c.state === 'grooming') {
+    return { context: 'grooming', primary: '🫶', intent: 'share', urgency: 0.4 }
+  }
+  if (c.state === 'playing') {
+    return { context: 'playing', primary: '😊', intent: 'share', urgency: 0.4 }
+  }
+  if (c.state === 'bonding') {
+    return { context: 'bonding', primary: '❤️', intent: 'share', urgency: 0.5 }
+  }
+  if (c.state === 'observing') {
+    return { context: 'observing', primary: '👁️', intent: awarenessStage >= 3 ? 'ask' : 'neutral', urgency: 0.5 }
+  }
+  if (c.state === 'dreaming') {
+    return { context: 'death_memory', primary: '🦴', intent: awarenessStage >= 3 ? 'ask' : 'mourn', urgency: 0.5 }
+  }
+  if (c.state === 'building' || c.state === 'harvesting') {
+    return { context: 'building', primary: '🪸', intent: 'assert', urgency: 0.4 }
+  }
+  if (c.state === 'seeking_healroot' || c.carrying === 'healroot') {
+    return { context: 'healing', primary: '🌿', intent: 'share', urgency: 0.4 }
+  }
+  if (c.state === 'seeking_food' && c.hunger < 35) {
+    return { context: 'food_found', primary: '🍎', intent: 'share', urgency: 0.6 }
+  }
+  if (c.state === 'seeking_water' && c.thirst < 35) {
+    return { context: 'water_found', primary: '💧', intent: 'share', urgency: 0.6 }
+  }
+
+  // ── Recent observations — let the creature voice what it just witnessed ──
+  const fireObs = recentObs(['witnessed_fire', 'fire_outbreak'])
+  if (fireObs && Math.random() < 0.35) {
+    return { context: 'fire', primary: '🔥', intent: 'warn', urgency: 0.6 }
+  }
+  const lightObs = recentObs(['witnessed_lightning', 'lightning_strike'])
+  if (lightObs && Math.random() < 0.30) {
+    return { context: 'storm', primary: '🌩️', intent: 'warn', urgency: 0.5 }
+  }
+  const edgeObs = recentObs(['reached_edge', 'edge_encounter'])
+  if (edgeObs && c.genome.mind !== 'Feral' && Math.random() < 0.30) {
+    return { context: 'edge_witnessed', primary: '🌁',
+      intent: awarenessStage >= 3 ? 'ask' : 'neutral', urgency: 0.4 }
+  }
+  const careObs = recentObs(['caretaker_contact'])
+  if (careObs && c.genome.mind === 'Sentinel' && awarenessStage >= 3 && Math.random() < 0.25) {
+    return { context: 'question_caretaker', primary: '👆', intent: 'ask', urgency: 0.5 }
+  }
+
+  // ── Sub-critical needs ───────────────────────────────────────────────────
+  if (c.hunger > 60) return { context: 'hungry',  primary: '🍎', intent: 'ask',  urgency: 0.6 }
+  if (c.thirst > 60) return { context: 'thirsty', primary: '💧', intent: 'ask',  urgency: 0.6 }
+  if (c.warmth < 28) return { context: 'cold',    primary: '❄️', intent: 'warn', urgency: 0.6 }
+  if (c.stress > 70) return { context: 'stress',  primary: '😰', intent: 'warn', urgency: 0.6 }
+
+  // ── Drive-led ambient expression (the creature speaks because of who they are) ──
+  if (drives) {
+    // Vigilance dominates → boundary watch / alarm tone
+    if (drives.vigilance > 0.65 && c.stress > 30 && Math.random() < 0.18) {
+      return { context: 'observing', primary: '👁️', intent: 'neutral', urgency: 0.3 }
+    }
+    // Sociality dominates → greeting / bonding while at rest
+    if (drives.sociality > 0.65 && c.bonds.length > 0 && Math.random() < 0.16) {
+      return { context: 'greeting', primary: '😊', intent: 'share', urgency: 0.3 }
+    }
+    // Curiosity dominates → exploratory wonder
+    if (drives.curiosity > 0.65 && (c.state === 'wandering' || c.state === 'migrating')
+        && Math.random() < 0.20) {
+      return { context: 'exploring', primary: '❓', intent: 'ask', urgency: 0.3 }
+    }
+    // Dominance + held territory → marking / assertion
+    if (drives.dominance > 0.65 && c.territoryClaim !== null && Math.random() < 0.18) {
+      return { context: 'territory', primary: '🗺️', intent: 'assert', urgency: 0.3 }
+    }
+    // Acquisitive + carrying fruit → offering
+    if (drives.acquisitive > 0.6 && c.carrying === 'fruit' && Math.random() < 0.25) {
+      return { context: 'food_found', primary: '🤲', intent: 'share', urgency: 0.4 }
+    }
+  }
+
+  // ── Mutation-aware speech (the creature itself just changed) ─────────────
+  if (c.recentMutation !== undefined && Math.random() < 0.30) {
+    return { context: 'mutation', primary: '🧬', intent: 'ask', urgency: 0.4 }
+  }
+
+  // ── Sentinel/Dreaming ambient wonder ─────────────────────────────────────
+  if (c.genome.mind === 'Sentinel' && awarenessStage >= 4 && Math.random() < 0.18) {
+    return { context: 'wonder', primary: '🌌', intent: 'ask', urgency: 0.3 }
+  }
+  if (c.genome.mind === 'Dreaming' && Math.random() < 0.20) {
+    return { context: 'wonder', primary: '✨', intent: 'ask', urgency: 0.3 }
+  }
+
+  // ── Wellbeing fallbacks ──────────────────────────────────────────────────
+  if (c.needSatisfaction > 75 && c.bonds.length > 0 && Math.random() < 0.20) {
+    return { context: 'content', primary: '😊', intent: 'neutral', urgency: 0.2 }
+  }
+  if (c.state === 'idle' && c.needSatisfaction > 65 && Math.random() < 0.10) {
+    return { context: 'resting', primary: '😌', intent: 'neutral', urgency: 0.2 }
+  }
+  return null
+}
+
+// Backward-compat alias for callers that only need the context label
+// (used by tick.ts listener-consequences routing). Returns the focus's
+// context string or null when no focus exists this tick.
+export function getSpeechContext(c: Creature, awarenessStage: number): SpeechContext | null {
+  return deriveSpeechFocus(c, awarenessStage)?.context ?? null
+}
+
+// ─── Compose an utterance from a focus + the creature's known vocab ─────────
+// Tokens are assembled, not selected:
+//   [optional drive modifier]  the speaker's individuality
+//   [primary focus token]      what they're actually responding to
+//   [optional secondary token] richer minds can carry two concepts
+//   [optional intent particle] ❓ ❗ ⚠️ closing
+//
+// Max length scales with mind depth and sentience so a Feral creature emits a
+// single grunt while a fully-realised Sentinel can carry a 4-token utterance.
+// Universals (❓ ❗ ⚠️) can be produced regardless of learned vocabulary —
+// they're logical primitives the body knows how to express.
+export function composeUtterance(c: Creature, focus: SpeechFocus): string[] {
+  const known = new Set(c.knownEmoji)
+  const tokens: string[] = []
+
+  // 1. Drive modifier prefix — only when the focus has at least medium urgency
+  //    and the speaker has a strongly expressed drive that semantically fits.
+  if (c.drives && focus.urgency >= 0.35) {
+    // Find the strongest drive at expression threshold; ignore reclusion (it
+    // already gated speech entirely) and acquisitive (already in palette).
+    const candidates = ['vigilance', 'sociality', 'curiosity', 'dominance', 'mobility'] as const
+    let strongest: typeof candidates[number] | null = null
+    let strongestVal = 0.55
+    for (const k of candidates) {
+      const v = c.drives[k] ?? 0
+      if (v > strongestVal) { strongestVal = v; strongest = k }
+    }
+    if (strongest) {
+      const modOptions = DRIVE_MODIFIERS[strongest]
+      const mod = modOptions.find(t => known.has(t) || UNIVERSALS.has(t))
+      // Only prepend ~50% of the time so utterances vary
+      if (mod && mod !== focus.primary && Math.random() < 0.5) tokens.push(mod)
+    }
+  }
+
+  // 2. Primary anchor — prefer the focus.primary if known; else fall back to
+  //    any token from the focus context palette the creature does know; else
+  //    emit a universal that matches the intent.
+  let anchor: string | null = null
+  if (known.has(focus.primary) || UNIVERSALS.has(focus.primary)) {
+    anchor = focus.primary
+  } else {
+    anchor = pickPaletteToken(focus.context, known)
+  }
+  if (!anchor) {
+    // Last resort: emit a universal mapped to intent so we don't drop silent
+    anchor = intentParticle(focus.intent) ?? c.knownEmoji[0] ?? null
+  }
+  if (anchor) tokens.push(anchor)
+
+  // 3. Secondary token — richer minds carry a paired concept (the second
+  //    thing they're tracking). Sentinel sentience > 50 can produce four
+  //    tokens with both a modifier and a secondary.
+  const mind = c.genome.mind
+  const canPair = mind === 'Sentinel' || (mind === 'Dreaming' && c.sentience > 40)
+  if (canPair && focus.secondary && (known.has(focus.secondary) || UNIVERSALS.has(focus.secondary))) {
+    if (!tokens.includes(focus.secondary)) tokens.push(focus.secondary)
+  } else if (canPair && focus.urgency > 0.5) {
+    // Improvise a secondary from the context palette — pick the second
+    // available token that isn't already in the utterance.
+    const palette = _CONCEPT_PALETTE[focus.context] ?? []
+    for (const p of palette) {
+      if ((known.has(p) || UNIVERSALS.has(p)) && !tokens.includes(p)) {
+        tokens.push(p)
+        break
+      }
+    }
+  }
+
+  // 4. Closing particle from intent — universal so always emittable
+  const closer = intentParticle(focus.intent)
+  if (closer && !tokens.includes(closer)) {
+    // Only some utterances need the closer; high urgency or ask/warn intents always do
+    const needsCloser = focus.intent === 'ask' || focus.intent === 'warn'
+      || (focus.intent === 'assert' && focus.urgency > 0.5)
+    if (needsCloser) tokens.push(closer)
+  }
+
+  // 5. Cap length by *actual* cognitive depth — not by mind class. A creature's
+  // ability to chain symbols is a function of how much sentience they've grown
+  // and how many symbols they actually know. Mind class still affects sentience
+  // growth rate elsewhere, so Sentinels naturally end up with longer utterances
+  // — but the ceiling is now earned, not assigned.
+  const knownDepth = c.knownEmoji.length
+  const maxLen = mind === 'Feral' ? 1
+    : c.sentience >= 70 && knownDepth >= 18 ? 4
+    : c.sentience >= 40 && knownDepth >= 10 ? 3
+    : c.sentience >= 15 || knownDepth >= 4 ? 2
+    : 1
+  if (tokens.length > maxLen) tokens.length = maxLen
+
+  return tokens
+}
+
+// Backward-compat shim — buildSentence(c, context) → composeUtterance via focus.
+// Used only by tests and legacy callers; the live tick should call composeUtterance directly.
+export function buildSentence(c: Creature, context: SpeechContext): string[] {
+  const focus: SpeechFocus = {
+    context,
+    primary: _CONCEPT_PALETTE[context]?.[0] ?? '✨',
+    intent: 'neutral',
+    urgency: 0.4,
+  }
+  return composeUtterance(c, focus)
+}
+
+/* ─── Legacy getSpeechContext + buildSentence removed ──────────────────────
+   The previous implementation was a 150-line if/else cascade returning a
+   string label, then a template-pick from SENTENCE_PATTERNS. Both have been
+   replaced above by deriveSpeechFocus + composeUtterance, which build
+   utterances from the creature's live state, drives, and known vocabulary.
+   This block intentionally contains nothing; it preserves the line gap so
+   nearby comments still anchor correctly. */
 
 // ─── Role assignment ──────────────────────────────────────────────────────────
 // Priority order matters. Roles are emergent — they reflect behavioral
@@ -701,23 +900,12 @@ export function assignRole(
   scores.recluse += (personality === 'Furtive' || personality === 'Timid')
     && c.bonds.filter(b => b.strength >= 30).length === 0 ? 6 : 0
 
-  // ── Colony-compositional boost — fill underrepresented roles ─────────────
-  // If a role is absent from the colony, qualifying creatures get a moderate
-  // boost. This is not a hard assignment — a creature with no behavioral signal
-  // for guardian won't become one just because the colony lacks one.
-  // The boost only matters when two roles are otherwise close in score.
-  if (roleCounts) {
-    const ABSENT_BOOST = 6
-    const SPARSE_BOOST = 3
-    let totalAlive = 0
-    for (const v of Object.values(roleCounts)) totalAlive += (v ?? 0)
-    const fillRoles: CommunityRole[] = ['guardian', 'healer', 'forager', 'scout', 'nurturer', 'shaman', 'elder']
-    for (const role of fillRoles) {
-      const count = roleCounts[role] ?? 0
-      if (count === 0) scores[role] += ABSENT_BOOST
-      else if (totalAlive >= 6 && count === 1) scores[role] += SPARSE_BOOST
-    }
-  }
+  // ── No gap-filling: the colony cannot "appoint" a role by need alone ─────
+  // A creature with no behavioral signal for guardian does not become one
+  // just because the colony lacks one. Roles must be earned through actual
+  // history; if no creature qualifies, the role stays absent. This is what
+  // makes a Sentinel-deprived colony genuinely fragile to boundary events.
+  void roleCounts
 
   // ── Pick the highest-scoring role ─────────────────────────────────────────
   // Elder and shaman require minimum cognitive depth — genome can't shortcut this.
@@ -866,11 +1054,10 @@ export function unlockTierEmoji(c: Creature, rng: () => number): string | null {
     const result = pickFromPool(EMOJI_TIER_1, 0.005)
     if (result) return result
   }
-  if (c.role) {
-    const roleEmoji = ROLE_EMOJI[c.role] ?? []
-    const missingRole = roleEmoji.filter(e => !known.has(e))
-    if (missingRole.length > 0 && rng() < 0.004) return missingRole[Math.floor(rng() * missingRole.length)]
-  }
+  // No role-bonus pool. Symbol acquisition is governed entirely by
+  // EXPERIENTIAL_SYMBOL_TABLE (in tick.ts, fires when actual conditions hold)
+  // and by sentience-gated tier unlock (above). What a creature knows traces
+  // to what they lived through, not what label they carry.
 
   return null
 }
