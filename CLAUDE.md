@@ -91,6 +91,10 @@ tickTime → tickWeather → tickTiles → tickCreatures → tickReproduction
 
 - Player **cannot command** creatures — only place things
 - **Caretaker actions are unlimited.** No daily charges, no per-tool cooldowns. The only balancer is `CaretakerState.actionLoad` (soft pressure that decays and bleeds ambient stress above threshold). Never re-introduce charge caps or per-tool cooldown gates.
+- **Field Log surfaces three categories.** Every `ColonyMessage` is bucketed into `general` / `important` / `event`. Producers may set `msg.category` explicitly (`legendaryMessage`, `neglectWarningMessage`, `generateRaceRevivalMessage`, the extinction line in tick.ts → `important`; `generateAbsenceMessage`, store's thunder/fire messages → `event`); untagged messages are categorised in MessageLogPanel by stage and keyword. The single "All / Obs / Aware / Death" filter row was deleted.
+- **Extinction generates a downloadable report.** `src/engine/extinctionReport.ts` composes a plain-text summary (cause, peak pop, death-cause breakdown, race populations, tribes formed, notable chronicle events, kind totals, top family lines) from `GameState`. The endgame overlay's "↓ Download Report" button calls `downloadExtinctionReport(state, fossil)`.
+- **Camera frames only after the canvas has real dimensions.** `GameCanvas` waits for the first ResizeObserver measurement before initial framing. Subsequent resizes re-frame on creatures if the user hasn't moved the camera; otherwise the pan shifts in lock-step with the viewport size delta. Never re-pans to world midpoint.
+- **Creature positions are clamped defensively after every movement tick.** Every behaviour path that writes `targetX/Y` clamps to `[0, WORLD_SIZE-1]`, and `tickCreatures` re-clamps `c.x/c.y` after `tickMovement` as belt-and-braces against any future regression. The renderer treats out-of-bounds creatures as a hard invariant violation.
 - **No O(WORLD_SIZE²) pre-scans per tick.** `tickTiles` reads vegetation counts from `state.tileTypeCount` (maintained incrementally, plus a full resync every `TILE_COUNT_RESYNC_TICKS` to absorb drift from store actions / death-site writes) and writes them back at the end. `tickCreatures` reads `healrootCount` from the same cache. The snow-accumulation tally only runs in winter or while snow lingers; `mountain`/`cliff`/`rock` counts come from the cache, not a scan. Future scans that need a full-grid pass must either (a) use the cached counter, (b) be gated to a slower cadence, or (c) be triggered by an explicit event — never run every tick.
 - **Territory claims keep spacing.** A creature won't claim its current tile if another creature's `territoryClaim` is within 8 tiles. This prevents pile-on conflict at the same spot.
 - **Crowded creatures with low sociality bias their wander toward open space.** Adds soft repulsion without scripted dispersal.
@@ -123,8 +127,9 @@ tickTime → tickWeather → tickTiles → tickCreatures → tickReproduction
 | Focus | bonds / survival / awareness | bondSpeedMult, tribeFormationMult, enrichmentSpawnMult, sentienceGrowthMult |
 | Expectation | persistence / adaptation / fracture | lineageHostilityBaseline, fractureEligibilityMult, adaptationInheritMult |
 | Visibility | attentive / neutral / hidden | caretakerVisibilityMult, awarenessMessageMult |
+| **Lifespan** | brief / standard / long | lifespanMult — multiplies MAX_AGE_BY_BODY for every spawn (0.60 / 1.0 / 1.80) |
 
-The **Presence** axis was deleted in v3.2 — caretaker actions are unlimited, balanced only by `CaretakerState.actionLoad`. Each remaining axis touches a distinct slice; no two settings affect the same primary modifier.
+The **Presence** axis was deleted in v3.2 — caretaker actions are unlimited, balanced only by `CaretakerState.actionLoad`. Each remaining axis touches a distinct slice; no two settings affect the same primary modifier. The sixth axis (**Lifespan**) was added in v3.3 and threads through `createStarterCreatures`, `createOffspring`, and `createAsexualOffspring` via the optional `lifespanMult` parameter on `spawnCreature`.
 
 ---
 

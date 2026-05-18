@@ -547,6 +547,7 @@ export function generateAbsenceMessage(
   return {
     id: uuid(), text, stage, creatureId: null,
     day: fullState?.time.day ?? 0, timestamp: Date.now(), read: false,
+    category: 'event',
   }
 }
 
@@ -586,6 +587,7 @@ export function generateRaceRevivalMessage(
   return {
     id: uuid(), text, stage: awarenessStage, creatureId: null,
     day: currentDay, timestamp: Date.now(), read: false,
+    category: 'important',
   }
 }
 
@@ -601,7 +603,7 @@ export function neglectWarningMessage(
   const text = type === 'warmth'
     ? `${affectedCount} subjects below viable warmth threshold${fracText}. operator action not detected.`
     : `${affectedCount} subjects near starvation threshold${fracText}. no food drop recorded.`
-  return { id: uuid(), text, stage: 1, creatureId: null, day: currentDay, timestamp: Date.now(), read: false }
+  return { id: uuid(), text, stage: 1, creatureId: null, day: currentDay, timestamp: Date.now(), read: false, category: 'important' }
 }
 
 // ─── Legendary creature — composed from the creature's real fields ───────
@@ -621,5 +623,5 @@ export function legendaryMessage(
   } else {
     text = `${creature.name} is the last living member of a ${lineageGen ?? creature.generation}-generation line. ${creature.familyName} line closes.`
   }
-  return { id: uuid(), text, stage: 1, creatureId, day: currentDay, timestamp: Date.now(), read: false }
+  return { id: uuid(), text, stage: 1, creatureId, day: currentDay, timestamp: Date.now(), read: false, category: 'important' }
 }

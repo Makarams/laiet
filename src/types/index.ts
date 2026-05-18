@@ -527,6 +527,10 @@ export type CohortPhase = 1 | 2 | 3 | 4 | 5
 
 export type MessageStage = 1 | 2 | 3 | 4 | 5
 
+// Three-tier message bucket. Drives the MessageLogPanel tabs. Older saves
+// without the field are categorised at read time by stage + content.
+export type MessageCategory = 'general' | 'important' | 'event'
+
 export interface ColonyMessage {
   id: string
   text: string
@@ -535,6 +539,7 @@ export interface ColonyMessage {
   day: number
   timestamp: number
   read: boolean
+  category?: MessageCategory
 }
 
 // ─── Events ───────────────────────────────────────────────────────────────────
@@ -617,6 +622,12 @@ export interface CaretakerProfile {
   focus:       'bonds' | 'survival' | 'awareness'
   expectation: 'persistence' | 'adaptation' | 'fracture'
   visibility:  'attentive' | 'neutral' | 'hidden'
+  // ── Sixth defining parameter ──
+  // Scales MAX_AGE_BY_BODY across the whole colony. Short = generations roll
+  // over quickly, evolution surfaces fast, individual lives feel brief.
+  // Long = patient observation, individuals leave deeper marks, but the
+  // colony evolves slowly and is more vulnerable to environmental shifts.
+  lifespan?:   'brief' | 'standard' | 'long'
 }
 
 // SimModifiers; derived from CaretakerProfile at world creation and stored
@@ -644,6 +655,8 @@ export interface SimModifiers {
   adaptationInheritMult?: number    // ×1.0 default; scales ADAPTATION_INHERIT_CHANCE
   morphologyDriftMult?: number      // ×1.0 default; scales per-birth morphology variance
   caretakerVisibilityMult?: number  // ×1.0 default; scales radius/window for caretaker_contact registration
+  // ── Sixth axis: lifespan ──
+  lifespanMult?: number            // ×1.0 default; multiplies MAX_AGE_BY_BODY for all bodies
 }
 
 // ─── Caretaker Resources ─────────────────────────────────────────────────────

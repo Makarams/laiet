@@ -23,6 +23,7 @@ export const DEFAULT_MODIFIERS: SimModifiers = {
   adaptationInheritMult:    1.0,
   morphologyDriftMult:      1.0,
   caretakerVisibilityMult:  1.0,
+  lifespanMult:             1.0,
 }
 
 // Derive SimModifiers from the player's CaretakerProfile answers.
@@ -125,6 +126,21 @@ export function computeSimModifiers(profile: CaretakerProfile): SimModifiers {
     m.lineageHostilityBaseline = -15  // new pairs start mildly hostile
     m.fractureEligibilityMult  = (m.fractureEligibilityMult ?? 1) * 0.65  // sustained conflict fractures sooner
     m.tribeFormationMult       = (m.tribeFormationMult ?? 1) * 1.20  // more, smaller tribes
+  }
+
+  // ── Lifespan ──────────────────────────────────────────────────────────────
+  // PRIMARY axis: how long individual creatures persist. Doesn't change tick
+  // rate or season length — only multiplies MAX_AGE_BY_BODY for every body
+  // type when computing each creature's maxAge at spawn time.
+  // brief:    individuals turn over fast; evolution surfaces quickly;
+  //           generational depth piles up; the colony feels ephemeral
+  // standard: neutral; the v3-era baseline
+  // long:     patient observation; deeper individual histories; slower
+  //           generational depth but more time for sentience to mature
+  if (profile.lifespan === 'brief') {
+    m.lifespanMult = 0.60
+  } else if (profile.lifespan === 'long') {
+    m.lifespanMult = 1.80
   }
 
   // ── Visibility ────────────────────────────────────────────────────────────

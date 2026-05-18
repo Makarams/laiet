@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import styled from 'styled-components'
-import { Season, DayPhase, MessageStage, EnrichmentType } from '@/types'
+import { Season, DayPhase, EnrichmentType } from '@/types'
 import { useLaietStore } from '@/store/gameStore'
-import { THEME, awarenessColor, weatherColor } from '@/ui/theme'
+import { THEME, weatherColor } from '@/ui/theme'
 
 // ─── Bar root ─────────────────────────────────────────────────────────────────
 
@@ -178,18 +178,23 @@ const YearTag = styled.span`
   margin-left: 4px;
 `
 
-// ─── Awareness pips ───────────────────────────────────────────────────────────
-
-const AwarenessPips = styled.div`display: flex; gap: 4px; align-items: center; margin-top: 2px;`
-
-// ─── Caretaker pressure bar (replaces all per-tool charge badges) ─────────────
+// ─── Caretaker pressure indicator (replaces all per-tool charge badges) ──────
+const PressureStack = styled.div`
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+`
+const PressureValue = styled.span<{ $alert: boolean }>`
+  font-size: ${THEME.type.lg}px; font-weight: 700;
+  color: ${p => p.$alert ? THEME.threat : THEME.amber};
+  letter-spacing: 0.02em;
+  filter: drop-shadow(0 0 4px ${p => p.$alert ? THEME.threat + '55' : THEME.amberGlow});
+  line-height: 1;
+`
 const PressureBar = styled.div`
-  width: 84px; height: 6px;
+  width: 84px; height: 5px;
   background: ${THEME.bgDeep};
   border: 1px solid ${THEME.borderMid};
   border-radius: ${THEME.radius.pill}px;
   overflow: hidden;
-  margin-top: 4px;
 `
 const PressureFill = styled.div<{ $pct: number; $alert: boolean }>`
   width: ${p => p.$pct.toFixed(1)}%;
@@ -197,13 +202,6 @@ const PressureFill = styled.div<{ $pct: number; $alert: boolean }>`
   background: ${p => p.$alert ? THEME.threat : THEME.amber};
   box-shadow: ${p => p.$alert ? `0 0 6px ${THEME.threat}88` : `0 0 6px ${THEME.amberGlow}`};
   transition: width ${THEME.motion.fast} ${THEME.motion.easeOut};
-`
-const Pip = styled.span<{ $active: boolean; $level: number }>`
-  width: 9px; height: 9px; border-radius: 50%;
-  background: ${p => p.$active ? awarenessColor(p.$level) : 'transparent'};
-  border: 1px solid ${p => p.$active ? 'transparent' : THEME.borderMid};
-  box-shadow: ${p => p.$active ? `0 0 8px ${awarenessColor(p.$level)}88` : 'none'};
-  transition: box-shadow ${THEME.motion.slow} ${THEME.motion.easeOut};
 `
 
 // ─── Control buttons ──────────────────────────────────────────────────────────
@@ -302,7 +300,6 @@ interface ToolbarProps {
   season: Season
   phase: DayPhase
   alive: number
-  awarenessStage: MessageStage
   selectedEnrichment: EnrichmentType
   onEnrichmentChange: (type: EnrichmentType) => void
   selectedBuild: BuildKind
@@ -319,7 +316,7 @@ const BUILD_OPTIONS: { kind: BuildKind; label: string; hint: string }[] = [
 export function Toolbar({
   activeTool, onToolChange, onMuteToggle, onRestartRequest, onSave, isMuted,
   isPaused, simSpeed, onPauseToggle, onSpeedChange,
-  day, year, season, phase, alive, awarenessStage,
+  day, year, season, phase, alive,
   selectedEnrichment, onEnrichmentChange,
   selectedBuild, onBuildChange,
 }: ToolbarProps) {
@@ -448,17 +445,14 @@ export function Toolbar({
           <StatusLabel>Alive</StatusLabel>
           <StatusValue $color={alive > 0 ? THEME.alive : THEME.death}>{alive}</StatusValue>
         </StatusCell>
-        <StatusCell>
-          <StatusLabel>Signal</StatusLabel>
-          <AwarenessPips>
-            {[1, 2, 3, 4, 5].map(n => <Pip key={n} $active={awarenessStage >= n} $level={n} />)}
-          </AwarenessPips>
-        </StatusCell>
         <StatusCell title="Caretaker pressure — heavy intervention bleeds ambient stress into the colony">
           <StatusLabel>Pressure</StatusLabel>
-          <PressureBar>
-            <PressureFill $pct={Math.min(100, actionLoad)} $alert={actionLoad >= 55} />
-          </PressureBar>
+          <PressureStack>
+            <PressureValue $alert={actionLoad >= 55}>{Math.round(actionLoad)}</PressureValue>
+            <PressureBar>
+              <PressureFill $pct={Math.min(100, actionLoad)} $alert={actionLoad >= 55} />
+            </PressureBar>
+          </PressureStack>
         </StatusCell>
       </StatusBlock>
 

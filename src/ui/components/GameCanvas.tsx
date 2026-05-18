@@ -276,14 +276,20 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot', se
 
 
   // Camera ; mutable ref so animation loop and event handlers share state.
-  // Initial frame is provisional (canvas size unknown until ResizeObserver
-  // fires); the first effect below reframes once both canvas size and
-  // gameState are present.
+  // Initial frame is a placeholder using default dimensions; the framing
+  // effect below replaces it once the real canvas size is known AND the
+  // gameState has arrived. Without that gate, the camera would frame with
+  // stale 1120×580 defaults and land could end up off-viewport.
   const cameraRef = useRef<Camera>(makeInitialCamera(1120, 580, gameState))
   const [, setCameraTick] = useState(0)
   // Track which world we last framed so we re-center on new worlds / resets.
   const framedWorldIdRef = useRef<string | null>(null)
   const userHasMovedCameraRef = useRef(false)
+  // Set true after ResizeObserver delivers a real measurement. Without this,
+  // the framing effect would fire with default dims and the world would render
+  // off-viewport.
+  const canvasSizedRef = useRef(false)
+  const [canvasReady, setCanvasReady] = useState(false)
 
   const dragRef = useRef<{ active: boolean; sx: number; sy: number; px: number; py: number }>({
     active: false, sx: 0, sy: 0, px: 0, py: 0,
@@ -304,12 +310,27 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot', se
       chRef.current = h
       setCw(w)
       setCh(h)
-      // Preserve the screen point that was visually centered: adjust pan by
-      // half the delta in viewport size so the same canvas-space point stays
-      // under the viewport center. Never re-pan to world midpoint.
+      if (!canvasSizedRef.current) {
+        // First real measurement: don't try to adjust pan — let the framing
+        // effect (re)compute the camera using actual dimensions.
+        canvasSizedRef.current = true
+        setCanvasReady(true)
+        return
+      }
+      // Subsequent resizes: if the user hasn't moved the camera, re-frame on
+      // creatures so the world stays centered. Otherwise preserve their view
+      // by shifting pan in lock-step with viewport size change.
       const cam = cameraRef.current
-      cam.panX += (w - prevW) / 2
-      cam.panY += (h - prevH) / 2
+      if (!userHasMovedCameraRef.current) {
+        const fresh = makeInitialCamera(w, h, gameStateRef.current)
+        cam.zoom = fresh.zoom
+        cam.panX = fresh.panX
+        cam.panY = fresh.panY
+        cam.rot  = fresh.rot
+      } else {
+        cam.panX += (w - prevW) / 2
+        cam.panY += (h - prevH) / 2
+      }
     })
     ro.observe(wrapper)
     return () => ro.disconnect()
@@ -319,10 +340,11 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot', se
   useEffect(() => { hoveredTileRef.current = hoveredTile }, [hoveredTile])
 
   // Re-frame the camera whenever a new world is loaded (worldId changes) OR
-  // when the very first valid gameState arrives. Subsequent zoom/pan from the
-  // user is preserved — we don't reframe mid-session.
+  // when the very first valid gameState arrives. Waits for canvasReady so the
+  // initial frame uses true canvas dimensions (otherwise stale defaults would
+  // leave the world off-viewport).
   useEffect(() => {
-    if (!gameState) return
+    if (!gameState || !canvasReady) return
     if (framedWorldIdRef.current === gameState.worldId && userHasMovedCameraRef.current) return
     if (framedWorldIdRef.current !== gameState.worldId) {
       userHasMovedCameraRef.current = false
@@ -331,7 +353,7 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot', se
     cameraRef.current = fresh
     framedWorldIdRef.current = gameState.worldId
     setCameraTick(t => t + 1)
-  }, [gameState])
+  }, [gameState, canvasReady])
 
   // Clear tooltip when tool changes
   useEffect(() => {

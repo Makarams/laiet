@@ -65,11 +65,15 @@ export function spawnCreature(
     name: string
     familyName: string
     genome?: Genome
+    // Lifespan multiplier from SimModifiers.lifespanMult. Optional so callers
+    // that don't have the modifiers (tests, fallback paths) get the v3 baseline.
+    lifespanMult?: number
   },
   rng: () => number
 ): Creature {
   const genome = overrides.genome ?? randomGenome(rng)
   const id = uuid()
+  const lifespanMult = overrides.lifespanMult ?? 1.0
 
   return {
     id,
@@ -81,7 +85,7 @@ export function spawnCreature(
     lineageId: overrides.lineageId ?? id,
 
     age: 0,
-    maxAge: MAX_AGE_BY_BODY[genome.body] + Math.floor((rng() - 0.5) * 10),
+    maxAge: Math.round(MAX_AGE_BY_BODY[genome.body] * lifespanMult) + Math.floor((rng() - 0.5) * 10),
     health: 100,
     hunger: 0,
     thirst: 0,
@@ -258,6 +262,7 @@ export function createOffspring(
   envCtx?: EnvContext,
   divergencePressure = 0,  // 0-1; computed by caller from geographic/stress/resource signals
   adaptationInheritMult = 1.0,  // SimModifiers.adaptationInheritMult
+  lifespanMult = 1.0,             // SimModifiers.lifespanMult — scales offspring's maxAge
 ): Creature {
   // Fitness-weighted inheritance: healthier, less-stressed parents pass on more traits.
   // The probability of inheriting parentA's trait rises with parentA's relative fitness.
@@ -303,6 +308,7 @@ export function createOffspring(
     bornOnDay: currentDay,
     knownEmoji: inheritEmoji(parentA, parentB, tribalLexicon, rng),
     drives: inheritDrives(parentDrivesA, parentDrivesB, rng),
+    lifespanMult,
   }, rng)
 
   if (mutatedTraits.length > 0) {
@@ -326,6 +332,7 @@ export function createAsexualOffspring(
   envCtx?: EnvContext,
   mutationMult = 1.0,
   adaptationInheritMult = 1.0,
+  lifespanMult = 1.0,
 ): Creature {
   const baseGenome = mutateGenomeAsexual(parent.genome, rng, ASEXUAL_MUTATION_CHANCE * mutationMult, envCtx)
   const newAdaptation = envCtx ? acquireAdaptation(envCtx) : null
@@ -346,6 +353,7 @@ export function createAsexualOffspring(
     bornOnDay: currentDay,
     knownEmoji: inheritEmoji(parent, null, [], rng),
     drives: inheritDrives(parentDrives, parentDrives, rng),
+    lifespanMult,
   }, rng)
 
   // Track asexual morphology mutations as a special case (clones always mutate)
@@ -421,7 +429,8 @@ function pickStarterGenomes(rng: () => number, count: number): Genome[] {
 export function createStarterCreatures(
   namedPairs: { name: string; familyName: string }[],
   worldSeed: number,
-  currentDay: number
+  currentDay: number,
+  lifespanMult = 1.0,
 ): Creature[] {
   const rng = createRng(worldSeed + 9999)
   const count = 4
@@ -453,6 +462,7 @@ export function createStarterCreatures(
       ...positions[i],
       genome:    genomes[i],
       bornOnDay: currentDay,
+      lifespanMult,
     }, rng)
   })
 

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import styled, { keyframes } from 'styled-components'
 import { useLaietStore } from '@/store/gameStore'
-import { ColonyMessage } from '@/types'
+import { ColonyMessage, MessageCategory } from '@/types'
 import { THEME, awarenessColor } from '@/ui/theme'
 
 const fadeIn = keyframes`
@@ -26,12 +26,14 @@ const Header = styled.div`
   padding-bottom: ${THEME.space.md}px;
   border-bottom: 1px solid ${THEME.border};
   flex-shrink: 0;
+  gap: ${THEME.space.md}px;
 `
 const Title = styled.div`
   font-size: ${THEME.type.base}px; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.22em;
   color: ${THEME.textSecondary};
   display: flex; align-items: center; gap: ${THEME.space.sm}px;
+  flex-shrink: 0;
 `
 const ActiveDot = styled.span`
   width:7px; height:7px; border-radius:50%;
@@ -39,19 +41,28 @@ const ActiveDot = styled.span`
   box-shadow: 0 0 8px ${THEME.amberGlow};
   display:inline-block;
 `
-const FilterRow = styled.div`display:flex;gap:${THEME.space.xs}px;align-items:center;`
-const FilterBtn = styled.button<{ $active: boolean; $accent: string }>`
-  background: ${p => p.$active ? `${p.$accent}22` : 'transparent'};
+const TabRow = styled.div`
+  display:flex; gap:${THEME.space.xs}px; align-items:center;
+  flex-wrap: wrap; justify-content: flex-end; flex: 1;
+`
+const Tab = styled.button<{ $active: boolean; $accent: string }>`
+  background: ${p => p.$active ? `${p.$accent}24` : 'transparent'};
   border: 1px solid ${p => p.$active ? p.$accent : THEME.border};
   color: ${p => p.$active ? p.$accent : THEME.textTertiary};
   font-family: ${THEME.font};
   font-size: ${THEME.type.sm}px; font-weight: 700;
   padding: ${THEME.space.xs}px ${THEME.space.md}px;
-  cursor: pointer; border-radius: ${THEME.radius.xs}px;
-  letter-spacing: 0.1em; text-transform: uppercase;
+  cursor: pointer; border-radius: ${THEME.radius.sm}px;
+  letter-spacing: 0.12em; text-transform: uppercase;
   transition: all ${THEME.motion.fast} ${THEME.motion.easeOut};
+  display: inline-flex; align-items: center; gap: 6px;
   box-shadow: ${p => p.$active ? `0 0 10px ${p.$accent}33` : 'none'};
   &:hover { border-color: ${p => p.$accent}; color: ${p => p.$accent}; }
+`
+const TabCount = styled.span`
+  font-size: ${THEME.type.xs}px;
+  opacity: 0.65;
+  font-weight: 600;
 `
 const UnreadBadge = styled.span`
   background: ${THEME.amberDim};
@@ -86,21 +97,22 @@ function lineColor(stage: number, foreground = false): string {
   if (stage === 2) return foreground ? '#b8d8fc' : awarenessColor(2)
   return foreground ? THEME.textSecondary : THEME.borderMid
 }
-const MessageLine = styled.div<{ $stage:number; $isNew:boolean; $clickable:boolean }>`
+const MessageLine = styled.div<{ $stage:number; $isNew:boolean; $clickable:boolean; $important:boolean }>`
   padding: ${THEME.space.sm}px ${THEME.space.md}px ${THEME.space.sm}px ${THEME.space.lg}px;
-  border-left: 2px solid ${p => lineColor(p.$stage)};
+  border-left: ${p => p.$important ? '3px' : '2px'} solid ${p => lineColor(p.$stage)};
+  background: ${p => p.$important ? `${lineColor(p.$stage)}10` : 'transparent'};
   color: ${p => lineColor(p.$stage, true)};
   animation: ${p => p.$isNew ? fadeIn : 'none'} ${THEME.motion.slow} ${THEME.motion.easeOut};
-  line-height: 1.65;
+  line-height: 1.7;
   font-size: ${p => p.$stage >= 3 ? `${THEME.type.lg}px` : `${THEME.type.md}px`};
   font-style: ${p => p.$stage >= 2 ? 'italic' : 'normal'};
-  font-weight: ${p => p.$stage >= 3 ? 500 : 400};
+  font-weight: ${p => p.$important ? 600 : p.$stage >= 3 ? 500 : 400};
   cursor: ${p => p.$clickable ? 'pointer' : 'default'};
   border-radius: 0 ${THEME.radius.sm}px ${THEME.radius.sm}px 0;
   transition: background ${THEME.motion.fast} ${THEME.motion.easeOut},
               box-shadow ${THEME.motion.fast} ${THEME.motion.easeOut};
   &:hover {
-    background: ${p => p.$clickable ? THEME.bgHover : 'transparent'};
+    background: ${p => p.$clickable ? THEME.bgHover : (p.$important ? `${lineColor(p.$stage)}10` : 'transparent')};
     box-shadow: ${p => p.$stage >= 3 ? `inset 4px 0 16px -8px ${lineColor(p.$stage)}` : 'none'};
   }
 `
@@ -110,23 +122,34 @@ const Empty = styled.div`
   font-size:${THEME.type.md}px; font-style:italic; letter-spacing:0.12em;
 `
 
-type FilterKey = 'all' | 'obs' | 'aware' | 'death'
-
-function categorize(msg: ColonyMessage): FilterKey[] {
-  const keys: FilterKey[] = ['all']
-  if (msg.stage === 1) keys.push('obs')
-  if (msg.stage >= 2) keys.push('aware')
-  if (/(died|gone|silent|fell|never moved again|stops moving|grew still|extinction|silence)/i.test(msg.text)) {
-    keys.push('death')
+// ─── Categorisation ─────────────────────────────────────────────────────────
+// Three buckets, mutually exclusive:
+//   general   — routine observations, births, weather notes, day-to-day chatter
+//   important — colony milestones the player should not miss (mass die-off,
+//               legendary creatures, race emergence/loss, awareness stage-up,
+//               lineage extinction, fracture events, deep-awareness speech)
+//   event     — direct caretaker-facing messages and absence/return notes
+// Producers may set msg.category explicitly; otherwise we derive it from
+// stage and content keywords (back-compat with older saves and untagged paths).
+function categoryOf(msg: ColonyMessage): MessageCategory {
+  if (msg.category) return msg.category
+  if (msg.stage >= 4) return 'important'
+  const t = msg.text.toLowerCase()
+  if (/(extinction|silence|mass die-off|lineage|fracture|legendary|prolific|longevity|last-of|race emerged|race revived|race lost|awakened|ascended)/i.test(t)) {
+    return 'important'
   }
-  return keys
+  if (/(returned|absence|away|caretaker)/i.test(t)) {
+    return 'event'
+  }
+  return 'general'
 }
 
-const FILTERS: { key: FilterKey; label: string; accent: string }[] = [
-  { key: 'all',   label: 'All',   accent: THEME.textSecondary },
-  { key: 'obs',   label: 'Obs',   accent: THEME.water },
-  { key: 'aware', label: 'Aware', accent: '#c878f0' },
-  { key: 'death', label: 'Death', accent: THEME.death },
+type TabKey = 'general' | 'important' | 'event'
+
+const TABS: { key: TabKey; label: string; accent: string }[] = [
+  { key: 'general',   label: 'General',   accent: THEME.textSecondary },
+  { key: 'important', label: 'Important', accent: THEME.amber },
+  { key: 'event',     label: 'Event',     accent: THEME.water },
 ]
 
 export function MessageLogPanel() {
@@ -134,15 +157,24 @@ export function MessageLogPanel() {
   const unread       = useLaietStore(s => s.unreadMessageCount)
   const markRead     = useLaietStore(s => s.markMessagesRead)
   const selectCreature = useLaietStore(s => s.selectCreature)
-  const [filter, setFilter] = useState<FilterKey>('all')
+  const [tab, setTab] = useState<TabKey>('general')
 
   const messages = gameState?.messages ?? []
   const recentThreshold = messages.length - 5
 
-  const filtered = useMemo(() =>
-    filter === 'all' ? messages : messages.filter(m => categorize(m).includes(filter)),
-    [messages, filter]
-  )
+  // Pre-categorise once so we can show counts per tab and filter cheaply.
+  const { byTab, counts } = useMemo(() => {
+    const byTab: Record<TabKey, ColonyMessage[]> = { general: [], important: [], event: [] }
+    for (const m of messages) byTab[categoryOf(m)].push(m)
+    const counts = {
+      general:   byTab.general.length,
+      important: byTab.important.length,
+      event:     byTab.event.length,
+    }
+    return { byTab, counts }
+  }, [messages])
+
+  const filtered = byTab[tab]
 
   const groupedReversed = useMemo(() => {
     const reversed = [...filtered].reverse()
@@ -166,18 +198,19 @@ export function MessageLogPanel() {
           Field Log
           {unread > 0 && <UnreadBadge>+{unread}</UnreadBadge>}
         </Title>
-        <FilterRow>
-          {FILTERS.map(f => (
-            <FilterBtn key={f.key} $active={filter === f.key} $accent={f.accent}
-              onClick={e => { e.stopPropagation(); setFilter(f.key) }}>
+        <TabRow>
+          {TABS.map(f => (
+            <Tab key={f.key} $active={tab === f.key} $accent={f.accent}
+              onClick={e => { e.stopPropagation(); setTab(f.key) }}>
               {f.label}
-            </FilterBtn>
+              <TabCount>{counts[f.key]}</TabCount>
+            </Tab>
           ))}
-        </FilterRow>
+        </TabRow>
       </Header>
 
       <Log>
-        {filtered.length === 0 && <Empty>awaiting transmission</Empty>}
+        {filtered.length === 0 && <Empty>nothing recorded in this band</Empty>}
         {groupedReversed.map(group => (
           <div key={group.day}>
             <DaySeparator>Day {group.day}</DaySeparator>
@@ -187,7 +220,7 @@ export function MessageLogPanel() {
               const clickable = !!msg.creatureId &&
                 gameState?.creatures[msg.creatureId]?.diedOnDay === null
               return (
-                <MessageLine key={msg.id} $stage={msg.stage} $isNew={isNew} $clickable={clickable}
+                <MessageLine key={msg.id} $stage={msg.stage} $isNew={isNew} $clickable={clickable} $important={tab === 'important'}
                   onClick={e => {
                     e.stopPropagation()
                     if (clickable) selectCreature(msg.creatureId!)

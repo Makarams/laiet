@@ -175,6 +175,18 @@ What sentence stage a creature can speak at is determined by their position in t
 
 ---
 
+## Field log — three tiers + extinction report
+
+The colony's voice is sorted into three buckets surfaced as tabs at the top of the Field Log:
+
+- **General** — routine observations, births, weather notes, day-to-day colony chatter.
+- **Important** — milestones the player should not miss: mass die-offs, legendary creatures, race emergence/loss/revival, deep-awareness speech (stage 4+), lineage extinctions, neglect warnings, the extinction line itself.
+- **Event** — direct caretaker-facing notes: thunder strikes, fires, absence-return messages.
+
+Each tab shows a running count beside its label. When the colony reaches extinction, the endgame overlay offers a **Download Report** button that emits a compressed text summary of the run — extinction cause, peak population, final generation, death-cause breakdown, race populations, tribes formed, notable chronicle events, chronicle-kind totals, and most-populous family lines — composed strictly from the engine's recorded state.
+
+---
+
 ## Caretaker profile — six orthogonal axes
 
 Set once before world creation. Each axis controls **one slice** of the simulation, with meaningful trade-offs.
@@ -186,6 +198,7 @@ Set once before world creation. Each axis controls **one slice** of the simulati
 | **Colony Focus** | bonds · survival · awareness | Social emphasis (bond speed, tribe formation, enrichment, sentience growth) |
 | **Expectation** | persistence · adaptation · fracture | Narrative arc bias (lineage hostility seed, fracture eligibility) |
 | **Your Presence** | attentive · neutral · hidden | How the colony registers you (caretaker_contact reach, message frequency) |
+| **Lifespan** | brief · standard · long | Multiplies MAX_AGE for every body type (0.60× / 1.0× / 1.80×) — controls generational tempo |
 
 The old **Role** (presence) axis was removed — caretaker actions are unlimited; the action-pressure curve handles balance.
 

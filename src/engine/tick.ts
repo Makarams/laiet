@@ -1823,6 +1823,20 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
     const allowMove = Math.random() < skipMoveRoll
     const movChanges = allowMove ? tickMovement(c, tiles) : {}
     c = { ...c, ...movChanges }
+    // Defensive clamp: every code path that produces a target / position is
+    // expected to bound it, but the engine treats out-of-bounds creatures as
+    // a hard invariant violation (renderer reads tiles[c.y][c.x] without
+    // bounds checks). Re-clamp on every tick as belt-and-braces insurance.
+    if (c.x < 0 || c.x >= WORLD_SIZE || c.y < 0 || c.y >= WORLD_SIZE) {
+      c.x = Math.max(0, Math.min(WORLD_SIZE - 1, c.x))
+      c.y = Math.max(0, Math.min(WORLD_SIZE - 1, c.y))
+    }
+    if (c.targetX !== null && (c.targetX < 0 || c.targetX >= WORLD_SIZE)) {
+      c.targetX = Math.max(0, Math.min(WORLD_SIZE - 1, c.targetX))
+    }
+    if (c.targetY !== null && (c.targetY < 0 || c.targetY >= WORLD_SIZE)) {
+      c.targetY = Math.max(0, Math.min(WORLD_SIZE - 1, c.targetY))
+    }
 
     // At-tile resource consumption
     const currentTile = tiles[c.y]?.[c.x]
@@ -2900,7 +2914,7 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
         const lineageHostility = Math.max(0, -(state.lineageRelations?.[lineageKey] ?? 0)) / 100
         const divergencePressure = Math.min(1, geoSep * 0.35 + avgStress * 0.40 + lineageHostility * 0.25)
 
-        const offspring = createOffspring(c, partner, c.x, c.y, state.time.day, tickRng, state.modifiers?.mutationChance, combinedLex, envCtx, divergencePressure, state.modifiers?.adaptationInheritMult ?? 1)
+        const offspring = createOffspring(c, partner, c.x, c.y, state.time.day, tickRng, state.modifiers?.mutationChance, combinedLex, envCtx, divergencePressure, state.modifiers?.adaptationInheritMult ?? 1, state.modifiers?.lifespanMult ?? 1)
         if (nestNearby) offspring.health = Math.min(100, offspring.health + NEST_OFFSPRING_HEALTH)
         newCreatures.push(offspring)
 
@@ -2980,7 +2994,7 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
       && tickRng() < ASEXUAL_BASE_CHANCE * popFactor) {
       const asexSpawnTile = state.tiles[c.y]?.[c.x]
       const asexEnvCtx: EnvContext = { biome: asexSpawnTile?.biome ?? 'temperate', weather: state.weather ?? 'clear', season: state.time.season }
-      const offspring = createAsexualOffspring(c, c.x, c.y, state.time.day, tickRng, asexEnvCtx, (state.modifiers?.mutationChance ?? 0.10) / 0.10, state.modifiers?.adaptationInheritMult ?? 1)
+      const offspring = createAsexualOffspring(c, c.x, c.y, state.time.day, tickRng, asexEnvCtx, (state.modifiers?.mutationChance ?? 0.10) / 0.10, state.modifiers?.adaptationInheritMult ?? 1, state.modifiers?.lifespanMult ?? 1)
       newCreatures.push(offspring)
       creatures[c.id] = {
         ...creatures[c.id],
@@ -3711,6 +3725,7 @@ function checkEndgame(state: GameState, mods: SimModifiers): GameState {
           id: uuid(), text: 'the colony is gone. silence.',
           stage: 1 as const, creatureId: null,
           day: state.time.day, timestamp: Date.now(), read: false,
+          category: 'important' as const,
         }
       ]
     }

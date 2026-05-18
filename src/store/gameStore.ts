@@ -167,7 +167,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     const modifiers = computeSimModifiers(profile)
     const seed = worldSeedFromTimestamp()
     const tiles = generateWorld(seed)
-    const creatures = createStarterCreatures(namedCreatures, seed, 0)
+    const creatures = createStarterCreatures(namedCreatures, seed, 0, modifiers.lifespanMult ?? 1)
     const creatureMap: Record<string, Creature> = {}
     for (const c of creatures) creatureMap[c.id] = c
 
@@ -562,6 +562,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
       day: state.time.day,
       timestamp: now,
       read: false,
+      category: 'event',
     })
 
     const withChronicle = pushChronicle(state, {
@@ -602,6 +603,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
       day: state.time.day,
       timestamp: now,
       read: false,
+      category: 'event' as const,
     }]
 
     const withChronicle = pushChronicle(state, { kind: 'caretaker_fire', day: state.time.day, x, y })

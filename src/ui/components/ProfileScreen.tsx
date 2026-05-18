@@ -127,6 +127,7 @@ type Evolution   = CaretakerProfile['evolution']
 type Focus       = CaretakerProfile['focus']
 type Expectation = CaretakerProfile['expectation']
 type Visibility  = CaretakerProfile['visibility']
+type Lifespan    = NonNullable<CaretakerProfile['lifespan']>
 
 // Hints describe the *mechanical* effect, not the mood — every line names
 // something the simulation actually does differently.
@@ -155,12 +156,18 @@ const EXPECTATION_HINTS: Record<Expectation, string> = {
   adaptation:  'adaptations inherit 25% better, mutation +20% boost, new lineages mildly ally ; resilience-tilted',
   fracture:    'new lineage pairs start mildly hostile, conflict fractures 35% sooner ; more, smaller tribes',
 }
+const LIFESPAN_HINTS: Record<Lifespan, string> = {
+  brief:    'individual maxAge ×0.60 ; rapid generational turnover, evolution surfaces fast, lives feel ephemeral',
+  standard: 'individual maxAge ×1.0 ; the v3 baseline',
+  long:     'individual maxAge ×1.80 ; patient lives leave deeper marks, slower generational depth, more sentience time',
+}
 
 const WORLD_COLORS:     Record<World,       string> = { fertile: THEME.alive, varied: THEME.amber, scarce: THEME.threat }
 const EVOLUTION_COLORS: Record<Evolution,   string> = { fast: THEME.threat, drift: THEME.amber, slow: THEME.water }
 const FOCUS_COLORS:     Record<Focus,       string> = { bonds: '#c878f0', survival: THEME.alive, awareness: THEME.water }
 const VISIBILITY_COLORS: Record<Visibility, string> = { attentive: '#f0a8f0', neutral: THEME.amber, hidden: '#6a9a8a' }
 const EXPECT_COLORS:    Record<Expectation, string> = { persistence: THEME.amber, adaptation: THEME.alive, fracture: THEME.death }
+const LIFESPAN_COLORS:  Record<Lifespan,    string> = { brief: THEME.threat, standard: THEME.amber, long: THEME.water }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -177,9 +184,10 @@ export function ProfileScreen({ onComplete }: Props) {
   const [focus,       setFocus]       = useState<Focus>('survival')
   const [expectation, setExpectation] = useState<Expectation>('persistence')
   const [visibility,  setVisibility]  = useState<Visibility>('neutral')
+  const [lifespan,    setLifespan]    = useState<Lifespan>('standard')
 
   const handleSubmit = () => {
-    const profile: CaretakerProfile = { world, evolution, focus, expectation, visibility }
+    const profile: CaretakerProfile = { world, evolution, focus, expectation, visibility, lifespan }
     onComplete(profile)
   }
 
@@ -260,6 +268,20 @@ export function ProfileScreen({ onComplete }: Props) {
               ))}
             </OptionGrid>
             <Hint>{VISIBILITY_HINTS[visibility]}</Hint>
+          </Section>
+
+          {/* Lifespan — sixth defining axis */}
+          <Section>
+            <SectionTitle>Lifespan</SectionTitle>
+            <OptionGrid $cols={3}>
+              {(['brief','standard','long'] as Lifespan[]).map(l => (
+                <OptionBtn key={l} $selected={lifespan === l} $accent={LIFESPAN_COLORS[l]}
+                  onClick={() => setLifespan(l)}>
+                  {l}
+                </OptionBtn>
+              ))}
+            </OptionGrid>
+            <Hint>{LIFESPAN_HINTS[lifespan]}</Hint>
           </Section>
         </FormColumn>
 

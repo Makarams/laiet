@@ -10,6 +10,7 @@ import { Toolbar, Tool, BuildKind } from './Toolbar'
 import { updateMusicContext, computeMusicKey, updateWeatherAudio, setMuted, isMuted, unlockAudio } from '@/audio/chiptune'
 import { EnrichmentType } from '@/types'
 import { saveToCloud } from '@/db/persistence'
+import { downloadExtinctionReport } from '@/engine/extinctionReport'
 import { THEME } from '@/ui/theme'
 
 // ─── Global styles ────────────────────────────────────────────────────────────
@@ -126,8 +127,13 @@ const EndgameBody = styled.div`
   color: ${THEME.textSecondary}; font-style: italic;
   padding: 0 ${THEME.space.xl}px;
 `
-const EndgameBtn = styled.button`
+const EndgameActions = styled.div`
   margin-top: ${THEME.space.xxxl}px;
+  display: flex;
+  gap: ${THEME.space.lg}px;
+  align-items: center;
+`
+const EndgameBtn = styled.button`
   background: transparent;
   border: 2px solid ${THEME.border};
   border-radius: ${THEME.radius.md}px;
@@ -141,6 +147,22 @@ const EndgameBtn = styled.button`
   &:hover {
     border-color: ${THEME.amber}; color: ${THEME.amber};
     box-shadow: ${THEME.glow.amber};
+  }
+`
+const EndgameSecondaryBtn = styled.button`
+  background: transparent;
+  border: 1px solid ${THEME.border};
+  border-radius: ${THEME.radius.md}px;
+  color: ${THEME.textTertiary};
+  font-family: ${THEME.font};
+  font-size: ${THEME.type.base}px; font-weight: 500;
+  padding: ${THEME.space.md}px ${THEME.space.xxl}px;
+  cursor: pointer; letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: all ${THEME.motion.fast} ${THEME.motion.easeOut};
+  &:hover {
+    border-color: ${THEME.textSecondary};
+    color: ${THEME.textPrimary};
   }
 `
 
@@ -320,7 +342,6 @@ export function GameLayout() {
           day={gameState.time.day} year={gameState.time.year}
           season={gameState.time.season} phase={gameState.time.phase}
           alive={Object.values(gameState.creatures).filter(c=>c.diedOnDay===null).length}
-          awarenessStage={gameState.awarenessStage}
           selectedEnrichment={selectedEnrichment}
           onEnrichmentChange={setSelectedEnrichment}
           selectedBuild={selectedBuild}
@@ -342,7 +363,15 @@ export function GameLayout() {
             <EndgameSeal><EndgameGlyph>{ENDGAME_GLYPH}</EndgameGlyph></EndgameSeal>
             <EndgameTitle>{ENDGAME_TITLE}</EndgameTitle>
             <EndgameBody>{gameState.messages[gameState.messages.length-1]?.text}</EndgameBody>
-            <EndgameBtn onClick={()=>setShowRestartConfirm(true)}>Begin Again</EndgameBtn>
+            <EndgameActions>
+              <EndgameSecondaryBtn onClick={() => {
+                const fossil = gameState.fossilRecord[gameState.fossilRecord.length - 1]
+                downloadExtinctionReport(gameState, fossil)
+              }}>
+                ↓ Download Report
+              </EndgameSecondaryBtn>
+              <EndgameBtn onClick={()=>setShowRestartConfirm(true)}>Begin Again</EndgameBtn>
+            </EndgameActions>
           </EndgameOverlay>
         )}
 
