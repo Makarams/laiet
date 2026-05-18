@@ -110,8 +110,8 @@ function carveRiver(tiles: Tile[][], rng: () => number): void {
     else if (drift > 0.65 && tx2 < WORLD_SIZE - 2) tx2++
   }
 
-  // Small ponds scattered around the map (scaled for larger world)
-  const pondCount = 5 + Math.floor(rng() * 5)
+  // Small ponds scattered around the map (scaled with world area; 480² = 4× v3)
+  const pondCount = 18 + Math.floor(rng() * 14)
   for (let p = 0; p < pondCount; p++) {
     const px = 4 + Math.floor(rng() * (WORLD_SIZE - 8))
     const py = 4 + Math.floor(rng() * (WORLD_SIZE - 8))
@@ -152,8 +152,8 @@ function carveRiver(tiles: Tile[][], rng: () => number): void {
 // ─── Tree clusters ────────────────────────────────────────────────────────────
 
 function plantTrees(tiles: Tile[][], _seed: number, rng: () => number): void {
-  // Scale clusters with world area; 120×120 is 4× the old 60×60
-  const clusterCount = 100 + Math.floor(rng() * 40)
+  // Scale clusters with world area; 480×480 = 4× the 240×240 v3 baseline
+  const clusterCount = 380 + Math.floor(rng() * 160)
   for (let cluster = 0; cluster < clusterCount; cluster++) {
     const cx = 1 + Math.floor(rng() * (WORLD_SIZE - 2))
     const cy = 1 + Math.floor(rng() * (WORLD_SIZE - 2))
@@ -192,8 +192,8 @@ function scatterRocks(tiles: Tile[][], rng: () => number): void {
     }
   }
 
-  // Scattered rock outcroppings; scaled by world area vs 60×60 baseline
-  const outcrops = 28 + Math.floor(rng() * 20)
+  // Scattered rock outcroppings; scaled by world area (480² baseline)
+  const outcrops = 110 + Math.floor(rng() * 80)
   for (let o = 0; o < outcrops; o++) {
     const ox = 2 + Math.floor(rng() * (WORLD_SIZE - 4))
     const oy = 2 + Math.floor(rng() * (WORLD_SIZE - 4))

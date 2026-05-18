@@ -32,7 +32,20 @@ LA-IET.EXE is built around four uncompromising principles:
 | **Strike** | `5` | 2/day, 12s cooldown | Call down lightning (damages creatures, ignites trees) |
 | **Ignite** | `6` | 3/day, 8s cooldown | Set fire to a tree, bush, or shelter |
 | **Enrich** | `7` | Unlimited | Place one of eight enrichment items |
+| **Build** | `8` | Per-kind charges (see below) | Place fence / cairn / nest / watch post |
+| **Bush** | `9` | 2.5s cooldown | Pick up a bush or replant the one you're holding |
 | **Heal** | Dossier panel | 3/day (4 for interventionist) | Restore a creature's health to 100 |
+
+### Build kit (under the Build tool)
+
+| Object | Daily charges | Effect |
+|---|---|---|
+| **Fence** | 8/day | Wooden barrier — slows movement, decays in storms |
+| **Cairn** | 3/day | Memorial stones — calming aura over a 4-tile radius; if placed on a death site it inherits the lost creature's identity |
+| **Nest** | 2/day | Breeding zone — bonded pairs within 4 tiles get a reproduction roll boost; offspring spawn with +15 health |
+| **Watch Post** | 2/day | Vigilance amplifier — drifts every nearby creature's vigilance drive toward 1.0 over time; nearby Vigilant creatures see feared targets from farther |
+
+The **Bush** tool toggles between pick-up and replant. Carried bushes preserve their berry count so the caretaker can move fruit-loaded shrubs to where they're needed.
 
 Your presence has weight. Each action is chronicled. Creatures with sufficient sentience register the proximity as a *caretaker_contact* experience, and over time the colony references you in its messages.
 
@@ -76,7 +89,7 @@ This is the core of the simulation's emergence. The drive selector chooses every
 
 - **Time**: 1 real minute = 1 game day. Four seasons of 30 days each. Spring, summer, autumn, winter.
 - **Day cycle**: Dawn → Day → Dusk → Night within every game day. Night doubles warmth decay; the colony seeks shelter.
-- **World**: 240×240 isometric grid across five biomes — **temperate, arid, lush, rocky, wetland** — each with distinct food density, water access, and thirst pressure.
+- **World**: 480×480 isometric grid across five biomes — **temperate, arid, lush, rocky, wetland** — each with distinct food density, water access, and thirst pressure.
 - **Time away**: The simulation runs while you're gone, with a 4-real-minute catch-up cap. Long absences write a *caretaker_returned* event with the actual hardship that occurred (births, deaths, fires, lightning) into the colony's voice on return.
 
 ### Weather (10 states, mostly emergent)
@@ -200,7 +213,7 @@ Every component now draws from a unified token system in `src/ui/theme.ts` rathe
 |---|---|
 | **Toolbar** | 7 tools with glyph icons + hotkeys + charge badges, status block (Day/Season/Phase/Weather/Alive/Awareness pips), playback controls |
 | **Colony Stats (left)** | Population, morphotype distribution, average vitals, stage progression, awareness band, weather/snow widgets |
-| **Game Canvas (center)** | 240×240 isometric world; click to select; pan/zoom/rotate |
+| **Game Canvas (center)** | 480×480 isometric world; click to select; pan/zoom/rotate |
 | **Message Log (center, below canvas)** | Chronicle-grounded colony speech with stage-coloured borders, day separators, filter chips |
 | **Field Record (right)** | Selected creature dossier: identity, lineage, biology, vitals, bonds, record |
 | **Event popups (canvas overlay)** | Time-sensitive prompts with action options |
@@ -213,7 +226,7 @@ Every component now draws from a unified token system in `src/ui/theme.ts` rathe
 | Key | Action |
 |---|---|
 | `Space` | Pause / resume |
-| `1` – `7` | Select tool (Observe, Feed, Plant, River, Strike, Ignite, Enrich) |
+| `1` – `9` | Select tool (Observe, Feed, Plant, River, Strike, Ignite, Enrich, Build, Bush) |
 | `Q` / `E` | Rotate world CCW / CW |
 | `+` / `-` / Scroll | Zoom |
 | `0` | Recenter camera, reset zoom |
@@ -301,7 +314,7 @@ src/
 │   ├── speech.ts               Emoji vocabulary, composer
 │   ├── chronicle.ts            Colony's real event memory
 │   └── tick.ts                 Main simulation loop
-├── world/worldGen.ts           Procedural 240×240 world
+├── world/worldGen.ts           Procedural 480×480 world
 ├── creatures/
 │   ├── factory.ts              spawn, createOffspring, sentience
 │   └── behavior.ts             Drive selector, AI state machine

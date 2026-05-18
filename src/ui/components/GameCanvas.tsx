@@ -5,15 +5,16 @@ import {
   drawTile, drawCreature, drawAtmosphere, drawScanlines, drawVignette,
   gridToIso, canvasOrigin, isoToGrid, resetCanvasState, drawEnrichmentItem,
 } from '@/ui/renderer'
-import { WORLD_SIZE, ISO_TILE_HEIGHT, BUILD_TERRITORY_RADIUS } from '@/engine/constants'
+import { WORLD_SIZE, ISO_TILE_HEIGHT, ISO_TILE_WIDTH, CANVAS_PADDING_Y, BUILD_TERRITORY_RADIUS } from '@/engine/constants'
 import type { GameState, Season, EnrichmentType, Tile, Creature, EnrichmentItem } from '@/types'
+import type { BuildKind } from './Toolbar'
 import { genomeColor } from '@/engine/genetics'
 
 const TICK_MS = 1000
 
 const ZOOM_MIN  = 0.08
 const ZOOM_MAX  = 5.0
-const ZOOM_INIT = 2.8   // Start zoomed in on creatures for better performance; reduces tile rendering
+const ZOOM_INIT = 3.0   // tight framing on founder cluster at world start
 
 const CanvasWrapper = styled.div`
   position: relative;
@@ -131,11 +132,12 @@ const TileTooltip = styled.div<{ $x: number; $y: number }>`
   }
 `
 
-type Tool = 'select' | 'food' | 'tree' | 'water' | 'thunder' | 'fire' | 'enrich'
+type Tool = 'select' | 'food' | 'tree' | 'water' | 'thunder' | 'fire' | 'enrich' | 'build' | 'bush'
 
 interface GameCanvasProps {
   activeTool: Tool
   selectedEnrichment?: EnrichmentType
+  selectedBuild?: BuildKind
 }
 
 interface Camera {
@@ -166,11 +168,39 @@ function screenToCanvas(lx: number, ly: number, cam: Camera, cw: number, ch: num
   return { x: ux, y: uy }
 }
 
-function makeInitialCamera(_cw: number, ch: number): Camera {
-  const padY = 55
-  const worldCenterY = padY + (WORLD_SIZE / 2) * ISO_TILE_HEIGHT
-  const panY = (ch / 2) - ch / 2 - (worldCenterY - ch / 2) * ZOOM_INIT
-  return { zoom: ZOOM_INIT, panX: 0, panY, rot: 0 }
+// Compute the canvas-space (pre-camera) coordinates of a given grid cell.
+function gridToCanvasPoint(gx: number, gy: number, cw: number): { x: number; y: number } {
+  const origin = canvasOrigin(cw)
+  const iso = gridToIso(gx, gy)
+  return { x: origin.x + iso.x, y: origin.y + iso.y }
+}
+
+// Frame the camera on a specific canvas-space point at the given zoom.
+function frameCameraAt(cw: number, ch: number, canvasX: number, canvasY: number, zoom: number, rot = 0): Camera {
+  // Center this canvas-space point on the viewport: solve
+  //   screen = (canvasX - cw/2) * zoom + cw/2 + panX  →  cw/2
+  const panX = -(canvasX - cw / 2) * zoom
+  const panY = -(canvasY - ch / 2) * zoom
+  return { zoom, panX, panY, rot }
+}
+
+// Build a camera tightly framed on the alive-creature centroid, or fall back
+// to world center if no creatures exist.
+function makeInitialCamera(cw: number, ch: number, gameState?: GameState | null): Camera {
+  if (gameState) {
+    const alive = Object.values(gameState.creatures).filter(c => c.diedOnDay === null)
+    if (alive.length > 0) {
+      let sx = 0, sy = 0
+      for (const c of alive) { sx += c.x; sy += c.y }
+      const cgx = sx / alive.length
+      const cgy = sy / alive.length
+      const pt = gridToCanvasPoint(cgx, cgy, cw)
+      return frameCameraAt(cw, ch, pt.x, pt.y, ZOOM_INIT, 0)
+    }
+  }
+  const worldCenterX = canvasOrigin(cw).x
+  const worldCenterY = CANVAS_PADDING_Y + (WORLD_SIZE / 2) * ISO_TILE_HEIGHT
+  return frameCameraAt(cw, ch, worldCenterX, worldCenterY, ZOOM_INIT, 0)
 }
 
 function zoomAt(cam: Camera, lx: number, ly: number, newZoomRaw: number, cw: number, ch: number) {
@@ -197,7 +227,7 @@ const SEASON_LABELS: Record<Season, string> = {
   winter: 'winter arrives.',
 }
 
-export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: GameCanvasProps) {
+export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot', selectedBuild = 'fence' }: GameCanvasProps) {
   const canvasRef    = useRef<HTMLCanvasElement>(null)
   const wrapperRef   = useRef<HTMLDivElement>(null)
   const gameState    = useLaietStore(s => s.gameState)
@@ -211,6 +241,11 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
   const igniteFire    = useLaietStore(s => s.igniteFire)
   const placeWater    = useLaietStore(s => s.placeWater)
   const placeEnrichment = useLaietStore(s => s.placeEnrichment)
+  const placeFence     = useLaietStore(s => s.placeFence)
+  const placeCairn     = useLaietStore(s => s.placeCairn)
+  const placeNest      = useLaietStore(s => s.placeNest)
+  const placeWatchPost = useLaietStore(s => s.placeWatchPost)
+  const bushAction     = useLaietStore(s => s.bushAction)
 
   // Canvas pixel dimensions ; updated by ResizeObserver
   const [cw, setCw] = useState(1120)
@@ -240,9 +275,15 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
   const arrowHitAreasRef = useRef<Array<{ cx: number; cy: number; canvasX: number; canvasY: number }>>([])
 
 
-  // Camera ; mutable ref so animation loop and event handlers share state
-  const cameraRef = useRef<Camera>(makeInitialCamera(1120, 580))
+  // Camera ; mutable ref so animation loop and event handlers share state.
+  // Initial frame is provisional (canvas size unknown until ResizeObserver
+  // fires); the first effect below reframes once both canvas size and
+  // gameState are present.
+  const cameraRef = useRef<Camera>(makeInitialCamera(1120, 580, gameState))
   const [, setCameraTick] = useState(0)
+  // Track which world we last framed so we re-center on new worlds / resets.
+  const framedWorldIdRef = useRef<string | null>(null)
+  const userHasMovedCameraRef = useRef(false)
 
   const dragRef = useRef<{ active: boolean; sx: number; sy: number; px: number; py: number }>({
     active: false, sx: 0, sy: 0, px: 0, py: 0,
@@ -258,16 +299,17 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
       const w = Math.floor(e.contentRect.width)
       const h = Math.floor(e.contentRect.height)
       if (w < 10 || h < 10) return
+      const prevW = cwRef.current, prevH = chRef.current
       cwRef.current = w
       chRef.current = h
       setCw(w)
       setCh(h)
-      // Recenter camera on resize keeping current zoom
+      // Preserve the screen point that was visually centered: adjust pan by
+      // half the delta in viewport size so the same canvas-space point stays
+      // under the viewport center. Never re-pan to world midpoint.
       const cam = cameraRef.current
-      cam.panX = 0
-      const padY = 55
-      const worldCenterY = padY + (WORLD_SIZE / 2) * ISO_TILE_HEIGHT
-      cam.panY = (h / 2) - h / 2 - (worldCenterY - h / 2) * cam.zoom
+      cam.panX += (w - prevW) / 2
+      cam.panY += (h - prevH) / 2
     })
     ro.observe(wrapper)
     return () => ro.disconnect()
@@ -275,6 +317,22 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
 
   useEffect(() => { selectedIdRef.current = selectedCreatureId }, [selectedCreatureId])
   useEffect(() => { hoveredTileRef.current = hoveredTile }, [hoveredTile])
+
+  // Re-frame the camera whenever a new world is loaded (worldId changes) OR
+  // when the very first valid gameState arrives. Subsequent zoom/pan from the
+  // user is preserved — we don't reframe mid-session.
+  useEffect(() => {
+    if (!gameState) return
+    if (framedWorldIdRef.current === gameState.worldId && userHasMovedCameraRef.current) return
+    if (framedWorldIdRef.current !== gameState.worldId) {
+      userHasMovedCameraRef.current = false
+    }
+    const fresh = makeInitialCamera(cwRef.current, chRef.current, gameState)
+    cameraRef.current = fresh
+    framedWorldIdRef.current = gameState.worldId
+    setCameraTick(t => t + 1)
+  }, [gameState])
+
   // Clear tooltip when tool changes
   useEffect(() => {
     setTileInfo(null)
@@ -334,11 +392,12 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
         zoomAt(cam, cw_ / 2, ch_ / 2, cam.zoom / 1.15, cw_, ch_)
         setCameraTick(t => t + 1)
       } else if (e.key === '0') {
-        const reset = makeInitialCamera(cw_, ch_)
+        const reset = makeInitialCamera(cw_, ch_, gameStateRef.current)
         cam.zoom = reset.zoom
         cam.panX = reset.panX
         cam.panY = reset.panY
         cam.rot  = 0
+        userHasMovedCameraRef.current = false  // recenter behaves like a fresh frame
         setCameraTick(t => t + 1)
       }
     }
@@ -382,21 +441,48 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
         ? rotateGrid(hoveredTileRef.current.x, hoveredTileRef.current.y, rot, WORLD_SIZE)
         : null
 
-      // Viewport culling: compute visible canvas-space bounds once and skip
-      // tiles whose top vertex is off-screen. At default zoom (~1×) this cuts
-      // ~60% of drawTile calls; at higher zoom even more.
+      // Viewport culling: compute visible canvas-space bounds, then derive the
+      // tight grid-coordinate range that could project into those bounds.
+      // Iterating only the visible grid range (vs WORLD_SIZE²) is critical at
+      // 480×480, where the naive nested loop is 4× the v3 cost per frame.
       const halfCw = cw_ / 2, halfCh = ch_ / 2
-      const cullMargin = 30  // covers tile diamond overhang at any zoom level
+      const cullMargin = 30
       const sxMin = halfCw - (halfCw + cam.panX) / cam.zoom - cullMargin
       const sxMax = halfCw + (halfCw - cam.panX) / cam.zoom + cullMargin
       const syMin = halfCh - (halfCh + cam.panY) / cam.zoom - cullMargin
       const syMax = halfCh + (halfCh - cam.panY) / cam.zoom + cullMargin
 
-      for (let py = 0; py < WORLD_SIZE; py++) {
-        for (let px = 0; px < WORLD_SIZE; px++) {
+      // Invert iso projection at the four screen corners → grid bounding box.
+      // Add a small tile-radius pad so partly-visible diamond edges still draw.
+      const localToGridSum  = (sx: number) => (sx - origin.x) / (ISO_TILE_WIDTH  / 2) // = (px - py)
+      const localToGridDiff = (sy: number) => (sy - origin.y) / (ISO_TILE_HEIGHT / 2) // = (px + py)
+      // px = (sum + diff)/2, py = (diff - sum)/2 — but extrema for px depend on signs.
+      // Sample all four screen corners and clamp the box.
+      const corners: [number, number][] = [
+        [sxMin, syMin], [sxMax, syMin], [sxMin, syMax], [sxMax, syMax],
+      ]
+      let pxMin = Infinity, pxMax = -Infinity, pyMin = Infinity, pyMax = -Infinity
+      for (const [sx, sy] of corners) {
+        const a = localToGridSum(sx)
+        const b = localToGridDiff(sy)
+        const px = (a + b) / 2
+        const py = (b - a) / 2
+        if (px < pxMin) pxMin = px
+        if (px > pxMax) pxMax = px
+        if (py < pyMin) pyMin = py
+        if (py > pyMax) pyMax = py
+      }
+      const pad = 2
+      const pxLo = Math.max(0, Math.floor(pxMin) - pad)
+      const pxHi = Math.min(WORLD_SIZE - 1, Math.ceil(pxMax) + pad)
+      const pyLo = Math.max(0, Math.floor(pyMin) - pad)
+      const pyHi = Math.min(WORLD_SIZE - 1, Math.ceil(pyMax) + pad)
+
+      for (let py = pyLo; py <= pyHi; py++) {
+        for (let px = pxLo; px <= pxHi; px++) {
           const orig = unrotateGrid(px, py, rot, WORLD_SIZE)
           const tile = gs.tiles[orig.y]?.[orig.x]
-          if (!tile) continue   // bounds-safe for old 60×60 saves
+          if (!tile) continue   // bounds-safe for old saves
           const iso = gridToIso(px, py)
           const sx = origin.x + iso.x
           const sy = origin.y + iso.y
@@ -656,6 +742,7 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
       const cam = cameraRef.current
       cam.panX = dragRef.current.px + (e.clientX - dragRef.current.sx)
       cam.panY = dragRef.current.py + (e.clientY - dragRef.current.sy)
+      userHasMovedCameraRef.current = true
       setCameraTick(t => t + 1)
       clearHoverTimer()
       setTileInfo(null)
@@ -747,7 +834,16 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
       case 'thunder': thunderStrike(grid.x, grid.y); break
       case 'fire':    igniteFire(grid.x, grid.y); break
       case 'water':   placeWater(grid.x, grid.y); break
-      case 'enrich': placeEnrichment(grid.x, grid.y, selectedEnrichment); break
+      case 'enrich':  placeEnrichment(grid.x, grid.y, selectedEnrichment); break
+      case 'bush':    bushAction(grid.x, grid.y); break
+      case 'build':
+        switch (selectedBuild) {
+          case 'fence':      placeFence(grid.x, grid.y); break
+          case 'cairn':      placeCairn(grid.x, grid.y); break
+          case 'nest':       placeNest(grid.x, grid.y); break
+          case 'watch_post': placeWatchPost(grid.x, grid.y); break
+        }
+        break
       case 'select': {
         const creature = Object.values(gs.creatures).find(
           c => c.x === grid.x && c.y === grid.y && c.diedOnDay === null
@@ -756,7 +852,7 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
         break
       }
     }
-  }, [activeTool, selectedEnrichment, dropFood, plantTree, thunderStrike, igniteFire, placeWater, selectCreature, placeEnrichment, eventToGrid])
+  }, [activeTool, selectedEnrichment, selectedBuild, dropFood, plantTree, thunderStrike, igniteFire, placeWater, selectCreature, placeEnrichment, placeFence, placeCairn, placeNest, placeWatchPost, bushAction, eventToGrid])
 
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault()
@@ -768,6 +864,7 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
     const cam = cameraRef.current
     const delta = -e.deltaY * 0.0014
     zoomAt(cam, lx, ly, cam.zoom * (1 + delta), cwRef.current, chRef.current)
+    userHasMovedCameraRef.current = true
     setCameraTick(t => t + 1)
   }, [])
 
@@ -786,6 +883,8 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot' }: 
     thunder: 'Click to strike ; kills creatures and trees',
     fire:    'Click flammable tile to ignite ; fire spreads',
     enrich:  'Click tile to place enrichment item',
+    build:   `Click to place ${selectedBuild.replace('_', ' ')}`,
+    bush:    'Click a bush to pick up ; click grass to replant',
   }
 
   const cam = cameraRef.current

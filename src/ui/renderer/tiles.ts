@@ -59,6 +59,10 @@ const TILE_COLORS: Record<TileType, { top: string; left: string; right: string }
   bush:       { top: '#1a4016', left: '#112a0e', right: '#0c1e0a' },
   healroot:   { top: '#2c3c1a', left: '#1e2c12', right: '#162008' },
   fence:      { top: '#5c3e1e', left: '#3e2a12', right: '#2c1e0a' },
+  cairn:      { top: '#52505c', left: '#3a3845', right: '#2a2832' },
+  nest:       { top: '#5e4a26', left: '#3e3014', right: '#2a200e' },
+  watch_post: { top: '#3a2e1c', left: '#28200e', right: '#1c1608' },
+  cache:      { top: '#4a3a1c', left: '#2e2310', right: '#221a0a' },
 }
 
 // Biome tint ; painted over the top face only, giving each biome a chromatic
@@ -857,6 +861,80 @@ function drawTileDecoration(
           ctx.fill()
         }
       }
+      break
+    }
+
+    case 'cairn': {
+      // Stacked stones — three ellipses tapering upward, top stone slightly off-axis
+      ctx.save()
+      ctx.fillStyle = '#7a7886'
+      ctx.beginPath()
+      ctx.ellipse(cx, cy + ISO_TILE_HEIGHT * 0.30, ISO_TILE_WIDTH * 0.28, ISO_TILE_HEIGHT * 0.32, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#8e8c9a'
+      ctx.beginPath()
+      ctx.ellipse(cx + 1, cy + ISO_TILE_HEIGHT * 0.05, ISO_TILE_WIDTH * 0.22, ISO_TILE_HEIGHT * 0.26, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#a6a4ae'
+      ctx.beginPath()
+      ctx.ellipse(cx - 1, cy - ISO_TILE_HEIGHT * 0.20, ISO_TILE_WIDTH * 0.16, ISO_TILE_HEIGHT * 0.20, 0, 0, Math.PI * 2)
+      ctx.fill()
+      // Faint amber halo when this cairn is a memorial (cairnFor set)
+      if (tile.cairnFor) {
+        ctx.strokeStyle = 'rgba(232,200,74,0.22)'
+        ctx.lineWidth = 1.0
+        ctx.beginPath()
+        ctx.arc(cx, cy + ISO_TILE_HEIGHT * 0.10, ISO_TILE_WIDTH * 0.38, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+      ctx.restore()
+      break
+    }
+
+    case 'nest': {
+      // Soft oval nest of woven twigs; gentle pulse to mark the breeding aura
+      const pulse = 0.85 + 0.15 * Math.sin(Date.now() / 700)
+      ctx.save()
+      ctx.globalAlpha = 0.85
+      ctx.fillStyle = '#6e5230'
+      ctx.beginPath()
+      ctx.ellipse(cx, cy + ISO_TILE_HEIGHT * 0.45, ISO_TILE_WIDTH * 0.38, ISO_TILE_HEIGHT * 0.40, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#3a2c14'
+      ctx.beginPath()
+      ctx.ellipse(cx, cy + ISO_TILE_HEIGHT * 0.50, ISO_TILE_WIDTH * 0.24, ISO_TILE_HEIGHT * 0.26, 0, 0, Math.PI * 2)
+      ctx.fill()
+      // Aura: pale warm halo
+      ctx.globalAlpha = 0.22 * pulse
+      ctx.strokeStyle = '#e8c84a'
+      ctx.lineWidth = 1.2
+      ctx.beginPath()
+      ctx.arc(cx, cy + ISO_TILE_HEIGHT * 0.40, ISO_TILE_WIDTH * 0.55, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.restore()
+      break
+    }
+
+    case 'watch_post': {
+      // Tall wooden pole with a small platform near the top
+      ctx.save()
+      ctx.fillStyle = '#3a2c14'
+      const poleW = Math.max(1.5, ISO_TILE_WIDTH * 0.10)
+      const poleH = ISO_TILE_HEIGHT * 2.6
+      ctx.fillRect(cx - poleW / 2, cy - poleH * 0.85, poleW, poleH)
+      // Platform crossbar at top
+      ctx.fillStyle = '#5c4422'
+      const barW = ISO_TILE_WIDTH * 0.65
+      const barH = Math.max(1.5, ISO_TILE_HEIGHT * 0.22)
+      ctx.fillRect(cx - barW / 2, cy - poleH * 0.85 - barH * 0.5, barW, barH)
+      // Faint blue vigilance halo
+      ctx.globalAlpha = 0.18
+      ctx.strokeStyle = '#6cbcf8'
+      ctx.lineWidth = 1.0
+      ctx.beginPath()
+      ctx.arc(cx, cy + ISO_TILE_HEIGHT * 0.20, ISO_TILE_WIDTH * 0.65, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.restore()
       break
     }
 

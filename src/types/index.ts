@@ -407,7 +407,11 @@ export type TileType =
   | 'cliff'      // impassable sharp elevation drop; acts as natural barrier
   | 'bush'       // low fruiting shrub; berries ripen seasonally; Timid shelter
   | 'healroot'   // medicinal herb patch; sick creatures seek this; regrows slowly
-  | 'fence'      // constructed barrier; built by Territorial/Nurturing creatures
+  | 'fence'      // constructed barrier; built by drives + territory claim
+  | 'cache'      // stored food/healroot tile; created by acquisitive creatures inside tribal territory
+  | 'cairn'      // memorial built at a death site; persists much longer than death_site itself
+  | 'nest'       // caretaker-placed nest; nearby pairs get a reproduction-rate boost
+  | 'watch_post' // caretaker-placed lookout; nearby creatures gain vigilance drive drift
 
 export type BiomePatch = 'temperate' | 'arid' | 'lush' | 'rocky' | 'wetland'
 
@@ -434,6 +438,19 @@ export interface Tile {
   healrootAmount?: number   // 0-100; potency of healroot on this tile; regrows slowly
   fenceDurability?: number  // 0-100; constructed fence health; decays over time
   fenceType?: 'wood' | 'stone' // material used to build
+  // ─── Cache (tribal storage) ──
+  cacheTribeId?: string | null    // tribe this cache belongs to (null = unaffiliated)
+  cacheFruit?: number             // 0..CACHE_MAX_FRUIT; food units stored
+  cacheHealroot?: number          // 0..CACHE_MAX_HEALROOT; healroot potency stored
+  // ─── Cairn (memorial at death site) ──
+  cairnFor?: string | null        // creature id this cairn commemorates
+  cairnFamily?: string            // family name preserved beyond the body
+  cairnGeneration?: number        // generation depth preserved
+  cairnPlacedOnDay?: number       // game-day the cairn was raised
+  // ─── Nest (caretaker-placed breeding zone) ──
+  nestPlacedOnDay?: number        // game-day the nest was placed (drives slow decay)
+  // ─── Watch post (caretaker-placed vigilance amplifier) ──
+  watchPlacedOnDay?: number       // game-day the watch post was raised
 }
 
 // ─── Enrichment ───────────────────────────────────────────────────────────────
@@ -648,6 +665,20 @@ export interface CaretakerState {
   respondedToQuestion: boolean   // one-tick flag cleared after response message emitted
   // Tool category used last; shapes differentiated colony responses
   lastToolUsed?: 'placement' | 'intervention' | 'observe'
+  // ─── Build-kit charges & cooldowns (daily-resetting) ──
+  fenceChargesToday?: number
+  cairnChargesToday?: number
+  nestChargesToday?: number
+  watchChargesToday?: number
+  lastFencePlaced?: number
+  lastCairnPlaced?: number
+  lastNestPlaced?: number
+  lastWatchPlaced?: number
+  // ─── Bush relocation ──
+  // The caretaker can pick up a single bush at a time. When held, the field
+  // stores the bush's foodAmount so replanting preserves the carried berries.
+  bushHeldFood?: number | null
+  lastBushAction?: number
 }
 
 // ─── Colony Stage ─────────────────────────────────────────────────────────────

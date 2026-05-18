@@ -17,6 +17,12 @@ import {
   THUNDER_COOLDOWN_MS, THUNDER_CHARGES_PER_DAY, THUNDER_DAMAGE_RADIUS,
   FIRE_COOLDOWN_MS, FIRE_CHARGES_PER_DAY, FIRE_DURATION_TICKS,
   ENRICHMENT_MAX_USES, ABSENCE_IMPRINT_DAYS,
+  // build-kit + bush relocation
+  FENCE_PLACE_COOLDOWN_MS, FENCE_PLACE_CHARGES_PER_DAY, FENCE_INITIAL_DURABILITY,
+  CAIRN_COOLDOWN_MS, CAIRN_CHARGES_PER_DAY,
+  NEST_COOLDOWN_MS, NEST_CHARGES_PER_DAY,
+  WATCH_POST_COOLDOWN_MS, WATCH_POST_CHARGES_PER_DAY,
+  BUSH_PICKUP_COOLDOWN_MS,
 } from '@/engine/constants'
 
 // ─── Default caretaker state ──────────────────────────────────────────────────
@@ -38,6 +44,16 @@ const defaultCaretaker = (healCharges = HEAL_CHARGES_PER_DAY, foodDropCooldown =
   lastActionMs: 0,
   awaitingResponseUntil: 0,
   respondedToQuestion: false,
+  fenceChargesToday: FENCE_PLACE_CHARGES_PER_DAY,
+  cairnChargesToday: CAIRN_CHARGES_PER_DAY,
+  nestChargesToday:  NEST_CHARGES_PER_DAY,
+  watchChargesToday: WATCH_POST_CHARGES_PER_DAY,
+  lastFencePlaced: 0,
+  lastCairnPlaced: 0,
+  lastNestPlaced: 0,
+  lastWatchPlaced: 0,
+  bushHeldFood: null,
+  lastBushAction: 0,
 })
 
 function normalizeLoadedCreatureNames(state: GameState): { state: GameState; changed: boolean } {
@@ -118,6 +134,13 @@ interface LaietStore {
   // Enrichment
   placeEnrichment: (x: number, y: number, type: EnrichmentType) => void
   removeEnrichment: (id: string) => void
+  // Build kit
+  placeFence: (x: number, y: number) => void
+  placeCairn: (x: number, y: number) => void
+  placeNest:  (x: number, y: number) => void
+  placeWatchPost: (x: number, y: number) => void
+  // Bush relocation — pick up if a bush is on the tile, otherwise replant if holding one
+  bushAction: (x: number, y: number) => void
 
   // UI state
   selectedCreatureId: string | null
@@ -689,6 +712,187 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     const items = { ...(state.enrichmentItems ?? {}) }
     delete items[id]
     set({ gameState: { ...state, enrichmentItems: items } })
+  },
+
+  // ── Build kit ──────────────────────────────────────────────────────────────
+  // All four placement tools share the same shape: validate tile passability,
+  // check charge + cooldown, copy-on-write the tile row, update caretaker.
+
+  placeFence: (x, y) => {
+    const state = get().gameState
+    if (!state) return
+    const now = Date.now()
+    const ct = state.caretaker
+    const charges = ct.fenceChargesToday ?? FENCE_PLACE_CHARGES_PER_DAY
+    if (charges <= 0) return
+    if (now - (ct.lastFencePlaced ?? 0) < FENCE_PLACE_COOLDOWN_MS) return
+    const tile = state.tiles[y]?.[x]
+    if (!tile) return
+    if (tile.type !== 'grass' && tile.type !== 'barren' && tile.type !== 'mud') return
+
+    const tiles = state.tiles.slice()
+    tiles[y] = state.tiles[y].slice()
+    tiles[y][x] = { ...tile, type: 'fence', fenceDurability: FENCE_INITIAL_DURABILITY, fenceType: 'wood' }
+
+    set({
+      gameState: {
+        ...state, tiles,
+        caretaker: {
+          ...ct,
+          fenceChargesToday: charges - 1,
+          lastFencePlaced: now,
+          ...applyCaretakerPresence(ct, x, y),
+        },
+      },
+    })
+  },
+
+  placeCairn: (x, y) => {
+    const state = get().gameState
+    if (!state) return
+    const now = Date.now()
+    const ct = state.caretaker
+    const charges = ct.cairnChargesToday ?? CAIRN_CHARGES_PER_DAY
+    if (charges <= 0) return
+    if (now - (ct.lastCairnPlaced ?? 0) < CAIRN_COOLDOWN_MS) return
+    const tile = state.tiles[y]?.[x]
+    if (!tile) return
+    if (tile.type !== 'grass' && tile.type !== 'barren' && tile.type !== 'death_site') return
+
+    // If placed on a death_site, the cairn inherits that creature's identity —
+    // a real memorial, not just a stone pile.
+    const memorial = tile.type === 'death_site' && tile.deathSiteOf
+      ? state.creatures[tile.deathSiteOf]
+      : null
+
+    const tiles = state.tiles.slice()
+    tiles[y] = state.tiles[y].slice()
+    tiles[y][x] = {
+      ...tile,
+      type: 'cairn',
+      cairnFor: memorial?.id ?? null,
+      cairnFamily: memorial?.familyName,
+      cairnGeneration: memorial?.generation,
+      cairnPlacedOnDay: state.time.day,
+    }
+
+    set({
+      gameState: {
+        ...state, tiles,
+        caretaker: {
+          ...ct,
+          cairnChargesToday: charges - 1,
+          lastCairnPlaced: now,
+          ...applyCaretakerPresence(ct, x, y),
+        },
+      },
+    })
+  },
+
+  placeNest: (x, y) => {
+    const state = get().gameState
+    if (!state) return
+    const now = Date.now()
+    const ct = state.caretaker
+    const charges = ct.nestChargesToday ?? NEST_CHARGES_PER_DAY
+    if (charges <= 0) return
+    if (now - (ct.lastNestPlaced ?? 0) < NEST_COOLDOWN_MS) return
+    const tile = state.tiles[y]?.[x]
+    if (!tile) return
+    if (tile.type !== 'grass' && tile.type !== 'barren') return
+
+    const tiles = state.tiles.slice()
+    tiles[y] = state.tiles[y].slice()
+    tiles[y][x] = { ...tile, type: 'nest', nestPlacedOnDay: state.time.day }
+
+    set({
+      gameState: {
+        ...state, tiles,
+        caretaker: {
+          ...ct,
+          nestChargesToday: charges - 1,
+          lastNestPlaced: now,
+          ...applyCaretakerPresence(ct, x, y),
+        },
+      },
+    })
+  },
+
+  placeWatchPost: (x, y) => {
+    const state = get().gameState
+    if (!state) return
+    const now = Date.now()
+    const ct = state.caretaker
+    const charges = ct.watchChargesToday ?? WATCH_POST_CHARGES_PER_DAY
+    if (charges <= 0) return
+    if (now - (ct.lastWatchPlaced ?? 0) < WATCH_POST_COOLDOWN_MS) return
+    const tile = state.tiles[y]?.[x]
+    if (!tile) return
+    if (tile.type !== 'grass' && tile.type !== 'barren') return
+
+    const tiles = state.tiles.slice()
+    tiles[y] = state.tiles[y].slice()
+    tiles[y][x] = { ...tile, type: 'watch_post', watchPlacedOnDay: state.time.day }
+
+    set({
+      gameState: {
+        ...state, tiles,
+        caretaker: {
+          ...ct,
+          watchChargesToday: charges - 1,
+          lastWatchPlaced: now,
+          ...applyCaretakerPresence(ct, x, y),
+        },
+      },
+    })
+  },
+
+  // Pick up bush if one exists on the tile; otherwise replant the held bush.
+  // The carried foodAmount (berries) is preserved across the move so the
+  // caretaker can shift fruit-loaded bushes to where they're needed.
+  bushAction: (x, y) => {
+    const state = get().gameState
+    if (!state) return
+    const now = Date.now()
+    const ct = state.caretaker
+    if (now - (ct.lastBushAction ?? 0) < BUSH_PICKUP_COOLDOWN_MS) return
+    const tile = state.tiles[y]?.[x]
+    if (!tile) return
+
+    const holding = ct.bushHeldFood !== null && ct.bushHeldFood !== undefined
+    if (tile.type === 'bush' && !holding) {
+      // PICK UP
+      const food = tile.foodAmount ?? 0
+      const tiles = state.tiles.slice()
+      tiles[y] = state.tiles[y].slice()
+      tiles[y][x] = { ...tile, type: 'grass', foodAmount: 0 }
+      set({
+        gameState: {
+          ...state, tiles,
+          caretaker: {
+            ...ct, bushHeldFood: food, lastBushAction: now,
+            ...applyCaretakerPresence(ct, x, y),
+          },
+        },
+      })
+      return
+    }
+    if (holding && (tile.type === 'grass' || tile.type === 'barren')) {
+      // REPLANT
+      const food = ct.bushHeldFood ?? 0
+      const tiles = state.tiles.slice()
+      tiles[y] = state.tiles[y].slice()
+      tiles[y][x] = { ...tile, type: 'bush', foodAmount: food, treeAge: -1 }
+      set({
+        gameState: {
+          ...state, tiles,
+          caretaker: {
+            ...ct, bushHeldFood: null, lastBushAction: now,
+            ...applyCaretakerPresence(ct, x, y),
+          },
+        },
+      })
+    }
   },
 
   healCreature: (creatureId) => {

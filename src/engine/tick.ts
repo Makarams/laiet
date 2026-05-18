@@ -94,7 +94,13 @@ import {
   NATURAL_ENRICHMENT_SPAWN_CHANCE, NATURAL_ENRICHMENT_ATTEMPTS_PER_TICK,
   NATURAL_ENRICHMENT_MAX_USES, NATURAL_ENRICHMENT_REGEN_RADIUS,
   NATURAL_ENRICHMENT_CAP_BASE, NATURAL_ENRICHMENT_CAP_PER_N_ALIVE, NATURAL_ENRICHMENT_CAP_MAX,
+  NATURAL_ENRICHMENT_AMBIENT_CAP,
   NATURAL_ENRICHMENT_BIOME_TYPES, NATURAL_ENRICHMENT_SEASON_MOD,
+  // build-kit constants
+  CAIRN_DECAY_DAYS, CAIRN_STRESS_RADIUS, CAIRN_STRESS_RELIEF,
+  NEST_RADIUS, NEST_BREED_MULT, NEST_OFFSPRING_HEALTH, NEST_DECAY_DAYS, NEST_STRESS_RELIEF,
+  WATCH_POST_RADIUS, WATCH_POST_VIGILANCE_DRIFT, WATCH_POST_DECAY_DAYS,
+  FENCE_PLACE_CHARGES_PER_DAY, CAIRN_CHARGES_PER_DAY, NEST_CHARGES_PER_DAY, WATCH_POST_CHARGES_PER_DAY,
   // new adaptation/race effect constants
   THERMAL_VENT_WARMTH_GAIN, BIOLUMINESCENT_STRESS_RADIUS, BIOLUMINESCENT_STRESS_RELIEF,
   SPORE_RESISTANT_DISEASE_MULT, MIRE_DISEASE_RESIST,
@@ -812,6 +818,37 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
           wt.fenceType = undefined
         } else {
           writeTile(y, x).fenceDurability = newDur
+        }
+      }
+
+      // Cairn weathers slowly; reverts to grass after CAIRN_DECAY_DAYS in-game days
+      if (t.type === 'cairn') {
+        const placed = t.cairnPlacedOnDay ?? state.time.day
+        if (state.time.day - placed >= CAIRN_DECAY_DAYS) {
+          const wt = writeTile(y, x)
+          wt.type = t.biome === 'arid' ? 'barren' : 'grass'
+          wt.cairnFor = null
+          wt.cairnPlacedOnDay = undefined
+        }
+      }
+
+      // Nest fades back to grass after NEST_DECAY_DAYS (caretaker can re-place)
+      if (t.type === 'nest') {
+        const placed = t.nestPlacedOnDay ?? state.time.day
+        if (state.time.day - placed >= NEST_DECAY_DAYS) {
+          const wt = writeTile(y, x)
+          wt.type = 'grass'
+          wt.nestPlacedOnDay = undefined
+        }
+      }
+
+      // Watch post weathers; slow decay until WATCH_POST_DECAY_DAYS reverts to grass
+      if (t.type === 'watch_post') {
+        const placed = t.watchPlacedOnDay ?? state.time.day
+        if (state.time.day - placed >= WATCH_POST_DECAY_DAYS) {
+          const wt = writeTile(y, x)
+          wt.type = 'grass'
+          wt.watchPlacedOnDay = undefined
         }
       }
 
@@ -1898,6 +1935,33 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
         c.sentience = Math.min(100, c.sentience + NATURAL_ROCKY_SENTINEL_BONUS)
       }
 
+      // ── Build-kit auras ──────────────────────────────────────────────────────
+      // Cairn calms anyone within CAIRN_STRESS_RADIUS — a memorial steadies the
+      // colony. Nest provides a small calming aura to creatures resting near it.
+      // Watch post drifts every nearby creature's vigilance drive toward 1.0,
+      // so prolonged proximity reshapes their behavioural priors.
+      const px = c.x, py = c.y
+      const checkR = Math.max(CAIRN_STRESS_RADIUS, NEST_RADIUS, WATCH_POST_RADIUS)
+      let cairnAura = false, nestAura = false, watchAura = false
+      const ymin = Math.max(0, py - checkR), ymax = Math.min(WORLD_SIZE - 1, py + checkR)
+      const xmin = Math.max(0, px - checkR), xmax = Math.min(WORLD_SIZE - 1, px + checkR)
+      for (let ny = ymin; ny <= ymax && !(cairnAura && nestAura && watchAura); ny++) {
+        const row = state.tiles[ny]
+        for (let nx = xmin; nx <= xmax; nx++) {
+          const at = row[nx].type
+          if (at !== 'cairn' && at !== 'nest' && at !== 'watch_post') continue
+          const md = Math.max(Math.abs(nx - px), Math.abs(ny - py))
+          if (!cairnAura && at === 'cairn' && md <= CAIRN_STRESS_RADIUS) cairnAura = true
+          else if (!nestAura && at === 'nest' && md <= NEST_RADIUS) nestAura = true
+          else if (!watchAura && at === 'watch_post' && md <= WATCH_POST_RADIUS) watchAura = true
+        }
+      }
+      if (cairnAura) c.stress = Math.max(0, c.stress - CAIRN_STRESS_RELIEF)
+      if (nestAura)  c.stress = Math.max(0, c.stress - NEST_STRESS_RELIEF)
+      if (watchAura && c.drives) {
+        c.drives = { ...c.drives, vigilance: Math.min(1, c.drives.vigilance + WATCH_POST_VIGILANCE_DRIFT) }
+      }
+
       // Auto-lightning strike damage; lightningFlash is set this same tick by
       // tickTiles, so checking < 2s means "struck this tick or the one before"
       if ((currentTile.lightningFlash ?? 0) > Date.now() - 2000) {
@@ -2721,6 +2785,22 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
 
 // ─── Reproduction ─────────────────────────────────────────────────────────────
 
+// Scan a small radius for any tile of type 'nest'. Cheap local scan; the
+// radius is small enough that this is negligible compared to overall tick cost.
+function hasNestNear(state: GameState, x: number, y: number, radius: number): boolean {
+  const minY = Math.max(0, y - radius)
+  const maxY = Math.min(WORLD_SIZE - 1, y + radius)
+  const minX = Math.max(0, x - radius)
+  const maxX = Math.min(WORLD_SIZE - 1, x + radius)
+  for (let ny = minY; ny <= maxY; ny++) {
+    const row = state.tiles[ny]
+    for (let nx = minX; nx <= maxX; nx++) {
+      if (row[nx].type === 'nest') return true
+    }
+  }
+  return false
+}
+
 function tickReproduction(state: GameState, tickRng: () => number, popFactor: number): GameState {
   const creatures = { ...state.creatures }
   const alive = Object.values(creatures).filter(c => c.diedOnDay === null)
@@ -2735,8 +2815,16 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
   for (const c of alive) {
     if (pairedThisTick.has(c.id)) continue
 
+    // Nest proximity gives a second reproduction roll (effectively boosting the
+    // rate) and grants offspring extra starting health. Cheap local scan within
+    // NEST_RADIUS — typically 9×9 tiles, irrelevant to overall tick cost.
+    const nestNearby = hasNestNear(state, c.x, c.y, NEST_RADIUS)
+
     // ── Sexual reproduction (bonded pair) ──
-    if (canReproduce(c, state.time.season, popFactor, state.weather)) {
+    const baseRoll  = canReproduce(c, state.time.season, popFactor, state.weather)
+    const boostRoll = !baseRoll && nestNearby
+      && canReproduce(c, state.time.season, popFactor * Math.max(1, NEST_BREED_MULT - 1), state.weather)
+    if (baseRoll || boostRoll) {
       const bondedIds = c.bonds.filter(b => b.strength >= REPRODUCE_BOND_MIN_STRENGTH).map(b => b.targetId)
       const partner = bondedIds
         .map(id => creatures[id])
@@ -2763,6 +2851,7 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
         const divergencePressure = Math.min(1, geoSep * 0.35 + avgStress * 0.40 + lineageHostility * 0.25)
 
         const offspring = createOffspring(c, partner, c.x, c.y, state.time.day, tickRng, state.modifiers?.mutationChance, combinedLex, envCtx, divergencePressure, state.modifiers?.adaptationInheritMult ?? 1)
+        if (nestNearby) offspring.health = Math.min(100, offspring.health + NEST_OFFSPRING_HEALTH)
         newCreatures.push(offspring)
 
         // Chronicle real biological events: hybrid birth (cross-lineage offspring
@@ -3067,9 +3156,13 @@ function spawnNaturalNearby(
 function tickNaturalEnrichment(state: GameState, rng: () => number, mods: SimModifiers): GameState {
   const alive = Object.values(state.creatures).filter(c => !c.diedOnDay).length
   const enrichScale = mods.enrichmentSpawnMult ?? 1
+  // Cap scales with population but never falls below the ambient floor — the
+  // world keeps generating zones even when the colony is tiny or extinct, so
+  // the map stays alive between generations rather than latching off.
+  const populationCap = NATURAL_ENRICHMENT_CAP_BASE + Math.floor(alive / NATURAL_ENRICHMENT_CAP_PER_N_ALIVE)
   const cap = Math.min(
     NATURAL_ENRICHMENT_CAP_MAX,
-    Math.round((NATURAL_ENRICHMENT_CAP_BASE + Math.floor(alive / NATURAL_ENRICHMENT_CAP_PER_N_ALIVE)) * enrichScale)
+    Math.round(Math.max(NATURAL_ENRICHMENT_AMBIENT_CAP, populationCap) * enrichScale)
   )
   const naturalCount = Object.values(state.enrichmentItems).filter(e => e.natural).length
   if (naturalCount >= cap) return state
@@ -3081,13 +3174,22 @@ function tickNaturalEnrichment(state: GameState, rng: () => number, mods: SimMod
 
   for (let attempt = 0; attempt < NATURAL_ENRICHMENT_ATTEMPTS_PER_TICK; attempt++) {
     // Bias spawn near creature clusters so items always fall within ENRICHMENT_SEEK_RADIUS.
-    // Fully random positions filled the cap with unreachable items, shutting down all spawning.
-    if (aliveForEnrichment.length === 0) break
-    const anchor = aliveForEnrichment[Math.floor(rng() * aliveForEnrichment.length)]
+    // When the colony is empty (or near-empty) fall back to anchoring on the
+    // world centroid so zones still appear and a fresh colony has something to
+    // discover when it re-emerges.
+    let anchorX: number, anchorY: number
+    if (aliveForEnrichment.length > 0) {
+      const anchor = aliveForEnrichment[Math.floor(rng() * aliveForEnrichment.length)]
+      anchorX = anchor.x; anchorY = anchor.y
+    } else {
+      const inset = Math.floor(WORLD_SIZE * 0.20)
+      anchorX = inset + Math.floor(rng() * (WORLD_SIZE - 2 * inset))
+      anchorY = inset + Math.floor(rng() * (WORLD_SIZE - 2 * inset))
+    }
     const angle = rng() * Math.PI * 2
     const dist  = 3 + rng() * 15  // 3-18 tiles; always within ENRICHMENT_SEEK_RADIUS (20)
-    const x = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(anchor.x + Math.cos(angle) * dist)))
-    const y = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(anchor.y + Math.sin(angle) * dist)))
+    const x = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(anchorX + Math.cos(angle) * dist)))
+    const y = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(anchorY + Math.sin(angle) * dist)))
     const tile = state.tiles[y]?.[x]
     if (!tile) continue
     if (['rock', 'river', 'mountain', 'cliff', 'flooded'].includes(tile.type)) continue
@@ -3459,6 +3561,14 @@ function tickCaretaker(state: GameState, mods: SimModifiers): GameState {
     // Interventionist profile sets mods.healCharges = 4; base is 3.
     caretaker.healCharges = mods.healCharges
     caretaker.lastHealReset = now
+  }
+
+  // Build-kit charges share the env-reset cadence (Strike/Ignite already use it).
+  if (caretaker.lastEnvReset && now - caretaker.lastEnvReset > msPerDay) {
+    caretaker.fenceChargesToday = FENCE_PLACE_CHARGES_PER_DAY
+    caretaker.cairnChargesToday = CAIRN_CHARGES_PER_DAY
+    caretaker.nestChargesToday  = NEST_CHARGES_PER_DAY
+    caretaker.watchChargesToday = WATCH_POST_CHARGES_PER_DAY
   }
 
   if (caretaker.lastSeasonRedirect !== state.time.season) {

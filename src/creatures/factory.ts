@@ -10,6 +10,8 @@ import {
   REPRODUCE_BOND_MIN_STRENGTH,
   DRIVE_SEED_STRENGTH,
   DRIVE_PERSONALITY_SEEDS,
+  STARTER_BOND_STRENGTH,
+  STARTER_SPAWN_RADIUS,
 } from '@/engine/constants'
 import {
   randomGenome,
@@ -423,20 +425,25 @@ export function createStarterCreatures(
 ): Creature[] {
   const rng = createRng(worldSeed + 9999)
   const count = 4
-  // Scattered positions across the central third of the world — far enough
-  // apart that founders must actually move to find each other. No pre-bonds:
-  // bonds form through adjacency over time, the same way every other bond
-  // in the colony will form.
-  const minQ = Math.floor(WORLD_SIZE * 0.33)
-  const maxQ = Math.floor(WORLD_SIZE * 0.66)
-  const positions = Array.from({ length: count }, () => ({
-    x: minQ + Math.floor(rng() * (maxQ - minQ)),
-    y: minQ + Math.floor(rng() * (maxQ - minQ)),
-  }))
+  // Tight founder cluster: every starter spawns within STARTER_SPAWN_RADIUS
+  // of the world centroid, so bonds can form before the first cohort ages out.
+  // Combined with pre-seeded bonds below, founders reach breeding strength
+  // (REPRODUCE_BOND_MIN_STRENGTH) within their first lifespan rather than dying
+  // isolated in opposite quadrants of a 480-tile world.
+  const cx = Math.floor(WORLD_SIZE / 2)
+  const cy = Math.floor(WORLD_SIZE / 2)
+  const positions = Array.from({ length: count }, () => {
+    const angle = rng() * Math.PI * 2
+    const dist  = rng() * STARTER_SPAWN_RADIUS
+    return {
+      x: Math.max(1, Math.min(WORLD_SIZE - 2, cx + Math.round(Math.cos(angle) * dist))),
+      y: Math.max(1, Math.min(WORLD_SIZE - 2, cy + Math.round(Math.sin(angle) * dist))),
+    }
+  })
 
   const genomes = pickStarterGenomes(rng, count)
 
-  return Array.from({ length: count }, (_, i) => {
+  const creatures = Array.from({ length: count }, (_, i) => {
     const pair = namedPairs[i] ?? {
       name:       generateName(rng),
       familyName: generateName(rng),
@@ -448,6 +455,22 @@ export function createStarterCreatures(
       bornOnDay: currentDay,
     }, rng)
   })
+
+  // Pre-seed bonds between every founder pair at STARTER_BOND_STRENGTH (below
+  // the breeding threshold so bond-seeking stays active, but high enough that
+  // bonds reach reproductive depth in tens of ticks, not hundreds).
+  for (let i = 0; i < creatures.length; i++) {
+    for (let j = 0; j < creatures.length; j++) {
+      if (i === j) continue
+      creatures[i].bonds.push({
+        targetId: creatures[j].id,
+        strength: STARTER_BOND_STRENGTH,
+        since:    currentDay,
+      })
+    }
+  }
+
+  return creatures
 }
 
 // ─── Sentience tick ───────────────────────────────────────────────────────────

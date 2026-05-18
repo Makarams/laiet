@@ -2,7 +2,11 @@ import { useState } from 'react'
 import styled from 'styled-components'
 import { Season, DayPhase, MessageStage, EnrichmentType } from '@/types'
 import { useLaietStore } from '@/store/gameStore'
-import { THUNDER_CHARGES_PER_DAY, FIRE_CHARGES_PER_DAY } from '@/engine/constants'
+import {
+  THUNDER_CHARGES_PER_DAY, FIRE_CHARGES_PER_DAY,
+  FENCE_PLACE_CHARGES_PER_DAY, CAIRN_CHARGES_PER_DAY,
+  NEST_CHARGES_PER_DAY, WATCH_POST_CHARGES_PER_DAY,
+} from '@/engine/constants'
 import { THEME, awarenessColor, weatherColor } from '@/ui/theme'
 
 // ─── Bar root ─────────────────────────────────────────────────────────────────
@@ -253,9 +257,11 @@ const PHASE_GLYPH: Record<string, string> = {
 const TOOL_GLYPHS: Record<string, string> = {
   select: '◎', food: '◉', tree: '⌬', water: '≈',
   thunder: '⚡', fire: '✦', enrich: '✸',
+  build: '⌂', bush: '❦',
 }
 
-export type Tool = 'select' | 'food' | 'tree' | 'water' | 'thunder' | 'fire' | 'enrich'
+export type BuildKind = 'fence' | 'cairn' | 'nest' | 'watch_post'
+export type Tool = 'select' | 'food' | 'tree' | 'water' | 'thunder' | 'fire' | 'enrich' | 'build' | 'bush'
 
 const ENRICHMENT_OPTIONS: { type: EnrichmentType; label: string; hint: string }[] = [
   { type: 'resting_spot',    label: 'Rest site',     hint: 'stress↓ warmth↑' },
@@ -287,20 +293,46 @@ interface ToolbarProps {
   awarenessStage: MessageStage
   selectedEnrichment: EnrichmentType
   onEnrichmentChange: (type: EnrichmentType) => void
+  selectedBuild: BuildKind
+  onBuildChange: (kind: BuildKind) => void
 }
+
+const BUILD_OPTIONS: { kind: BuildKind; label: string; hint: string }[] = [
+  { kind: 'fence',      label: 'Fence',      hint: 'barrier · slows · decays' },
+  { kind: 'cairn',      label: 'Cairn',      hint: 'memorial · calming aura' },
+  { kind: 'nest',       label: 'Nest',       hint: 'breeding boost zone' },
+  { kind: 'watch_post', label: 'Watch Post', hint: 'vigilance amplifier' },
+]
 
 export function Toolbar({
   activeTool, onToolChange, onMuteToggle, onRestartRequest, onSave, isMuted,
   isPaused, simSpeed, onPauseToggle, onSpeedChange,
   day, year, season, phase, alive, awarenessStage,
   selectedEnrichment, onEnrichmentChange,
+  selectedBuild, onBuildChange,
 }: ToolbarProps) {
   const [showEnrichDropdown, setShowEnrichDropdown] = useState(false)
+  const [showBuildDropdown, setShowBuildDropdown] = useState(false)
   const caretaker = useLaietStore(s => s.gameState?.caretaker)
   const weather    = useLaietStore(s => s.gameState?.weather ?? 'clear')
 
   const thunderCharges = caretaker?.thunderChargesToday ?? THUNDER_CHARGES_PER_DAY
   const fireCharges    = caretaker?.fireChargesToday    ?? FIRE_CHARGES_PER_DAY
+  const fenceCharges   = caretaker?.fenceChargesToday   ?? FENCE_PLACE_CHARGES_PER_DAY
+  const cairnCharges   = caretaker?.cairnChargesToday   ?? CAIRN_CHARGES_PER_DAY
+  const nestCharges    = caretaker?.nestChargesToday    ?? NEST_CHARGES_PER_DAY
+  const watchCharges   = caretaker?.watchChargesToday   ?? WATCH_POST_CHARGES_PER_DAY
+  const bushHolding    = caretaker?.bushHeldFood !== null && caretaker?.bushHeldFood !== undefined
+
+  // Build charge that surfaces on the Build button reflects the currently
+  // selected build kind, so the badge stays meaningful as the player swaps.
+  const buildChargeByKind: Record<BuildKind, number> = {
+    fence: fenceCharges, cairn: cairnCharges, nest: nestCharges, watch_post: watchCharges,
+  }
+  const buildChargeMaxByKind: Record<BuildKind, number> = {
+    fence: FENCE_PLACE_CHARGES_PER_DAY, cairn: CAIRN_CHARGES_PER_DAY,
+    nest: NEST_CHARGES_PER_DAY, watch_post: WATCH_POST_CHARGES_PER_DAY,
+  }
 
   const tools: { key: Tool; label: string; hotkey: string; charge?: { used: number; max: number } }[] = [
     { key: 'select',  label: 'Observe',  hotkey: '1' },
@@ -351,6 +383,43 @@ export function Toolbar({
             </EnrichDropdown>
           )}
         </div>
+
+        {/* Build — multi-tool: fence / cairn / nest / watch post */}
+        <div style={{ position: 'relative', display: 'flex', alignSelf: 'stretch' }}>
+          <ToolBtn $active={activeTool === 'build'}
+            onClick={() => { onToolChange('build'); setShowBuildDropdown(v => !v) }}
+            title={`Build: ${selectedBuild.replace('_', ' ')} [8]`}>
+            <ToolGlyph $active={activeTool === 'build'}>{TOOL_GLYPHS.build}</ToolGlyph>
+            <ToolLabel>Build</ToolLabel>
+            <KeyHint>8</KeyHint>
+            <ChargeBadge $empty={buildChargeByKind[selectedBuild] <= 0}>
+              {buildChargeByKind[selectedBuild]}/{buildChargeMaxByKind[selectedBuild]}
+            </ChargeBadge>
+          </ToolBtn>
+          {showBuildDropdown && activeTool === 'build' && (
+            <EnrichDropdown>
+              {BUILD_OPTIONS.map(opt => (
+                <EnrichOption key={opt.kind} $selected={selectedBuild === opt.kind}
+                  onClick={() => { onBuildChange(opt.kind); setShowBuildDropdown(false) }}>
+                  {opt.label}
+                  <EnrichHint>{opt.hint} · {buildChargeByKind[opt.kind]}/{buildChargeMaxByKind[opt.kind]}</EnrichHint>
+                </EnrichOption>
+              ))}
+            </EnrichDropdown>
+          )}
+        </div>
+
+        {/* Bush relocation — pick up if standing on a bush, replant if holding one */}
+        <ToolBtn $active={activeTool === 'bush'}
+          onClick={() => onToolChange('bush')}
+          title={bushHolding ? 'Replant carried bush [9]' : 'Pick up a bush [9]'}>
+          <ToolGlyph $active={activeTool === 'bush'}>{TOOL_GLYPHS.bush}</ToolGlyph>
+          <ToolLabel>Bush</ToolLabel>
+          <KeyHint>9</KeyHint>
+          {bushHolding && (
+            <ChargeBadge $empty={false}>held</ChargeBadge>
+          )}
+        </ToolBtn>
       </ToolGroup>
 
       <Spacer />

@@ -19,7 +19,7 @@ export const DAY_PHASE_THRESHOLDS = {
 }
 
 // ─── World ────────────────────────────────────────────────────────────────────
-export const WORLD_SIZE = 240                     // 240×240 for biome diversity, exploration, natural dispersion
+export const WORLD_SIZE = 480                     // 480×480 (2× scale from v3); biome diversity, exploration, natural dispersion
 export const MUTATION_CHANCE = 0.12               // 12% per gene slot; enables visible trait variety by gen 5-7
 export const DEATH_SITE_DECAY_DAYS = 10           // ~2 Spore generations; death sites clear quickly so the map stays readable
 
@@ -62,7 +62,14 @@ export const REPRODUCE_RATE_BY_BODY = {
 // Pre-seeded bond strength given to all starter creatures toward each other.
 // Below REPRODUCE_BOND_MIN_STRENGTH so bond-seeking stays active from the start.
 // Starters need ~20 more adjacency ticks to reach the reproduction threshold.
+// Applied between every founder pair in createStarterCreatures so founders can
+// reach breeding bonds in their first lifespan instead of dying isolated.
 export const STARTER_BOND_STRENGTH = 25
+
+// Tight founder cluster: spawn radius around the world centroid (tiles).
+// Replaces the prior "central third" scatter; founders begin within sight of
+// each other so bonds form before the first generation ages out.
+export const STARTER_SPAWN_RADIUS = 6
 
 // ─── Needs decay per tick ─────────────────────────────────────────────────────
 // Lower rates → more survival time, creatures don't die in minutes
@@ -354,6 +361,10 @@ export const TILE_MOVE_MODIFIER: Record<string, number> = {
   bush:       0.80,  // low shrub slows movement slightly
   healroot:   0.90,  // low herb growth; slight tangle underfoot
   fence:      0.72,  // constructed barrier slows movement slightly
+  cairn:      0.85,  // stones — slight hesitation
+  nest:       0.90,  // soft hollow; creatures rest readily here
+  watch_post: 0.85,  // wooden post; minor obstruction
+  cache:      1.00,
 }
 
 // ─── Night warmth penalty ────────────────────────────────────────────────────
@@ -427,12 +438,15 @@ export const ENRICHMENT_EFFECTS: Record<string, {
 // ─── Natural enrichment item spawning ────────────────────────────────────────
 // Items spawn in the world based on biome conditions and are refreshed nearby on depletion.
 export const NATURAL_ENRICHMENT_SPAWN_CHANCE     = 0.003  // base chance per tile attempt per tick
-export const NATURAL_ENRICHMENT_ATTEMPTS_PER_TICK = 3     // tile sample attempts per tickNaturalEnrichment call
+export const NATURAL_ENRICHMENT_ATTEMPTS_PER_TICK = 6     // tile sample attempts per tickNaturalEnrichment call
 export const NATURAL_ENRICHMENT_MAX_USES         = 80     // natural items are more durable than player-placed
 export const NATURAL_ENRICHMENT_REGEN_RADIUS     = 12     // tile radius for respawn after depletion
-export const NATURAL_ENRICHMENT_CAP_BASE         = 8      // minimum natural item slots in the world
-export const NATURAL_ENRICHMENT_CAP_PER_N_ALIVE  = 5     // alive creatures per extra slot (+1 per 5)
-export const NATURAL_ENRICHMENT_CAP_MAX          = 20    // absolute ceiling
+export const NATURAL_ENRICHMENT_CAP_BASE         = 16     // minimum natural item slots in the world (scaled for 480 grid)
+export const NATURAL_ENRICHMENT_CAP_PER_N_ALIVE  = 5      // alive creatures per extra slot (+1 per 5)
+export const NATURAL_ENRICHMENT_CAP_MAX          = 50     // absolute ceiling
+// When the colony is tiny or extinct, the world still seeds enrichment using
+// biome-anchored tile sampling so zones don't latch off post–Gen 0.
+export const NATURAL_ENRICHMENT_AMBIENT_CAP      = 12     // floor world keeps even with 0 alive creatures
 
 // Which enrichment types can appear naturally in each biome
 export const NATURAL_ENRICHMENT_BIOME_TYPES: Record<string, string[]> = {
@@ -523,9 +537,10 @@ export const CANVAS_PADDING_Y = 55
 // ─── Vegetation caps ──────────────────────────────────────────────────────────
 // Prevent runaway tree/bush stacking. New growth only occurs when the world
 // is below these counts, so older plants must die before new ones can take root.
-export const VEG_TREE_CAP      = 250   // max (tree + shelter) tiles world-wide
-export const VEG_BUSH_CAP      = 400   // max bush tiles world-wide
-export const FOOD_PATCH_CAP    = 150   // max food_patch tiles world-wide; caps seasonal spawning
+// Scaled with WORLD_SIZE area (4× from 240→480).
+export const VEG_TREE_CAP      = 900   // max (tree + shelter) tiles world-wide
+export const VEG_BUSH_CAP      = 1400  // max bush tiles world-wide
+export const FOOD_PATCH_CAP    = 540   // max food_patch tiles world-wide; caps seasonal spawning
 
 // ─── River erosion ────────────────────────────────────────────────────────────
 // Very slow terrain shift over long play sessions. During storms, rivers
@@ -538,10 +553,12 @@ export const RIVER_DRYING_CHANCE  = 0.00008  // drought: low-water isolated rive
 export const RIVER_WINTER_FLOOD_CHANCE = 0.00015
 
 // ─── Early-generation cohesion ────────────────────────────────────────────────
-// Only the founding generation (gen 0) has a homing bias toward the nearest
-// living creature. Gen 1+ creatures gain full autonomy immediately.
-export const EARLY_GEN_MAX            = 0    // cohesion applies to gen 0 only
-export const EARLY_GEN_COHESION_RADIUS = 28  // tile radius to search for nearest creature
+// The earliest cohort has a homing bias toward the nearest living creature,
+// which keeps the fragile starter population from dispersing past breeding
+// range before bonds form. The bias fades after generation EARLY_GEN_MAX so
+// later cohorts retain full autonomy.
+export const EARLY_GEN_MAX            = 3    // cohesion applies through gen 3
+export const EARLY_GEN_COHESION_RADIUS = 50  // tile radius to search for nearest creature (scaled with 480 world)
 
 // ─── Population pressure dispersal ───────────────────────────────────────────
 // When local density exceeds CROWD_DISPERSE_THRESHOLD within CROWD_DISPERSE_RADIUS
@@ -796,3 +813,41 @@ export const TIDE_WATER_SEEK_RADIUS     = 30
 export const BLOOM_HUNGER_THRESHOLD     = 22
 // Crag race (mountain-dwellers) claims a larger territorial radius.
 export const CRAG_TERRITORY_RADIUS      = 12
+
+// ─── Caretaker build kit ──────────────────────────────────────────────────────
+// All four buildable tiles share the same charge/cooldown model as Strike/Ignite.
+// Charges refresh daily; cooldown gates rapid re-placement within a single day.
+
+// Fence — defensive barrier (slows movement, stress-relief inside)
+export const FENCE_PLACE_COOLDOWN_MS    = 4_000
+export const FENCE_PLACE_CHARGES_PER_DAY = 8     // generous — fences also decay in storms
+
+// Cairn — memorial marker. Persists; chronicled when births/deaths happen nearby.
+export const CAIRN_COOLDOWN_MS          = 8_000
+export const CAIRN_CHARGES_PER_DAY      = 3
+export const CAIRN_DECAY_DAYS           = 240    // ~2 in-game seasons before a cairn weathers away
+export const CAIRN_STRESS_RADIUS        = 4      // tiles within which a cairn calms creatures
+export const CAIRN_STRESS_RELIEF        = 0.10   // per tick when adjacent
+
+// Nest — breeding boost zone. Pairs near the nest get a reproduction-rate
+// multiplier and offspring spawn with bonus health.
+export const NEST_COOLDOWN_MS           = 12_000
+export const NEST_CHARGES_PER_DAY       = 2
+export const NEST_RADIUS                = 4
+export const NEST_BREED_MULT            = 2.2    // multiplies REPRODUCE_RATE per tick when either parent is near a nest
+export const NEST_OFFSPRING_HEALTH      = 15     // extra starting health for nest-born offspring
+export const NEST_DECAY_DAYS            = 90     // fades after this many in-game days
+export const NEST_STRESS_RELIEF         = 0.06   // calming aura for pairs/young near it
+
+// Watch post — vigilance amplifier. Creatures within radius gain a steady
+// vigilance drive drift and see feared targets from farther away.
+export const WATCH_POST_COOLDOWN_MS     = 10_000
+export const WATCH_POST_CHARGES_PER_DAY = 2
+export const WATCH_POST_RADIUS          = 8
+export const WATCH_POST_VIGILANCE_DRIFT = 0.0006 // per tick toward 1.0 for creatures within radius
+export const WATCH_POST_FEAR_BONUS      = 3      // extra fear-flee radius for creatures near a post
+export const WATCH_POST_DECAY_DAYS      = 180
+
+// Bush relocation — pick-up / replant tool. Pickup is instant; the carried
+// bush carries its current foodAmount (berries) so harvesting moves food too.
+export const BUSH_PICKUP_COOLDOWN_MS    = 2_500

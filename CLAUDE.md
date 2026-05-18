@@ -22,7 +22,7 @@ Free forever. Passion project. Built by Sammakara Mak.
 | State | Zustand v5 (one flat store) |
 | Auth | Supabase email + password |
 | Persistence | IndexedDB (local) + Supabase JSONB (cloud) |
-| Rendering | HTML Canvas 2D — isometric 240×240 grid |
+| Rendering | HTML Canvas 2D — isometric 480×480 grid |
 | Audio | Web Audio API — see `docs/audio.md` |
 | Deploy | Vercel (`vercel.json` handles SPA routing) |
 
@@ -90,6 +90,10 @@ tickTime → tickWeather → tickTiles → tickCreatures → tickReproduction
 ## Design constraints (must preserve)
 
 - Player **cannot command** creatures — only place things
+- **Founders spawn in a tight cluster** (`STARTER_SPAWN_RADIUS = 6` around world center) with pre-seeded bonds at `STARTER_BOND_STRENGTH` between every pair, so the colony reliably reaches its first birth before Gen 0 ages out
+- **Early-generation cohesion** extends through `EARLY_GEN_MAX = 3` cohorts — Gen 1–3 still get the homing bias on a 480-tile world
+- **Camera frames on creature centroid** at world start and on `0`-recenter; never re-pans to the geometric world midpoint
+- **Natural enrichment spawning never stops post–Gen 0** — when the colony is tiny or extinct it falls back to world-centered anchors so zones keep appearing
 - Simulation is **continuous** — no designed completion state
 - **Awareness is distribution-based** — evaluated from real creature state (median sentience, role diversity, lineage depth) with persistence hysteresis (HOLD 80 / FAIL 200 ticks)
 - Sentience growth is **deliberately slow** — many generations of accumulated experience before stage 5
@@ -121,7 +125,7 @@ Each axis touches a distinct slice; no two settings affect the same primary modi
 
 ---
 
-## Caretaker tools (7 active tools + heal)
+## Caretaker tools (9 active tools + heal)
 
 | Tool | Key | Limit |
 |---|---|---|
@@ -132,7 +136,15 @@ Each axis touches a distinct slice; no two settings affect the same primary modi
 | Strike | `5` | 2 charges/day, 12s cooldown |
 | Ignite | `6` | 3 charges/day, 8s cooldown |
 | Enrich | `7` | Unlimited (8 enrichment types via dropdown) |
+| **Build** | `8` | Per-kind daily charges + cooldown (fence 8/day · cairn 3/day · nest 2/day · watch post 2/day) |
+| **Bush** | `9` | 2.5s cooldown — pick up bush from a tile, or replant the carried one (preserves berry count) |
 | Heal | Dossier panel | 3/day (5 for interventionist, 1 for silent) |
+
+### Build kit details
+- **Fence** — wooden barrier; slow decay (storms accelerate); already a tile type before v3.1
+- **Cairn** — stacked-stone marker; CAIRN_STRESS_RELIEF aura over CAIRN_STRESS_RADIUS; weathers after CAIRN_DECAY_DAYS; placement on a death_site inherits cairnFor/cairnFamily/cairnGeneration so it becomes a real memorial
+- **Nest** — breeding zone; if either parent within NEST_RADIUS, reproduction gets a second roll at NEST_BREED_MULT and offspring spawn with +NEST_OFFSPRING_HEALTH; fades after NEST_DECAY_DAYS
+- **Watch post** — vigilance amplifier; drifts every creature within WATCH_POST_RADIUS toward vigilance 1.0 at WATCH_POST_VIGILANCE_DRIFT/tick
 
 ## Camera controls
 
@@ -145,7 +157,7 @@ Each axis touches a distinct slice; no two settings affect the same primary modi
 
 ## Keyboard shortcuts
 
-`Space` pause/resume · `1-7` tools · `Q/E` rotate · `+/-` zoom · `0` recenter · `Ctrl+S` save
+`Space` pause/resume · `1-9` tools · `Q/E` rotate · `+/-` zoom · `0` recenter (refocuses on creature centroid) · `Ctrl+S` save
 
 ---
 

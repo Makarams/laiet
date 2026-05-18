@@ -6,7 +6,7 @@ import { DossierPanel } from '../panels/DossierPanel'
 import { MessageLogPanel } from '../panels/MessageLogPanel'
 import { ColonyStatsPanel } from '../panels/ColonyStatsPanel'
 import { EventPopupLayer } from './EventPopup'
-import { Toolbar, Tool } from './Toolbar'
+import { Toolbar, Tool, BuildKind } from './Toolbar'
 import { updateMusicContext, computeMusicKey, updateWeatherAudio, setMuted, isMuted, unlockAudio } from '@/audio/chiptune'
 import { EnrichmentType } from '@/types'
 import { saveToCloud } from '@/db/persistence'
@@ -235,6 +235,7 @@ export function GameLayout() {
 
   const [activeTool, setActiveTool]             = useState<Tool>('select')
   const [selectedEnrichment, setSelectedEnrichment] = useState<EnrichmentType>('resting_spot')
+  const [selectedBuild, setSelectedBuild]       = useState<BuildKind>('fence')
   const [muted, setMutedState]                  = useState(isMuted())
   const [toast, setToast]                       = useState<{msg:string;ok:boolean}|null>(null)
   const [showRestartConfirm, setShowRestartConfirm] = useState(false)
@@ -291,6 +292,8 @@ export function GameLayout() {
       if(e.key==='5')setActiveTool('thunder')
       if(e.key==='6')setActiveTool('fire')
       if(e.key==='7')setActiveTool('enrich')
+      if(e.key==='8')setActiveTool('build')
+      if(e.key==='9')setActiveTool('bush')
       if(e.key==='s'&&(e.ctrlKey||e.metaKey)){e.preventDefault();handleManualSave()}
     }
     window.addEventListener('keydown',handler)
@@ -320,12 +323,14 @@ export function GameLayout() {
           awarenessStage={gameState.awarenessStage}
           selectedEnrichment={selectedEnrichment}
           onEnrichmentChange={setSelectedEnrichment}
+          selectedBuild={selectedBuild}
+          onBuildChange={setSelectedBuild}
         />
 
         <Main>
           <Left><ColonyStatsPanel /></Left>
           <Center>
-            <GameCanvas activeTool={activeTool} selectedEnrichment={selectedEnrichment} />
+            <GameCanvas activeTool={activeTool} selectedEnrichment={selectedEnrichment} selectedBuild={selectedBuild} />
             <EventPopupLayer />
             <LogArea><MessageLogPanel /></LogArea>
           </Center>
