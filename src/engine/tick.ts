@@ -2,7 +2,7 @@ import { v4 as uuid } from 'uuid'
 import {
   GameState, Creature, GameEvent, EventType, Season, WeatherState,
   ExtinctionRecord, ColonyMessage, SimModifiers, RaceTrait,
-  EnrichmentItem, EnrichmentType, EnvContext, CohortPhase, DeathCause,
+  EnrichmentItem, EnrichmentType, EnvContext, CohortPhase, DeathCause, TileType,
 } from '@/types'
 import { pushChronicle, recordObservation, recordDeathCause } from '@/engine/chronicle'
 import {
@@ -100,7 +100,9 @@ import {
   CAIRN_DECAY_DAYS, CAIRN_STRESS_RADIUS, CAIRN_STRESS_RELIEF,
   NEST_RADIUS, NEST_BREED_MULT, NEST_OFFSPRING_HEALTH, NEST_DECAY_DAYS, NEST_STRESS_RELIEF,
   WATCH_POST_RADIUS, WATCH_POST_VIGILANCE_DRIFT, WATCH_POST_DECAY_DAYS,
-  FENCE_PLACE_CHARGES_PER_DAY, CAIRN_CHARGES_PER_DAY, NEST_CHARGES_PER_DAY, WATCH_POST_CHARGES_PER_DAY,
+  // soft action-load pressure (replaces daily charges)
+  ACTION_LOAD_DECAY_PER_TICK, ACTION_LOAD_STRESS_THRESHOLD,
+  ACTION_LOAD_STRESS_PER_TICK, ACTION_LOAD_STRESS_RADIUS,
   // new adaptation/race effect constants
   THERMAL_VENT_WARMTH_GAIN, BIOLUMINESCENT_STRESS_RADIUS, BIOLUMINESCENT_STRESS_RELIEF,
   SPORE_RESISTANT_DISEASE_MULT, MIRE_DISEASE_RESIST,
@@ -701,22 +703,28 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
       : 1.0)
     * mods.foodRegrowMult
 
-  // Pre-count vegetation so growth checks can enforce world-wide caps.
-  // This prevents trees, bushes, and healroot from stacking endlessly; new growth only
-  // occurs when the count is below the cap, forcing natural turnover.
-  // Also track anyBurning here to avoid a second full tile scan later.
-  let treeCount = 0, bushCount = 0, healrootCount = 0, foodPatchCount = 0, anyBurning = false
-  for (let vy = 0; vy < WORLD_SIZE; vy++) {
-    for (let vx = 0; vx < WORLD_SIZE; vx++) {
-      const vt = state.tiles[vy][vx]
-      const vtType = vt.type
-      if (vtType === 'tree' || vtType === 'shelter') treeCount++
-      else if (vtType === 'bush') bushCount++
-      else if (vtType === 'healroot') healrootCount++
-      else if (vtType === 'food_patch') foodPatchCount++
-      if (!anyBurning && (vt.burning ?? 0) > 0) anyBurning = true
+  // Read incremental tile-type counters from state instead of doing the old
+  // O(WORLD_SIZE^2) pre-count scan every tick. tileTypeCount is bootstrapped
+  // in worldGen and maintained inside this function via writeTileType (below).
+  // Backward-compat: if the field is absent (old save), do a one-time count.
+  let counts = state.tileTypeCount
+  if (!counts) {
+    counts = {}
+    for (let vy = 0; vy < WORLD_SIZE; vy++) {
+      for (let vx = 0; vx < WORLD_SIZE; vx++) {
+        const tt = state.tiles[vy][vx].type
+        counts[tt] = (counts[tt] ?? 0) + 1
+      }
     }
   }
+  // Working counters mutated by the main loop; written back at the end of tick.
+  let treeCount      = (counts.tree ?? 0) + (counts.shelter ?? 0)
+  let bushCount      = counts.bush ?? 0
+  let healrootCount  = counts.healroot ?? 0
+  let foodPatchCount = counts.food_patch ?? 0
+  // anyBurning: track lazily — if any tile is found burning during the main
+  // loop we set it; the prior pre-scan was redundant.
+  let anyBurning = false
 
   // Copy-on-write: only clone rows/tiles that are actually mutated this tick.
   // Typical tick: ~200-400 writes vs 14,400 with the old full-clone map.
@@ -733,6 +741,7 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
   for (let y = 0; y < WORLD_SIZE; y++) {
     for (let x = 0; x < WORLD_SIZE; x++) {
       const t = srcTiles[y][x]
+      if (!anyBurning && (t.burning ?? 0) > 0) anyBurning = true
 
       // Food regrowth; only patches near a mature tree regenerate.
       // Patches without a nearby mature tree wither to grass/barren when empty.
@@ -1424,7 +1433,23 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
     ? Math.round((snowTiles / totalSnowableTiles) * 100)
     : 0
 
-  let nextState: GameState = { ...state, tiles, snowAccumulation }
+  // Persist the running tile-type counters so the next tick can skip the
+  // pre-count scan. tree+shelter are merged in treeCount; split heuristically
+  // by preserving the prior shelter-share if known.
+  const prevShelter = state.tileTypeCount?.shelter ?? 0
+  const prevTree    = state.tileTypeCount?.tree ?? 0
+  const prevTotal   = prevShelter + prevTree
+  const shelterShare = prevTotal > 0 ? prevShelter / prevTotal : 0
+  const updatedCounts: Partial<Record<TileType, number>> = {
+    ...(state.tileTypeCount ?? {}),
+    tree:       Math.max(0, Math.round(treeCount * (1 - shelterShare))),
+    shelter:    Math.max(0, Math.round(treeCount * shelterShare)),
+    bush:       Math.max(0, bushCount),
+    healroot:   Math.max(0, healrootCount),
+    food_patch: Math.max(0, foodPatchCount),
+  }
+
+  let nextState: GameState = { ...state, tiles, snowAccumulation, tileTypeCount: updatedCounts }
   if (lightningStruck) {
     nextState = pushChronicle(nextState, {
       kind: 'lightning_strike',
@@ -1455,11 +1480,15 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
   const events: GameEvent[] = [...state.events]
   let totalDeaths = state.totalDeaths
   const weather = (state.weather ?? 'clear') as WeatherState
-  // Live healroot tile count for spawn gating; incremented when death-site spawning adds tiles
-  let healrootCount = 0
-  for (let vy = 0; vy < WORLD_SIZE; vy++) {
-    for (let vx = 0; vx < WORLD_SIZE; vx++) {
-      if (srcTiles[vy][vx].type === 'healroot') healrootCount++
+  // Healroot tile count for spawn gating; read from incremental counter
+  // (tickTiles maintains it), avoiding another O(WORLD_SIZE^2) scan per tick.
+  let healrootCount = state.tileTypeCount?.healroot ?? 0
+  if (!state.tileTypeCount) {
+    // backward-compat: count once if the cache is missing
+    for (let vy = 0; vy < WORLD_SIZE; vy++) {
+      for (let vx = 0; vx < WORLD_SIZE; vx++) {
+        if (srcTiles[vy][vx].type === 'healroot') healrootCount++
+      }
     }
   }
   // Tool-as-answer tracking; updated when a question is generated this tick
@@ -3551,37 +3580,40 @@ function tickTribes(state: GameState): GameState {
 
 // ─── Caretaker ────────────────────────────────────────────────────────────────
 
-function tickCaretaker(state: GameState, mods: SimModifiers): GameState {
-  const now = Date.now()
+function tickCaretaker(state: GameState, _mods: SimModifiers): GameState {
   const caretaker = { ...state.caretaker }
-  const msPerDay = 86_400_000
 
-  if (now - caretaker.lastHealReset > msPerDay) {
-    // Use the profile-derived charge count, not the bare constant.
-    // Interventionist profile sets mods.healCharges = 4; base is 3.
-    caretaker.healCharges = mods.healCharges
-    caretaker.lastHealReset = now
+  // Soft pressure decays toward 0 each tick — replaces the daily charge reset.
+  caretaker.actionLoad = Math.max(0, (caretaker.actionLoad ?? 0) - ACTION_LOAD_DECAY_PER_TICK)
+
+  // Ambient stress bleed: when actionLoad is high and the caretaker's last
+  // action was recent + nearby, creatures within ACTION_LOAD_STRESS_RADIUS feel
+  // it. Creatures elsewhere are unaffected. This is the *only* world-visible
+  // tradeoff for heavy intervention.
+  let creatures = state.creatures
+  if ((caretaker.actionLoad ?? 0) > ACTION_LOAD_STRESS_THRESHOLD
+      && caretaker.lastActionX !== null && caretaker.lastActionY !== null) {
+    const ax = caretaker.lastActionX, ay = caretaker.lastActionY
+    const r = ACTION_LOAD_STRESS_RADIUS
+    const intensity = Math.min(1, ((caretaker.actionLoad ?? 0) - ACTION_LOAD_STRESS_THRESHOLD) / 50)
+    const bleed = ACTION_LOAD_STRESS_PER_TICK * intensity
+    const next: typeof state.creatures = { ...creatures }
+    let mutated = false
+    for (const id in next) {
+      const c = next[id]
+      if (c.diedOnDay !== null) continue
+      if (Math.abs(c.x - ax) > r || Math.abs(c.y - ay) > r) continue
+      next[id] = { ...c, stress: Math.min(100, c.stress + bleed) }
+      mutated = true
+    }
+    if (mutated) creatures = next
   }
 
-  // Build-kit charges share the env-reset cadence (Strike/Ignite already use it).
-  if (caretaker.lastEnvReset && now - caretaker.lastEnvReset > msPerDay) {
-    caretaker.fenceChargesToday = FENCE_PLACE_CHARGES_PER_DAY
-    caretaker.cairnChargesToday = CAIRN_CHARGES_PER_DAY
-    caretaker.nestChargesToday  = NEST_CHARGES_PER_DAY
-    caretaker.watchChargesToday = WATCH_POST_CHARGES_PER_DAY
-  }
-
-  if (caretaker.lastSeasonRedirect !== state.time.season) {
-    caretaker.riverRedirectUsed = false
-    caretaker.lastSeasonRedirect = state.time.season
-  }
-
-  // Tick down absence imprint one in-game day per tick (approximate).
-  // Clear absenceHardship when the imprint ends — they share a lifecycle.
+  // Tick down absence imprint; clear absenceHardship when imprint ends.
   const absenceImprint = Math.max(0, (state.absenceImprint ?? 0) - DAY_FRACTION_PER_TICK)
   const absenceHardship = absenceImprint <= 0 ? undefined : state.absenceHardship
 
-  return { ...state, caretaker, absenceImprint, absenceHardship }
+  return { ...state, creatures, caretaker, absenceImprint, absenceHardship }
 }
 
 // ─── Endgame ─────────────────────────────────────────────────────────────────

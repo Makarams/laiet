@@ -4,6 +4,9 @@ import { CaretakerProfile, SimModifiers } from '@/types'
 // hand-picked value is the "neutral" expression of its axis. Every choice the
 // player makes pulls one axis in one direction with a meaningful trade-off;
 // no choice is dominant, and no two settings touch the same axis.
+//
+// healCharges / foodDropCooldownMs are no longer set — the daily-charge gating
+// system was replaced with the actionLoad soft-pressure curve in CaretakerState.
 export const DEFAULT_MODIFIERS: SimModifiers = {
   foodRegrowMult:           1.0,
   droughtDurationMult:      1.0,
@@ -11,8 +14,6 @@ export const DEFAULT_MODIFIERS: SimModifiers = {
   mutationChance:           0.10,
   sentienceGrowthMult:      1.0,
   awarenessMessageMult:     1.0,
-  healCharges:              3,
-  foodDropCooldownMs:       5_000,
   weatherSeverityMult:      1.0,
   diseasePressureMult:      1.0,
   tribeFormationMult:       1.0,
@@ -30,8 +31,7 @@ export const DEFAULT_MODIFIERS: SimModifiers = {
 // Where a setting reaches into more than one modifier, the secondary effects
 // reinforce the primary's identity rather than overlapping another setting.
 //
-// AXIS MAP
-//   Presence    → caretaker capability (healCharges, foodDropCooldownMs)
+// AXIS MAP (Presence axis removed — actions are unlimited; load curve handles balance)
 //   World       → environment baseline (foodRegrowMult, droughtDurationMult,
 //                                       weatherSeverityMult, diseasePressureMult)
 //   Evolution   → genetic rates (mutationChance, adaptationInheritMult,
@@ -43,30 +43,13 @@ export const DEFAULT_MODIFIERS: SimModifiers = {
 //   Visibility  → colony-perceives-you axis (caretakerVisibilityMult,
 //                                             awarenessMessageMult)
 //
-// Trade-offs are intentional: 'silent' presence has fewer tools but the colony
-// grows tougher; 'fertile' world is easier but reduces evolutionary pressure;
+// Trade-offs: 'fertile' world is easier but reduces evolutionary pressure;
 // 'fast' evolution gives variety but destabilises lineages; 'awareness' focus
 // produces more colony speech but slows reproduction; 'fracture' expectation
 // is more dramatic but extinguishes faster; 'attentive' visibility makes the
 // colony notice you but reduces their autonomy.
 export function computeSimModifiers(profile: CaretakerProfile): SimModifiers {
   const m: SimModifiers = { ...DEFAULT_MODIFIERS }
-
-  // ── Presence ──────────────────────────────────────────────────────────────
-  // PRIMARY axis: caretaker capability (charges + cooldowns).
-  // Silent gives you fewer tools but the colony's natural resilience pushes
-  // up slightly (slower disease, faster bond formation in absence of help).
-  if (profile.presence === 'interventionist') {
-    m.healCharges          = 5
-    m.foodDropCooldownMs   = 3_000
-    m.caretakerVisibilityMult = (m.caretakerVisibilityMult ?? 1) * 1.20  // you act often; colony notices
-  } else if (profile.presence === 'silent') {
-    m.healCharges          = 1
-    m.foodDropCooldownMs   = 8_000
-    m.bondSpeedMult        *= 1.10  // unaided colonies form social fabric faster
-    m.diseasePressureMult  = (m.diseasePressureMult ?? 1) * 0.85
-  }
-  // 'observer' uses neutral defaults
 
   // ── World ─────────────────────────────────────────────────────────────────
   // PRIMARY axis: environment baseline.

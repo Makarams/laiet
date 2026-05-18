@@ -1,4 +1,5 @@
 import { Tile, TileType, BiomePatch, Season } from '@/types'
+export type { TileType } from '@/types'
 import { WORLD_SIZE, TREE_FOOD_MATURE_AGE } from '@/engine/constants'
 
 // ─── Seeded RNG (mulberry32) ─────────────────────────────────────────────────
@@ -450,6 +451,21 @@ export function generateWorld(seed: number): Tile[][] {
   seedCenterResources(tiles, rng)
 
   return tiles
+}
+
+// One-shot full count of every tile type on the grid. Used to bootstrap
+// state.tileTypeCount at world creation and as a fallback when an older save
+// lacks the field. Called only at world creation or load — never per tick.
+export function countTileTypes(tiles: Tile[][]): Partial<Record<TileType, number>> {
+  const counts: Partial<Record<TileType, number>> = {}
+  for (let y = 0; y < tiles.length; y++) {
+    const row = tiles[y]
+    for (let x = 0; x < row.length; x++) {
+      const t = row[x].type
+      counts[t] = (counts[t] ?? 0) + 1
+    }
+  }
+  return counts
 }
 
 // ─── Season effects on tiles ─────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import styled from 'styled-components'
 import { useLaietStore } from '@/store/gameStore'
 import { ColonyStage, WeatherState } from '@/types'
-import { HEAL_CHARGES_PER_DAY } from '@/engine/constants'
+import { ACTION_LOAD_STRESS_THRESHOLD } from '@/engine/constants'
 import { THEME, stageColor, weatherColor } from '@/ui/theme'
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
@@ -260,7 +260,6 @@ export function ColonyStatsPanel() {
   const { creatures, colonyStage, awarenessStage, cohortPhase, totalDeaths, totalCreaturesEver,
           totalGenerations, weather, weatherTimer, caretaker, time } = gameState
 
-  const maxHealCharges = HEAL_CHARGES_PER_DAY
   const alive = Object.values(creatures).filter(c => c.diedOnDay === null)
   const maxGen = alive.length > 0 ? Math.max(...alive.map(c => c.generation)) : 0
 
@@ -404,15 +403,15 @@ export function ColonyStatsPanel() {
       <Section>
         <SectionTitle>Operator</SectionTitle>
         <Row>
-          <Label>Interventions</Label>
-          <Value $color={caretaker.healCharges > 0 ? THEME.alive : THEME.death}>
-            {caretaker.healCharges}/{maxHealCharges}
+          <Label>Action pressure</Label>
+          <Value $color={(caretaker.actionLoad ?? 0) >= ACTION_LOAD_STRESS_THRESHOLD ? THEME.threat : THEME.alive}>
+            {Math.round(caretaker.actionLoad ?? 0)} / 100
           </Value>
         </Row>
         <Row>
-          <Label>Water divert</Label>
-          <Value $color={caretaker.riverRedirectUsed ? THEME.threat : THEME.alive}>
-            {caretaker.riverRedirectUsed ? 'Used' : 'Ready'}
+          <Label>Bush held</Label>
+          <Value $color={caretaker.bushHeldFood !== null && caretaker.bushHeldFood !== undefined ? THEME.alive : THEME.textTertiary}>
+            {caretaker.bushHeldFood !== null && caretaker.bushHeldFood !== undefined ? `${Math.round(caretaker.bushHeldFood)} berries` : '—'}
           </Value>
         </Row>
       </Section>

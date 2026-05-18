@@ -90,6 +90,10 @@ tickTime → tickWeather → tickTiles → tickCreatures → tickReproduction
 ## Design constraints (must preserve)
 
 - Player **cannot command** creatures — only place things
+- **Caretaker actions are unlimited.** No daily charges, no per-tool cooldowns. The only balancer is `CaretakerState.actionLoad` (soft pressure that decays and bleeds ambient stress above threshold). Never re-introduce charge caps or per-tool cooldown gates.
+- **No O(WORLD_SIZE²) pre-scans per tick.** `tickTiles` reads vegetation counts from `state.tileTypeCount` (maintained incrementally) and writes them back at the end. `tickCreatures` reads `healrootCount` from the same cache. Future scans that need a full-grid pass must either (a) use the cached counter or (b) be triggered by an explicit event, not run every tick.
+- **Territory claims keep spacing.** A creature won't claim its current tile if another creature's `territoryClaim` is within 8 tiles. This prevents pile-on conflict at the same spot.
+- **Crowded creatures with low sociality bias their wander toward open space.** Adds soft repulsion without scripted dispersal.
 - **Founders spawn in a tight cluster** (`STARTER_SPAWN_RADIUS = 6` around world center) with pre-seeded bonds at `STARTER_BOND_STRENGTH` between every pair, so the colony reliably reaches its first birth before Gen 0 ages out
 - **Early-generation cohesion** extends through `EARLY_GEN_MAX = 3` cohorts — Gen 1–3 still get the homing bias on a 480-tile world
 - **Camera frames on creature centroid** at world start and on `0`-recenter; never re-pans to the geometric world midpoint
@@ -114,31 +118,36 @@ tickTime → tickWeather → tickTiles → tickCreatures → tickReproduction
 
 | Axis | Options | Primary modifiers |
 |---|---|---|
-| Presence | interventionist / observer / silent | healCharges, foodDropCooldownMs, caretakerVisibilityMult |
 | World | fertile / varied / scarce | foodRegrowMult, droughtDurationMult, weatherSeverityMult, diseasePressureMult |
 | Evolution | fast / drift / slow | mutationChance, morphologyDriftMult, adaptationInheritMult |
 | Focus | bonds / survival / awareness | bondSpeedMult, tribeFormationMult, enrichmentSpawnMult, sentienceGrowthMult |
 | Expectation | persistence / adaptation / fracture | lineageHostilityBaseline, fractureEligibilityMult, adaptationInheritMult |
 | Visibility | attentive / neutral / hidden | caretakerVisibilityMult, awarenessMessageMult |
 
-Each axis touches a distinct slice; no two settings affect the same primary modifier.
+The **Presence** axis was deleted in v3.2 — caretaker actions are unlimited, balanced only by `CaretakerState.actionLoad`. Each remaining axis touches a distinct slice; no two settings affect the same primary modifier.
 
 ---
 
-## Caretaker tools (9 active tools + heal)
+## Caretaker tools (9 active tools + heal — all unlimited)
 
 | Tool | Key | Limit |
 |---|---|---|
 | Observe | `1` | Unlimited |
-| Feed | `2` | 5s cooldown (3s interventionist, 8s silent) |
+| Feed | `2` | Unlimited (220 ms anti-spam floor only) |
 | Plant | `3` | Unlimited |
-| River | `4` | Once per season |
-| Strike | `5` | 2 charges/day, 12s cooldown |
-| Ignite | `6` | 3 charges/day, 8s cooldown |
+| River | `4` | Unlimited |
+| Strike | `5` | Unlimited |
+| Ignite | `6` | Unlimited |
 | Enrich | `7` | Unlimited (8 enrichment types via dropdown) |
-| **Build** | `8` | Per-kind daily charges + cooldown (fence 8/day · cairn 3/day · nest 2/day · watch post 2/day) |
-| **Bush** | `9` | 2.5s cooldown — pick up bush from a tile, or replant the carried one (preserves berry count) |
-| Heal | Dossier panel | 3/day (5 for interventionist, 1 for silent) |
+| **Build** | `8` | Unlimited (fence / cairn / nest / watch post) |
+| **Bush** | `9` | Unlimited — pick up bush from a tile, or replant the carried one |
+| Heal | Dossier panel | Unlimited (only gated by creature.health < 80) |
+
+### Action pressure (replaces all charge caps)
+- One unified soft curve `CaretakerState.actionLoad` (0..100). Every action adds its `ACTION_LOAD_WEIGHTS[tool]` weight (`heal: 7`, `thunder: 22`, `fire: 16`, `nest: 10`, `cairn: 5`, etc.). Load decays by `ACTION_LOAD_DECAY_PER_TICK` every tick.
+- Above `ACTION_LOAD_STRESS_THRESHOLD = 55`, the engine adds `ACTION_LOAD_STRESS_PER_TICK` ambient stress to creatures within `ACTION_LOAD_STRESS_RADIUS` of the caretaker's most-recent action site — the only world-visible cost of heavy intervention.
+- Anti-spam floor `ACTION_BASE_COOLDOWN_MS = 220` is the only timing gate (prevents double-firing on a single click). Same value for every tool.
+- The Presence (Role) axis of CaretakerProfile was removed entirely; field kept as `presence?` only for save-file compatibility. `SimModifiers.healCharges` / `foodDropCooldownMs` are no longer set or read.
 
 ### Build kit details
 - **Fence** — wooden barrier; slow decay (storms accelerate); already a tile type before v3.1

@@ -122,7 +122,6 @@ const SignOutBtn = styled.button`
 
 // ─── Profile options ──────────────────────────────────────────────────────────
 
-type Presence    = CaretakerProfile['presence']
 type World       = CaretakerProfile['world']
 type Evolution   = CaretakerProfile['evolution']
 type Focus       = CaretakerProfile['focus']
@@ -135,11 +134,6 @@ const WORLD_HINTS: Record<World, string> = {
   fertile: 'food regrows fast, droughts brief, weather mild, disease rare — survival eases, evolution slows',
   varied:  'baseline ; standard regrowth, droughts, weather, disease pressure',
   scarce:  'food slow, droughts long, weather severe, disease elevated — evolution accelerates under pressure',
-}
-const PRESENCE_HINTS: Record<Presence, string> = {
-  interventionist: '5 heal charges, 3s food cooldown ; colony notices you more',
-  observer:        '3 heal charges, 5s food cooldown ; balanced',
-  silent:          '1 heal charge, 8s food cooldown ; unaided colony bonds faster, less disease',
 }
 const EVOLUTION_HINTS: Record<Evolution, string> = {
   fast:  'mutation 18%, morphology drifts hard, adaptations inherit easily ; lineages diverge fast',
@@ -163,7 +157,6 @@ const EXPECTATION_HINTS: Record<Expectation, string> = {
 }
 
 const WORLD_COLORS:     Record<World,       string> = { fertile: THEME.alive, varied: THEME.amber, scarce: THEME.threat }
-const PRESENCE_COLORS:  Record<Presence,    string> = { interventionist: THEME.water, observer: THEME.amber, silent: THEME.textSecondary }
 const EVOLUTION_COLORS: Record<Evolution,   string> = { fast: THEME.threat, drift: THEME.amber, slow: THEME.water }
 const FOCUS_COLORS:     Record<Focus,       string> = { bonds: '#c878f0', survival: THEME.alive, awareness: THEME.water }
 const VISIBILITY_COLORS: Record<Visibility, string> = { attentive: '#f0a8f0', neutral: THEME.amber, hidden: '#6a9a8a' }
@@ -176,10 +169,9 @@ interface Props { onComplete: (p: CaretakerProfile) => void }
 export function ProfileScreen({ onComplete }: Props) {
   const clearUser = useLaietStore(s => s.clearUser)
 
-  // New defaults: every setting starts at its neutral middle so the player
-  // can see which choice they're changing from. 'varied' / 'observer' /
-  // 'drift' / 'survival' / 'persistence' / 'neutral' — all are explicit.
-  const [presence,    setPresence]    = useState<Presence>('observer')
+  // Every setting starts at its neutral middle so the player can see which
+  // choice they're changing from. The Presence axis was removed — caretaker
+  // actions are unlimited and balanced by the actionLoad pressure curve.
   const [world,       setWorld]       = useState<World>('varied')
   const [evolution,   setEvolution]   = useState<Evolution>('drift')
   const [focus,       setFocus]       = useState<Focus>('survival')
@@ -187,7 +179,7 @@ export function ProfileScreen({ onComplete }: Props) {
   const [visibility,  setVisibility]  = useState<Visibility>('neutral')
 
   const handleSubmit = () => {
-    const profile: CaretakerProfile = { presence, world, evolution, focus, expectation, visibility }
+    const profile: CaretakerProfile = { world, evolution, focus, expectation, visibility }
     onComplete(profile)
   }
 
@@ -242,20 +234,6 @@ export function ProfileScreen({ onComplete }: Props) {
         </FormColumn>
 
         <FormColumn>
-          {/* Caretaker presence */}
-          <Section>
-            <SectionTitle>Role</SectionTitle>
-            <OptionGrid $cols={3}>
-              {(['interventionist','observer','silent'] as Presence[]).map(p => (
-                <OptionBtn key={p} $selected={presence === p} $accent={PRESENCE_COLORS[p]}
-                  onClick={() => setPresence(p)}>
-                  {p === 'interventionist' ? 'active' : p}
-                </OptionBtn>
-              ))}
-            </OptionGrid>
-            <Hint>{PRESENCE_HINTS[presence]}</Hint>
-          </Section>
-
           {/* Focus */}
           <Section>
             <SectionTitle>Colony Focus</SectionTitle>

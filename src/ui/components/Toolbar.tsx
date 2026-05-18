@@ -2,11 +2,6 @@ import { useState } from 'react'
 import styled from 'styled-components'
 import { Season, DayPhase, MessageStage, EnrichmentType } from '@/types'
 import { useLaietStore } from '@/store/gameStore'
-import {
-  THUNDER_CHARGES_PER_DAY, FIRE_CHARGES_PER_DAY,
-  FENCE_PLACE_CHARGES_PER_DAY, CAIRN_CHARGES_PER_DAY,
-  NEST_CHARGES_PER_DAY, WATCH_POST_CHARGES_PER_DAY,
-} from '@/engine/constants'
 import { THEME, awarenessColor, weatherColor } from '@/ui/theme'
 
 // ─── Bar root ─────────────────────────────────────────────────────────────────
@@ -102,11 +97,11 @@ const KeyHint = styled.span`
   color: ${THEME.textTertiary};
   opacity: 0.7;
 `
-const ChargeBadge = styled.span<{ $empty: boolean }>`
+const HeldBadge = styled.span`
   position: absolute; bottom: 4px; right: 5px;
-  background: ${p => p.$empty ? THEME.deathDim : THEME.aliveDim};
-  border: 1px solid ${p => p.$empty ? THEME.death : THEME.alive};
-  color: ${p => p.$empty ? THEME.death : THEME.alive};
+  background: ${THEME.aliveDim};
+  border: 1px solid ${THEME.alive};
+  color: ${THEME.alive};
   font-size: ${THEME.type.xs}px; font-weight: 700;
   padding: 0 4px; border-radius: ${THEME.radius.xs}px;
   line-height: 1.3;
@@ -186,6 +181,23 @@ const YearTag = styled.span`
 // ─── Awareness pips ───────────────────────────────────────────────────────────
 
 const AwarenessPips = styled.div`display: flex; gap: 4px; align-items: center; margin-top: 2px;`
+
+// ─── Caretaker pressure bar (replaces all per-tool charge badges) ─────────────
+const PressureBar = styled.div`
+  width: 84px; height: 6px;
+  background: ${THEME.bgDeep};
+  border: 1px solid ${THEME.borderMid};
+  border-radius: ${THEME.radius.pill}px;
+  overflow: hidden;
+  margin-top: 4px;
+`
+const PressureFill = styled.div<{ $pct: number; $alert: boolean }>`
+  width: ${p => p.$pct.toFixed(1)}%;
+  height: 100%;
+  background: ${p => p.$alert ? THEME.threat : THEME.amber};
+  box-shadow: ${p => p.$alert ? `0 0 6px ${THEME.threat}88` : `0 0 6px ${THEME.amberGlow}`};
+  transition: width ${THEME.motion.fast} ${THEME.motion.easeOut};
+`
 const Pip = styled.span<{ $active: boolean; $level: number }>`
   width: 9px; height: 9px; border-radius: 50%;
   background: ${p => p.$active ? awarenessColor(p.$level) : 'transparent'};
@@ -316,31 +328,17 @@ export function Toolbar({
   const caretaker = useLaietStore(s => s.gameState?.caretaker)
   const weather    = useLaietStore(s => s.gameState?.weather ?? 'clear')
 
-  const thunderCharges = caretaker?.thunderChargesToday ?? THUNDER_CHARGES_PER_DAY
-  const fireCharges    = caretaker?.fireChargesToday    ?? FIRE_CHARGES_PER_DAY
-  const fenceCharges   = caretaker?.fenceChargesToday   ?? FENCE_PLACE_CHARGES_PER_DAY
-  const cairnCharges   = caretaker?.cairnChargesToday   ?? CAIRN_CHARGES_PER_DAY
-  const nestCharges    = caretaker?.nestChargesToday    ?? NEST_CHARGES_PER_DAY
-  const watchCharges   = caretaker?.watchChargesToday   ?? WATCH_POST_CHARGES_PER_DAY
-  const bushHolding    = caretaker?.bushHeldFood !== null && caretaker?.bushHeldFood !== undefined
+  const bushHolding = caretaker?.bushHeldFood !== null && caretaker?.bushHeldFood !== undefined
+  const actionLoad  = caretaker?.actionLoad ?? 0
 
-  // Build charge that surfaces on the Build button reflects the currently
-  // selected build kind, so the badge stays meaningful as the player swaps.
-  const buildChargeByKind: Record<BuildKind, number> = {
-    fence: fenceCharges, cairn: cairnCharges, nest: nestCharges, watch_post: watchCharges,
-  }
-  const buildChargeMaxByKind: Record<BuildKind, number> = {
-    fence: FENCE_PLACE_CHARGES_PER_DAY, cairn: CAIRN_CHARGES_PER_DAY,
-    nest: NEST_CHARGES_PER_DAY, watch_post: WATCH_POST_CHARGES_PER_DAY,
-  }
-
-  const tools: { key: Tool; label: string; hotkey: string; charge?: { used: number; max: number } }[] = [
+  // Every tool is always usable. No charge badges — just labels + hotkeys.
+  const tools: { key: Tool; label: string; hotkey: string }[] = [
     { key: 'select',  label: 'Observe',  hotkey: '1' },
     { key: 'food',    label: 'Feed',     hotkey: '2' },
     { key: 'tree',    label: 'Plant',    hotkey: '3' },
     { key: 'water',   label: 'River',    hotkey: '4' },
-    { key: 'thunder', label: 'Strike',   hotkey: '5', charge: { used: thunderCharges, max: THUNDER_CHARGES_PER_DAY } },
-    { key: 'fire',    label: 'Ignite',   hotkey: '6', charge: { used: fireCharges,    max: FIRE_CHARGES_PER_DAY } },
+    { key: 'thunder', label: 'Strike',   hotkey: '5' },
+    { key: 'fire',    label: 'Ignite',   hotkey: '6' },
   ]
 
   const activeEnrichOption = ENRICHMENT_OPTIONS.find(o => o.type === selectedEnrichment) ?? ENRICHMENT_OPTIONS[0]
@@ -360,7 +358,6 @@ export function Toolbar({
             <ToolGlyph $active={activeTool === t.key}>{TOOL_GLYPHS[t.key]}</ToolGlyph>
             <ToolLabel>{t.label}</ToolLabel>
             <KeyHint>{t.hotkey}</KeyHint>
-            {t.charge && <ChargeBadge $empty={t.charge.used <= 0}>{t.charge.used}</ChargeBadge>}
           </ToolBtn>
         ))}
         <div style={{ position: 'relative', display: 'flex', alignSelf: 'stretch' }}>
@@ -392,9 +389,6 @@ export function Toolbar({
             <ToolGlyph $active={activeTool === 'build'}>{TOOL_GLYPHS.build}</ToolGlyph>
             <ToolLabel>Build</ToolLabel>
             <KeyHint>8</KeyHint>
-            <ChargeBadge $empty={buildChargeByKind[selectedBuild] <= 0}>
-              {buildChargeByKind[selectedBuild]}/{buildChargeMaxByKind[selectedBuild]}
-            </ChargeBadge>
           </ToolBtn>
           {showBuildDropdown && activeTool === 'build' && (
             <EnrichDropdown>
@@ -402,7 +396,7 @@ export function Toolbar({
                 <EnrichOption key={opt.kind} $selected={selectedBuild === opt.kind}
                   onClick={() => { onBuildChange(opt.kind); setShowBuildDropdown(false) }}>
                   {opt.label}
-                  <EnrichHint>{opt.hint} · {buildChargeByKind[opt.kind]}/{buildChargeMaxByKind[opt.kind]}</EnrichHint>
+                  <EnrichHint>{opt.hint}</EnrichHint>
                 </EnrichOption>
               ))}
             </EnrichDropdown>
@@ -417,7 +411,7 @@ export function Toolbar({
           <ToolLabel>Bush</ToolLabel>
           <KeyHint>9</KeyHint>
           {bushHolding && (
-            <ChargeBadge $empty={false}>held</ChargeBadge>
+            <HeldBadge>held</HeldBadge>
           )}
         </ToolBtn>
       </ToolGroup>
@@ -459,6 +453,12 @@ export function Toolbar({
           <AwarenessPips>
             {[1, 2, 3, 4, 5].map(n => <Pip key={n} $active={awarenessStage >= n} $level={n} />)}
           </AwarenessPips>
+        </StatusCell>
+        <StatusCell title="Caretaker pressure — heavy intervention bleeds ambient stress into the colony">
+          <StatusLabel>Pressure</StatusLabel>
+          <PressureBar>
+            <PressureFill $pct={Math.min(100, actionLoad)} $alert={actionLoad >= 55} />
+          </PressureBar>
         </StatusCell>
       </StatusBlock>
 

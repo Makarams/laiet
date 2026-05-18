@@ -6,54 +6,30 @@ import {
 import { tickSimulation, computePassiveTicks, computeAbsenceHours } from '@/engine/tick'
 import { generateAbsenceMessage } from '@/engine/messages'
 import { pushChronicle } from '@/engine/chronicle'
-import { generateWorld, worldSeedFromTimestamp } from '@/world/worldGen'
+import { generateWorld, worldSeedFromTimestamp, countTileTypes } from '@/world/worldGen'
 import { createStarterCreatures } from '@/creatures/factory'
 import { saveToCloud, loadBestAvailable, startAutoSave, stopAutoSave, resetUserData } from '@/db/persistence'
 import { computeSimModifiers } from '@/engine/profile'
 import { normalizeFamilyName } from '@/engine/genetics'
 import {
-  TICK_INTERVAL_MS, FOOD_DROP_COOLDOWN_MS, FOOD_PER_PATCH,
-  HEAL_CHARGES_PER_DAY, HEAL_AMOUNT,
-  THUNDER_COOLDOWN_MS, THUNDER_CHARGES_PER_DAY, THUNDER_DAMAGE_RADIUS,
-  FIRE_COOLDOWN_MS, FIRE_CHARGES_PER_DAY, FIRE_DURATION_TICKS,
+  TICK_INTERVAL_MS, FOOD_PER_PATCH, HEAL_AMOUNT,
+  THUNDER_DAMAGE_RADIUS, FIRE_DURATION_TICKS,
   ENRICHMENT_MAX_USES, ABSENCE_IMPRINT_DAYS,
-  // build-kit + bush relocation
-  FENCE_PLACE_COOLDOWN_MS, FENCE_PLACE_CHARGES_PER_DAY, FENCE_INITIAL_DURABILITY,
-  CAIRN_COOLDOWN_MS, CAIRN_CHARGES_PER_DAY,
-  NEST_COOLDOWN_MS, NEST_CHARGES_PER_DAY,
-  WATCH_POST_COOLDOWN_MS, WATCH_POST_CHARGES_PER_DAY,
-  BUSH_PICKUP_COOLDOWN_MS,
+  FENCE_INITIAL_DURABILITY,
+  // Soft pressure (replaces all daily caps and per-tool cooldowns)
+  ACTION_BASE_COOLDOWN_MS, ACTION_LOAD_WEIGHTS,
 } from '@/engine/constants'
 
 // ─── Default caretaker state ──────────────────────────────────────────────────
 
-const defaultCaretaker = (healCharges = HEAL_CHARGES_PER_DAY, foodDropCooldown = FOOD_DROP_COOLDOWN_MS): CaretakerState => ({
-  healCharges,
-  lastHealReset: Date.now(),
-  riverRedirectUsed: false,
-  lastSeasonRedirect: 'spring',
-  foodDropCooldown,
-  lastFoodDrop: 0,
-  lastThunder: 0,
-  lastFire: 0,
-  thunderChargesToday: THUNDER_CHARGES_PER_DAY,
-  fireChargesToday: FIRE_CHARGES_PER_DAY,
-  lastEnvReset: Date.now(),
+const defaultCaretaker = (): CaretakerState => ({
+  lastActionMs: 0,
   lastActionX: null,
   lastActionY: null,
-  lastActionMs: 0,
+  actionLoad: 0,
+  bushHeldFood: null,
   awaitingResponseUntil: 0,
   respondedToQuestion: false,
-  fenceChargesToday: FENCE_PLACE_CHARGES_PER_DAY,
-  cairnChargesToday: CAIRN_CHARGES_PER_DAY,
-  nestChargesToday:  NEST_CHARGES_PER_DAY,
-  watchChargesToday: WATCH_POST_CHARGES_PER_DAY,
-  lastFencePlaced: 0,
-  lastCairnPlaced: 0,
-  lastNestPlaced: 0,
-  lastWatchPlaced: 0,
-  bushHeldFood: null,
-  lastBushAction: 0,
 })
 
 function normalizeLoadedCreatureNames(state: GameState): { state: GameState; changed: boolean } {
@@ -70,25 +46,37 @@ function normalizeLoadedCreatureNames(state: GameState): { state: GameState; cha
 }
 
 // Returns updated caretaker fields for any tile-targeted action.
-// Records position for awareness acceleration and sets respondedToQuestion
-// if a stage-3 question is currently awaiting a reply.
+// Records position for awareness acceleration, sets respondedToQuestion if a
+// stage-3 question is awaiting a reply, and accumulates actionLoad — the soft
+// pressure curve that replaced daily charges. Nothing here ever blocks an action.
 function applyCaretakerPresence(
   ct: CaretakerState,
   x: number,
   y: number,
-  toolCategory: 'placement' | 'intervention' | 'observe' = 'placement'
+  toolCategory: 'placement' | 'intervention' | 'observe' = 'placement',
+  loadKind: keyof typeof ACTION_LOAD_WEIGHTS = 'placement',
 ): Partial<CaretakerState> {
   const now = Date.now()
   const respondedToQuestion = (ct.awaitingResponseUntil ?? 0) > now
     ? true
     : (ct.respondedToQuestion ?? false)
+  const weight = ACTION_LOAD_WEIGHTS[loadKind] ?? ACTION_LOAD_WEIGHTS.placement
+  // Soft ceiling — load can briefly burst over 100 but settles back via decay.
+  const nextLoad = Math.min(140, (ct.actionLoad ?? 0) + weight)
   return {
     lastActionX: x,
     lastActionY: y,
     lastActionMs: now,
     respondedToQuestion,
     lastToolUsed: toolCategory,
+    actionLoad: nextLoad,
   }
+}
+
+// Anti-spam floor only — prevents accidental double-clicks firing the same
+// action 10× in a frame. NOT a tool cooldown. Same value for every tool.
+function antiSpamOk(ct: CaretakerState): boolean {
+  return Date.now() - (ct.lastActionMs ?? 0) >= ACTION_BASE_COOLDOWN_MS
 }
 
 // ─── Store interface ──────────────────────────────────────────────────────────
@@ -203,7 +191,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
       messages: [],
       events: [],
       fossilRecord: [],
-      caretaker: defaultCaretaker(modifiers.healCharges, modifiers.foodDropCooldownMs),
+      caretaker: defaultCaretaker(),
       colonyStage: 'genesis',
       awarenessStage: 1,
       cohortPhase: 1,
@@ -217,6 +205,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
       lastSaved: Date.now(),
       lastSessionEnd: null,
       snowAccumulation: 0,
+      tileTypeCount: countTileTypes(tiles),
     }
 
     set({ gameState: state })
@@ -479,15 +468,11 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
   dropFood: (x, y) => {
     const state = get().gameState
     if (!state) return
-    const now = Date.now()
-    const cooldown = state.modifiers?.foodDropCooldownMs ?? FOOD_DROP_COOLDOWN_MS
-    if (now - state.caretaker.lastFoodDrop < cooldown) return
-
+    if (!antiSpamOk(state.caretaker)) return
     const srcTile = state.tiles[y]?.[x]
     if (!srcTile) return
     if (srcTile.type === 'rock' || srcTile.type === 'river' || srcTile.type === 'flooded') return
 
-    // Clone only the affected row (O(n) vs full O(n²) deep-clone of the 240×240 grid)
     const tiles = state.tiles.slice()
     tiles[y] = state.tiles[y].slice()
     tiles[y][x] = { ...srcTile, type: 'food_patch', foodAmount: FOOD_PER_PATCH }
@@ -499,7 +484,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
       gameState: {
         ...withChronicle,
         tiles,
-        caretaker: { ...withChronicle.caretaker, lastFoodDrop: now, ...applyCaretakerPresence(withChronicle.caretaker, x, y) },
+        caretaker: { ...withChronicle.caretaker, ...applyCaretakerPresence(withChronicle.caretaker, x, y, 'placement', 'food') },
       }
     })
   },
@@ -507,6 +492,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
   plantTree: (x, y) => {
     const state = get().gameState
     if (!state) return
+    if (!antiSpamOk(state.caretaker)) return
     const srcTile = state.tiles[y]?.[x]
     if (!srcTile || srcTile.type === 'rock' || srcTile.type === 'river') return
 
@@ -515,7 +501,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     tiles[y][x] = { ...srcTile, type: 'tree', treeAge: 0, shelter: false }
 
     const withChronicle = pushChronicle(state, { kind: 'caretaker_plant', day: state.time.day, x, y })
-    set({ gameState: { ...withChronicle, tiles, caretaker: { ...withChronicle.caretaker, ...applyCaretakerPresence(withChronicle.caretaker, x, y) } } })
+    set({ gameState: { ...withChronicle, tiles, caretaker: { ...withChronicle.caretaker, ...applyCaretakerPresence(withChronicle.caretaker, x, y, 'placement', 'plant') } } })
   },
 
   // ── Environmental: Thunder strike ─────────────────────────────────────────
@@ -525,30 +511,13 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
   thunderStrike: (x, y) => {
     const state = get().gameState
     if (!state) return
-    const now = Date.now()
+    if (!antiSpamOk(state.caretaker)) return
     const ct = state.caretaker
-
-    // Refresh daily charges
-    const dayMs = 86_400_000
-    let thunderCharges = ct.thunderChargesToday
-    let fireCharges = ct.fireChargesToday
-    let lastEnvReset = ct.lastEnvReset
-    if (now - lastEnvReset > dayMs) {
-      thunderCharges = THUNDER_CHARGES_PER_DAY
-      fireCharges = FIRE_CHARGES_PER_DAY
-      lastEnvReset = now
-    }
-    if (thunderCharges <= 0) return
-    if (now - ct.lastThunder < THUNDER_COOLDOWN_MS) return
-
+    const now = Date.now()
     const creatures = { ...state.creatures }
     const messages = [...state.messages]
 
-    // Burn/clear tiles in radius, set lightningFlash for visual bolt effect
     const R = THUNDER_DAMAGE_RADIUS
-    const strikeNow = Date.now()
-
-    // Clone only the rows touched by the strike radius (O(R) vs O(n²) full clone)
     const tiles = state.tiles.slice()
     for (let dy = -R; dy <= R; dy++) {
       const ty = y + dy
@@ -561,16 +530,15 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
         if (tx < 0 || tx >= tiles[0].length || ty < 0 || ty >= tiles.length) continue
         const t = tiles[ty][tx]
         if (t.type === 'tree' || t.type === 'shelter') {
-          tiles[ty][tx] = { ...t, lightningFlash: strikeNow, burning: FIRE_DURATION_TICKS, type: 'barren', treeAge: -1, shelter: false }
+          tiles[ty][tx] = { ...t, lightningFlash: now, burning: FIRE_DURATION_TICKS, type: 'barren', treeAge: -1, shelter: false }
         } else if (t.type === 'food_patch') {
-          tiles[ty][tx] = { ...t, lightningFlash: strikeNow, foodAmount: 0 }
+          tiles[ty][tx] = { ...t, lightningFlash: now, foodAmount: 0 }
         } else {
-          tiles[ty][tx] = { ...t, lightningFlash: strikeNow }
+          tiles[ty][tx] = { ...t, lightningFlash: now }
         }
       }
     }
 
-    // Kill creatures in radius; stress outer ring
     let killed = 0
     for (const id in creatures) {
       const c = creatures[id]
@@ -602,17 +570,9 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     set({
       gameState: {
         ...withChronicle,
-        tiles,
-        creatures,
+        tiles, creatures,
         messages: messages.slice(-200),
-        caretaker: {
-          ...ct,
-          lastThunder: now,
-          thunderChargesToday: thunderCharges - 1,
-          fireChargesToday: fireCharges,
-          lastEnvReset,
-          ...applyCaretakerPresence(ct, x, y, 'intervention'),
-        },
+        caretaker: { ...ct, ...applyCaretakerPresence(ct, x, y, 'intervention', 'thunder') },
       },
     })
   },
@@ -623,21 +583,9 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
   igniteFire: (x, y) => {
     const state = get().gameState
     if (!state) return
-    const now = Date.now()
+    if (!antiSpamOk(state.caretaker)) return
     const ct = state.caretaker
-
-    const dayMs = 86_400_000
-    let thunderCharges = ct.thunderChargesToday
-    let fireCharges = ct.fireChargesToday
-    let lastEnvReset = ct.lastEnvReset
-    if (now - lastEnvReset > dayMs) {
-      thunderCharges = THUNDER_CHARGES_PER_DAY
-      fireCharges = FIRE_CHARGES_PER_DAY
-      lastEnvReset = now
-    }
-    if (fireCharges <= 0) return
-    if (now - ct.lastFire < FIRE_COOLDOWN_MS) return
-
+    const now = Date.now()
     const tile = state.tiles[y]?.[x]
     if (!tile) return
     if (tile.type !== 'tree' && tile.type !== 'shelter' && tile.type !== 'food_patch' && tile.type !== 'grass') return
@@ -662,14 +610,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
         ...withChronicle,
         tiles,
         messages: messages.slice(-200),
-        caretaker: {
-          ...ct,
-          lastFire: now,
-          fireChargesToday: fireCharges - 1,
-          thunderChargesToday: thunderCharges,
-          lastEnvReset,
-          ...applyCaretakerPresence(ct, x, y, 'intervention'),
-        },
+        caretaker: { ...ct, ...applyCaretakerPresence(ct, x, y, 'intervention', 'fire') },
       },
     })
   },
@@ -715,17 +656,13 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
   },
 
   // ── Build kit ──────────────────────────────────────────────────────────────
-  // All four placement tools share the same shape: validate tile passability,
-  // check charge + cooldown, copy-on-write the tile row, update caretaker.
+  // No daily charges, no per-tool cooldowns. Anti-spam floor + actionLoad cost
+  // are the only soft balancers; nothing here blocks an action semantically.
 
   placeFence: (x, y) => {
     const state = get().gameState
     if (!state) return
-    const now = Date.now()
-    const ct = state.caretaker
-    const charges = ct.fenceChargesToday ?? FENCE_PLACE_CHARGES_PER_DAY
-    if (charges <= 0) return
-    if (now - (ct.lastFencePlaced ?? 0) < FENCE_PLACE_COOLDOWN_MS) return
+    if (!antiSpamOk(state.caretaker)) return
     const tile = state.tiles[y]?.[x]
     if (!tile) return
     if (tile.type !== 'grass' && tile.type !== 'barren' && tile.type !== 'mud') return
@@ -737,12 +674,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     set({
       gameState: {
         ...state, tiles,
-        caretaker: {
-          ...ct,
-          fenceChargesToday: charges - 1,
-          lastFencePlaced: now,
-          ...applyCaretakerPresence(ct, x, y),
-        },
+        caretaker: { ...state.caretaker, ...applyCaretakerPresence(state.caretaker, x, y, 'placement', 'fence') },
       },
     })
   },
@@ -750,17 +682,12 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
   placeCairn: (x, y) => {
     const state = get().gameState
     if (!state) return
-    const now = Date.now()
-    const ct = state.caretaker
-    const charges = ct.cairnChargesToday ?? CAIRN_CHARGES_PER_DAY
-    if (charges <= 0) return
-    if (now - (ct.lastCairnPlaced ?? 0) < CAIRN_COOLDOWN_MS) return
+    if (!antiSpamOk(state.caretaker)) return
     const tile = state.tiles[y]?.[x]
     if (!tile) return
     if (tile.type !== 'grass' && tile.type !== 'barren' && tile.type !== 'death_site') return
 
-    // If placed on a death_site, the cairn inherits that creature's identity —
-    // a real memorial, not just a stone pile.
+    // If placed on a death_site, the cairn inherits the lost creature's identity.
     const memorial = tile.type === 'death_site' && tile.deathSiteOf
       ? state.creatures[tile.deathSiteOf]
       : null
@@ -779,12 +706,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     set({
       gameState: {
         ...state, tiles,
-        caretaker: {
-          ...ct,
-          cairnChargesToday: charges - 1,
-          lastCairnPlaced: now,
-          ...applyCaretakerPresence(ct, x, y),
-        },
+        caretaker: { ...state.caretaker, ...applyCaretakerPresence(state.caretaker, x, y, 'placement', 'cairn') },
       },
     })
   },
@@ -792,11 +714,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
   placeNest: (x, y) => {
     const state = get().gameState
     if (!state) return
-    const now = Date.now()
-    const ct = state.caretaker
-    const charges = ct.nestChargesToday ?? NEST_CHARGES_PER_DAY
-    if (charges <= 0) return
-    if (now - (ct.lastNestPlaced ?? 0) < NEST_COOLDOWN_MS) return
+    if (!antiSpamOk(state.caretaker)) return
     const tile = state.tiles[y]?.[x]
     if (!tile) return
     if (tile.type !== 'grass' && tile.type !== 'barren') return
@@ -808,12 +726,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     set({
       gameState: {
         ...state, tiles,
-        caretaker: {
-          ...ct,
-          nestChargesToday: charges - 1,
-          lastNestPlaced: now,
-          ...applyCaretakerPresence(ct, x, y),
-        },
+        caretaker: { ...state.caretaker, ...applyCaretakerPresence(state.caretaker, x, y, 'placement', 'nest') },
       },
     })
   },
@@ -821,11 +734,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
   placeWatchPost: (x, y) => {
     const state = get().gameState
     if (!state) return
-    const now = Date.now()
-    const ct = state.caretaker
-    const charges = ct.watchChargesToday ?? WATCH_POST_CHARGES_PER_DAY
-    if (charges <= 0) return
-    if (now - (ct.lastWatchPlaced ?? 0) < WATCH_POST_COOLDOWN_MS) return
+    if (!antiSpamOk(state.caretaker)) return
     const tile = state.tiles[y]?.[x]
     if (!tile) return
     if (tile.type !== 'grass' && tile.type !== 'barren') return
@@ -837,31 +746,23 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     set({
       gameState: {
         ...state, tiles,
-        caretaker: {
-          ...ct,
-          watchChargesToday: charges - 1,
-          lastWatchPlaced: now,
-          ...applyCaretakerPresence(ct, x, y),
-        },
+        caretaker: { ...state.caretaker, ...applyCaretakerPresence(state.caretaker, x, y, 'placement', 'watch_post') },
       },
     })
   },
 
-  // Pick up bush if one exists on the tile; otherwise replant the held bush.
-  // The carried foodAmount (berries) is preserved across the move so the
-  // caretaker can shift fruit-loaded bushes to where they're needed.
+  // Pick up if a bush is here; otherwise replant the held one. Carried
+  // foodAmount preserved so fruit-loaded bushes can be moved deliberately.
   bushAction: (x, y) => {
     const state = get().gameState
     if (!state) return
-    const now = Date.now()
+    if (!antiSpamOk(state.caretaker)) return
     const ct = state.caretaker
-    if (now - (ct.lastBushAction ?? 0) < BUSH_PICKUP_COOLDOWN_MS) return
     const tile = state.tiles[y]?.[x]
     if (!tile) return
 
     const holding = ct.bushHeldFood !== null && ct.bushHeldFood !== undefined
     if (tile.type === 'bush' && !holding) {
-      // PICK UP
       const food = tile.foodAmount ?? 0
       const tiles = state.tiles.slice()
       tiles[y] = state.tiles[y].slice()
@@ -869,16 +770,12 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
       set({
         gameState: {
           ...state, tiles,
-          caretaker: {
-            ...ct, bushHeldFood: food, lastBushAction: now,
-            ...applyCaretakerPresence(ct, x, y),
-          },
+          caretaker: { ...ct, bushHeldFood: food, ...applyCaretakerPresence(ct, x, y, 'placement', 'bush') },
         },
       })
       return
     }
     if (holding && (tile.type === 'grass' || tile.type === 'barren')) {
-      // REPLANT
       const food = ct.bushHeldFood ?? 0
       const tiles = state.tiles.slice()
       tiles[y] = state.tiles[y].slice()
@@ -886,10 +783,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
       set({
         gameState: {
           ...state, tiles,
-          caretaker: {
-            ...ct, bushHeldFood: null, lastBushAction: now,
-            ...applyCaretakerPresence(ct, x, y),
-          },
+          caretaker: { ...ct, bushHeldFood: null, ...applyCaretakerPresence(ct, x, y, 'placement', 'bush') },
         },
       })
     }
@@ -898,11 +792,9 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
   healCreature: (creatureId) => {
     const state = get().gameState
     if (!state) return
-    if (state.caretaker.healCharges <= 0) return
-
     const creature = state.creatures[creatureId]
     if (!creature || creature.diedOnDay !== null) return
-    if (creature.health >= 80) return
+    if (creature.health >= 80) return  // natural cap — already healthy, no work to do
 
     const creatures = { ...state.creatures }
     creatures[creatureId] = {
@@ -923,8 +815,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
         creatures,
         caretaker: {
           ...withChronicle.caretaker,
-          healCharges: withChronicle.caretaker.healCharges - 1,
-          ...applyCaretakerPresence(withChronicle.caretaker, creature.x, creature.y, 'intervention'),
+          ...applyCaretakerPresence(withChronicle.caretaker, creature.x, creature.y, 'intervention', 'heal'),
         },
       }
     })
@@ -960,6 +851,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
   placeWater: (x, y) => {
     const state = get().gameState
     if (!state) return
+    if (!antiSpamOk(state.caretaker)) return
     const tile = state.tiles[y]?.[x]
     if (!tile) return
     if (tile.type === 'rock' || tile.type === 'mountain' || tile.type === 'cliff') return
@@ -972,7 +864,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
       gameState: {
         ...state,
         tiles,
-        caretaker: { ...state.caretaker, ...applyCaretakerPresence(state.caretaker, x, y) },
+        caretaker: { ...state.caretaker, ...applyCaretakerPresence(state.caretaker, x, y, 'placement', 'river') },
       }
     })
   },
@@ -980,7 +872,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
   redirectRiver: (fromX, fromY, toX, toY) => {
     const state = get().gameState
     if (!state) return
-    if (state.caretaker.riverRedirectUsed) return
+    if (!antiSpamOk(state.caretaker)) return
 
     const tiles = state.tiles.slice()
     const rowsToCopy = new Set([fromY, toY].filter(r => r >= 0 && r < tiles.length))
@@ -997,9 +889,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
         tiles,
         caretaker: {
           ...withChronicle.caretaker,
-          riverRedirectUsed: true,
-          lastSeasonRedirect: state.time.season,
-          ...applyCaretakerPresence(withChronicle.caretaker, toX, toY),
+          ...applyCaretakerPresence(withChronicle.caretaker, toX, toY, 'placement', 'river'),
         },
       }
     })

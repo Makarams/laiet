@@ -29,21 +29,27 @@ LA-IET.EXE is built around four uncompromising principles:
 | **Feed** | `2` | 5s cooldown | Drop food at the cursor |
 | **Plant** | `3` | Unlimited | Place a sapling (grows over ~2 in-game minutes) |
 | **River** | `4` | Once per season | Redirect a river channel |
-| **Strike** | `5` | 2/day, 12s cooldown | Call down lightning (damages creatures, ignites trees) |
-| **Ignite** | `6` | 3/day, 8s cooldown | Set fire to a tree, bush, or shelter |
-| **Enrich** | `7` | Unlimited | Place one of eight enrichment items |
-| **Build** | `8` | Per-kind charges (see below) | Place fence / cairn / nest / watch post |
-| **Bush** | `9` | 2.5s cooldown | Pick up a bush or replant the one you're holding |
-| **Heal** | Dossier panel | 3/day (4 for interventionist) | Restore a creature's health to 100 |
+| **Strike** | `5` | unlimited | Call down lightning (damages creatures, ignites trees) |
+| **Ignite** | `6` | unlimited | Set fire to a tree, bush, or shelter |
+| **Enrich** | `7` | unlimited | Place one of eight enrichment items |
+| **Build** | `8` | unlimited | Place fence / cairn / nest / watch post |
+| **Bush** | `9` | unlimited | Pick up a bush or replant the one you're holding |
+| **Heal** | Dossier panel | unlimited | Restore a creature's health |
+
+### Action pressure (replaces daily caps)
+
+There are no daily charges and no per-tool cooldowns. Every action is always available. The only gating is a 220 ms anti-spam floor that prevents a single click from registering ten times.
+
+Balance comes from a soft **action pressure** curve (visible as the "Pressure" bar in the toolbar). Each action adds a small weight to the curve — heavy interventions (strike, fire, nest, heal) cost more than lightweight ones (food, plant, fence). Pressure decays continuously toward zero. Above ~55/100 it bleeds a tiny amount of ambient stress into creatures near your most recent action site — the colony begins to feel the intervention. Below that threshold, pressure is purely informational. Nothing is ever locked away from you.
 
 ### Build kit (under the Build tool)
 
-| Object | Daily charges | Effect |
-|---|---|---|
-| **Fence** | 8/day | Wooden barrier — slows movement, decays in storms |
-| **Cairn** | 3/day | Memorial stones — calming aura over a 4-tile radius; if placed on a death site it inherits the lost creature's identity |
-| **Nest** | 2/day | Breeding zone — bonded pairs within 4 tiles get a reproduction roll boost; offspring spawn with +15 health |
-| **Watch Post** | 2/day | Vigilance amplifier — drifts every nearby creature's vigilance drive toward 1.0 over time; nearby Vigilant creatures see feared targets from farther |
+| Object | Effect |
+|---|---|
+| **Fence** | Wooden barrier — slows movement, decays in storms |
+| **Cairn** | Memorial stones — calming aura over a 4-tile radius; if placed on a death site it inherits the lost creature's identity |
+| **Nest** | Breeding zone — bonded pairs within 4 tiles get a reproduction roll boost; offspring spawn with +15 health |
+| **Watch Post** | Vigilance amplifier — drifts every nearby creature's vigilance drive toward 1.0 over time; nearby Vigilant creatures see feared targets from farther |
 
 The **Bush** tool toggles between pick-up and replant. Carried bushes preserve their berry count so the caretaker can move fruit-loaded shrubs to where they're needed.
 
@@ -163,12 +169,13 @@ Set once before world creation. Each axis controls **one slice** of the simulati
 
 | Axis | Options | Primary effect |
 |---|---|---|
-| **Role** | interventionist · observer · silent | Caretaker capability (heal charges, food cooldown, presence visibility) |
 | **Conditions** | fertile · varied · scarce | Environment baseline (food, drought, weather severity, disease) |
 | **Mutation Rate** | fast · drift · slow | Genetic rates (mutation chance, morphology drift, adaptation inheritance) |
 | **Colony Focus** | bonds · survival · awareness | Social emphasis (bond speed, tribe formation, enrichment, sentience growth) |
 | **Expectation** | persistence · adaptation · fracture | Narrative arc bias (lineage hostility seed, fracture eligibility) |
 | **Your Presence** | attentive · neutral · hidden | How the colony registers you (caretaker_contact reach, message frequency) |
+
+The old **Role** (presence) axis was removed — caretaker actions are unlimited; the action-pressure curve handles balance.
 
 Hints in the UI cite the actual percentage effects ("food regrowth 45% faster, droughts brief"). Defaults sit at the explicit middle of every axis.
 

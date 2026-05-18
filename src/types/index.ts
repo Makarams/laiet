@@ -607,7 +607,11 @@ export interface ExtinctionRecord {
 // Expectation → narrative arc bias (lineage hostility baseline, fracture timing)
 // Visibility  → how the colony perceives you (caretaker_contact reach, awareness messages)
 export interface CaretakerProfile {
-  presence:    'interventionist' | 'observer' | 'silent'
+  // The 'presence' axis was removed: caretaker actions are unlimited by default
+  // and soft-balanced by the actionLoad pressure curve in CaretakerState.
+  // Field kept optional for save-file backward compatibility only — ignored by
+  // computeSimModifiers.
+  presence?:   'interventionist' | 'observer' | 'silent'
   world:       'fertile' | 'varied' | 'scarce'
   evolution:   'fast' | 'drift' | 'slow'
   focus:       'bonds' | 'survival' | 'awareness'
@@ -626,8 +630,10 @@ export interface SimModifiers {
   mutationChance: number          // base per discrete gene slot per birth
   sentienceGrowthMult: number     // ×1.0 default; scales all SENTIENCE_GROWTH_BY_MIND values
   awarenessMessageMult: number    // ×1.0 default; scales message cooldown (< 1 = more messages)
-  healCharges: number             // 3 default; daily heal uses available to caretaker
-  foodDropCooldownMs: number      // 5000 default; ms between food drop actions
+  // healCharges / foodDropCooldownMs retained as optional save-compat fields
+  // only — the gating system was replaced with actionLoad. Engine never reads them.
+  healCharges?: number
+  foodDropCooldownMs?: number
   // ── New axes (defaults present so pre-existing saves keep working) ──
   weatherSeverityMult?: number    // ×1.0 default; storm/heatwave/windstorm duration & damage
   diseasePressureMult?: number    // ×1.0 default; multiplies DISEASE_CONTACT_CHANCE
@@ -643,29 +649,36 @@ export interface SimModifiers {
 // ─── Caretaker Resources ─────────────────────────────────────────────────────
 
 export interface CaretakerState {
-  healCharges: number       // resets to 3 per real day
-  lastHealReset: number     // timestamp
-  riverRedirectUsed: boolean // resets each season
-  lastSeasonRedirect: Season
-  foodDropCooldown: number  // ms
-  lastFoodDrop: number      // timestamp
-  // Environmental intervention tools; each has its own cooldown so the
-  // player can't carpet-bomb the colony.
-  lastThunder: number       // timestamp of last strike
-  lastFire: number          // timestamp of last ignition
-  thunderChargesToday: number  // counter resets daily
-  fireChargesToday: number
-  lastEnvReset: number      // ms timestamp of last daily reset
-  // Presence tracking; used for awareness acceleration
-  lastActionX: number | null
+  // ── Anti-spam timing only — no longer gates anything semantically ──
+  lastActionMs: number               // timestamp of most-recent action (any tool)
+  lastActionX: number | null         // last action position (presence radius for awareness)
   lastActionY: number | null
-  lastActionMs: number
-  // Tool-as-answer mechanic
-  awaitingResponseUntil: number  // real ms timestamp; 0 = not waiting
-  respondedToQuestion: boolean   // one-tick flag cleared after response message emitted
-  // Tool category used last; shapes differentiated colony responses
+  // ── Soft pressure curve — replaces all per-tool daily charges ──
+  // Each caretaker action adds an ACTION_LOAD_WEIGHTS[tool] amount to actionLoad.
+  // actionLoad decays toward 0 at ACTION_LOAD_DECAY_PER_TICK every simulation tick.
+  // High actionLoad doesn't block anything — it informs the colony that the
+  // caretaker is intervening heavily, which the engine reads as ambient stress
+  // bleed on creatures within recent action sites. There is no daily reset and
+  // no charge counter. Actions are always available.
+  actionLoad: number                 // 0..100 (soft, can briefly exceed 100 under burst)
+  // Optional carried-bush state — see bushAction in store.
+  bushHeldFood?: number | null
+  // ── Tool-as-answer mechanic (unchanged) ──
+  awaitingResponseUntil: number
+  respondedToQuestion: boolean
   lastToolUsed?: 'placement' | 'intervention' | 'observe'
-  // ─── Build-kit charges & cooldowns (daily-resetting) ──
+  // Legacy fields preserved only so old saves deserialize cleanly; engine ignores.
+  healCharges?: number
+  lastHealReset?: number
+  riverRedirectUsed?: boolean
+  lastSeasonRedirect?: Season
+  foodDropCooldown?: number
+  lastFoodDrop?: number
+  lastThunder?: number
+  lastFire?: number
+  thunderChargesToday?: number
+  fireChargesToday?: number
+  lastEnvReset?: number
   fenceChargesToday?: number
   cairnChargesToday?: number
   nestChargesToday?: number
@@ -674,10 +687,6 @@ export interface CaretakerState {
   lastCairnPlaced?: number
   lastNestPlaced?: number
   lastWatchPlaced?: number
-  // ─── Bush relocation ──
-  // The caretaker can pick up a single bush at a time. When held, the field
-  // stores the bush's foodAmount so replanting preserves the carried berries.
-  bushHeldFood?: number | null
   lastBushAction?: number
 }
 
@@ -791,4 +800,10 @@ export interface GameState {
   totalDeaths: number
   lastSaved: number
   lastSessionEnd: number | null
+
+  // ─── Incremental tile-type counters ──────────────────────────────────────
+  // Maintained by tickTiles so it never has to do an O(WORLD_SIZE^2) pre-count
+  // pass each tick just to know how many trees/bushes/etc exist for cap gating.
+  // Initialised in worldGen; missing/undefined falls back to a one-time scan.
+  tileTypeCount?: Partial<Record<TileType, number>>
 }

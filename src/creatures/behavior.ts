@@ -862,17 +862,32 @@ export function tickBehavior(
     }
 
     // ── Dominance candidate: claim territory or pursue rival ─────────────
+    // Don't pile claims on the same spot. If another creature (any lineage)
+    // has already claimed a tile within TERRITORY_SPACING, skip this candidate
+    // — the territorial creature wanders to find an uncontested patch instead.
     if (d.dominance > 0.35 && !c.territoryClaim) {
       const here = tiles[c.y]?.[c.x]
       if (here && (here.type === 'food_patch' || here.type === 'bush'
           || here.type === 'river' || here.type === 'grass' || here.type === 'barren')) {
-        candidates.push({
-          weight: d.dominance * 60,
-          apply: () => {
-            changes.territoryClaim = { x: c.x, y: c.y }
-            targetSet = true
-          },
-        })
+        const TERRITORY_SPACING = 8
+        let conflict = false
+        for (const o of aliveCreatures) {
+          if (o.id === c.id || !o.territoryClaim) continue
+          if (Math.abs(o.territoryClaim.x - c.x) <= TERRITORY_SPACING
+              && Math.abs(o.territoryClaim.y - c.y) <= TERRITORY_SPACING) {
+            conflict = true
+            break
+          }
+        }
+        if (!conflict) {
+          candidates.push({
+            weight: d.dominance * 60,
+            apply: () => {
+              changes.territoryClaim = { x: c.x, y: c.y }
+              targetSet = true
+            },
+          })
+        }
       }
     }
     if (d.dominance > 0.5) {
@@ -1201,18 +1216,48 @@ export function tickBehavior(
     const raceMult = (c.genome.race && RACE_PROFILES[c.genome.race]?.wanderRangeMult) ?? 1.0
     // Early-gen creatures stay closer to the group while bonding is still forming
     const range = Math.round((c.generation <= EARLY_GEN_MAX ? Math.min(baseRange, 12) : baseRange) * raceMult)
+
+    // Spacing/repulsion: count immediate neighbours within 3 tiles. If crowded,
+    // pick the wander target that maximises distance to the nearest neighbour.
+    // High-sociality creatures bypass this — they actively prefer crowds.
+    const SPACING_R = 3
+    let crowd = 0
+    for (const o of aliveCreatures) {
+      if (o.id === c.id) continue
+      if (Math.abs(o.x - c.x) <= SPACING_R && Math.abs(o.y - c.y) <= SPACING_R) crowd++
+    }
+    const sociality = c.drives?.sociality ?? 0.3
+    const wantsSpace = crowd >= 2 && sociality < 0.7
+    let bestTx = -1, bestTy = -1, bestSep = -1
     for (let attempt = 0; attempt < 6; attempt++) {
       const tx = Math.max(0, Math.min(WORLD_SIZE - 1,
         c.x + Math.floor(Math.random() * (range * 2 + 1)) - range))
       const ty = Math.max(0, Math.min(WORLD_SIZE - 1,
         c.y + Math.floor(Math.random() * (range * 2 + 1)) - range))
       const dest = tiles[ty]?.[tx]
-      if (dest && isTilePassable(dest)) {
+      if (!dest || !isTilePassable(dest)) continue
+      if (!wantsSpace) {
         changes.state = 'wandering'
         changes.targetX = tx
         changes.targetY = ty
         break
       }
+      // Crowded: score by minimum distance to any other creature; keep the best.
+      let minSep = Infinity
+      for (const o of aliveCreatures) {
+        if (o.id === c.id) continue
+        const dd = Math.abs(o.x - tx) + Math.abs(o.y - ty)
+        if (dd < minSep) minSep = dd
+        if (minSep <= 1) break
+      }
+      if (minSep > bestSep) {
+        bestSep = minSep; bestTx = tx; bestTy = ty
+      }
+    }
+    if (wantsSpace && bestTx >= 0) {
+      changes.state = 'wandering'
+      changes.targetX = bestTx
+      changes.targetY = bestTy
     }
   }
 

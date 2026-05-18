@@ -385,9 +385,9 @@ export function DossierPanel() {
       {/* ── Vitals ──────────────────────────────────────────────────────── */}
       <Section>
         <SectionTitle>Vitals</SectionTitle>
-        {caretaker && caretaker.healCharges > 0 && creature.health < 50 && (
+        {caretaker && creature.health < 80 && (
           <HealBtn onClick={() => healCreature(creature.id)}>
-            Heal · {caretaker.healCharges} charge{caretaker.healCharges !== 1 ? 's' : ''} left
+            Heal
           </HealBtn>
         )}
         <StatBarRow label="Health"    value={creature.health}

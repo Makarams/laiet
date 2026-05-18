@@ -108,18 +108,15 @@ export const WATER_REPLENISH_RATE = 0.06          // slow passive refill; drough
 export const WATER_DRINK_DRAIN = 4               // waterLevel lost per drink event
 
 // ─── Caretaker ───────────────────────────────────────────────────────────────
-export const HEAL_CHARGES_PER_DAY = 3            // resets each real day
 export const HEAL_AMOUNT = 40
-export const FOOD_DROP_COOLDOWN_MS = 5_000        // 5s between food drops
 
 // ─── Environmental tools ──────────────────────────────────────────────────────
-export const THUNDER_COOLDOWN_MS    = 12_000      // 12s between strikes
-export const THUNDER_CHARGES_PER_DAY = 2          // 2 strikes per real day
-export const THUNDER_DAMAGE_RADIUS   = 1          // tiles around the strike
-export const THUNDER_LETHAL_HEALTH   = 100        // kills outright in radius
-
-export const FIRE_COOLDOWN_MS      = 8_000        // 8s between ignitions
-export const FIRE_CHARGES_PER_DAY  = 3            // 3 ignitions per real day
+// All per-tool daily charges and per-tool cooldowns were removed. The only
+// gate is ACTION_BASE_COOLDOWN_MS below, which is a UX anti-spam floor — not
+// a balance mechanic. Balance is now expressed by CaretakerState.actionLoad
+// (see ACTION_LOAD_WEIGHTS).
+export const THUNDER_DAMAGE_RADIUS = 1            // tiles around the strike
+export const THUNDER_LETHAL_HEALTH = 100          // kills outright in radius
 export const FIRE_DURATION_TICKS   = 14           // a burning tile burns this long
 export const FIRE_SPREAD_CHANCE    = 0.10         // per adjacent tree per tick
 export const FIRE_TICK_DAMAGE      = 12           // health damage per tick standing on fire
@@ -815,39 +812,57 @@ export const BLOOM_HUNGER_THRESHOLD     = 22
 export const CRAG_TERRITORY_RADIUS      = 12
 
 // ─── Caretaker build kit ──────────────────────────────────────────────────────
-// All four buildable tiles share the same charge/cooldown model as Strike/Ignite.
-// Charges refresh daily; cooldown gates rapid re-placement within a single day.
+// Charge counters and per-tool cooldowns were removed. Each placeable just
+// adds to CaretakerState.actionLoad (weights below). Tile-lifecycle (decay,
+// aura radius/strength) parameters remain.
 
 // Fence — defensive barrier (slows movement, stress-relief inside)
-export const FENCE_PLACE_COOLDOWN_MS    = 4_000
-export const FENCE_PLACE_CHARGES_PER_DAY = 8     // generous — fences also decay in storms
+// (FENCE_INITIAL_DURABILITY / FENCE_DECAY_* declared above remain authoritative)
 
 // Cairn — memorial marker. Persists; chronicled when births/deaths happen nearby.
-export const CAIRN_COOLDOWN_MS          = 8_000
-export const CAIRN_CHARGES_PER_DAY      = 3
 export const CAIRN_DECAY_DAYS           = 240    // ~2 in-game seasons before a cairn weathers away
 export const CAIRN_STRESS_RADIUS        = 4      // tiles within which a cairn calms creatures
 export const CAIRN_STRESS_RELIEF        = 0.10   // per tick when adjacent
 
-// Nest — breeding boost zone. Pairs near the nest get a reproduction-rate
-// multiplier and offspring spawn with bonus health.
-export const NEST_COOLDOWN_MS           = 12_000
-export const NEST_CHARGES_PER_DAY       = 2
+// Nest — breeding boost zone.
 export const NEST_RADIUS                = 4
 export const NEST_BREED_MULT            = 2.2    // multiplies REPRODUCE_RATE per tick when either parent is near a nest
 export const NEST_OFFSPRING_HEALTH      = 15     // extra starting health for nest-born offspring
-export const NEST_DECAY_DAYS            = 90     // fades after this many in-game days
-export const NEST_STRESS_RELIEF         = 0.06   // calming aura for pairs/young near it
+export const NEST_DECAY_DAYS            = 90
+export const NEST_STRESS_RELIEF         = 0.06
 
-// Watch post — vigilance amplifier. Creatures within radius gain a steady
-// vigilance drive drift and see feared targets from farther away.
-export const WATCH_POST_COOLDOWN_MS     = 10_000
-export const WATCH_POST_CHARGES_PER_DAY = 2
+// Watch post — vigilance amplifier.
 export const WATCH_POST_RADIUS          = 8
-export const WATCH_POST_VIGILANCE_DRIFT = 0.0006 // per tick toward 1.0 for creatures within radius
-export const WATCH_POST_FEAR_BONUS      = 3      // extra fear-flee radius for creatures near a post
+export const WATCH_POST_VIGILANCE_DRIFT = 0.0006
+export const WATCH_POST_FEAR_BONUS      = 3
 export const WATCH_POST_DECAY_DAYS      = 180
 
-// Bush relocation — pick-up / replant tool. Pickup is instant; the carried
-// bush carries its current foodAmount (berries) so harvesting moves food too.
-export const BUSH_PICKUP_COOLDOWN_MS    = 2_500
+// ─── Caretaker action soft-pressure system ────────────────────────────────────
+// Replaces every daily charge cap and per-tool cooldown. Actions are always
+// available. Each action adds its weight to CaretakerState.actionLoad, which
+// decays toward 0 each simulation tick. High load signals the world (engine
+// reads it as ambient stress on creatures near recent action sites) but never
+// blocks input.
+export const ACTION_BASE_COOLDOWN_MS    = 220    // anti-spam UX floor — same for every tool
+export const ACTION_LOAD_DECAY_PER_TICK = 1.8    // load points removed per simulation tick (1 tick = ~1 real second at 1× speed)
+export const ACTION_LOAD_STRESS_THRESHOLD = 55   // above this, nearby creatures get the ambient stress bleed
+export const ACTION_LOAD_STRESS_PER_TICK  = 0.06 // stress added per tick when within ACTION_LOAD_STRESS_RADIUS of last action site
+export const ACTION_LOAD_STRESS_RADIUS    = 10   // tiles around CaretakerState.lastActionX/Y for the ambient bleed
+
+// Per-tool weight added to actionLoad on use. Heavy interventions cost more.
+export const ACTION_LOAD_WEIGHTS = {
+  placement:  2,   // generic fallback
+  food:       3,
+  plant:      2,
+  river:      4,
+  fence:      3,
+  cairn:      5,
+  nest:       10,
+  watch_post: 8,
+  bush:       2,
+  enrich:     3,
+  heal:       7,
+  thunder:    22,
+  fire:       16,
+  observe:    0,
+} as const
