@@ -103,6 +103,8 @@ import {
   // soft action-load pressure (replaces daily charges)
   ACTION_LOAD_DECAY_PER_TICK, ACTION_LOAD_STRESS_THRESHOLD,
   ACTION_LOAD_STRESS_PER_TICK, ACTION_LOAD_STRESS_RADIUS,
+  // periodic tile-count resync (absorbs drift from out-of-tickTiles writes)
+  TILE_COUNT_RESYNC_TICKS,
   // new adaptation/race effect constants
   THERMAL_VENT_WARMTH_GAIN, BIOLUMINESCENT_STRESS_RADIUS, BIOLUMINESCENT_STRESS_RELIEF,
   SPORE_RESISTANT_DISEASE_MULT, MIRE_DISEASE_RESIST,
@@ -705,10 +707,16 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
 
   // Read incremental tile-type counters from state instead of doing the old
   // O(WORLD_SIZE^2) pre-count scan every tick. tileTypeCount is bootstrapped
-  // in worldGen and maintained inside this function via writeTileType (below).
-  // Backward-compat: if the field is absent (old save), do a one-time count.
-  let counts = state.tileTypeCount
-  if (!counts) {
+  // in worldGen and maintained inside this function (below).
+  //
+  // Drift sources outside this function — store actions like plantTree, the
+  // death_site write in tickCreatures, etc. — are absorbed by an occasional
+  // full resync, gated on a tick interval so we still beat the old per-tick
+  // pre-count by an order of magnitude.
+  const tickIdx = Math.floor(state.time.totalMinutesElapsed * 60)
+  const needResync = !state.tileTypeCount || tickIdx % TILE_COUNT_RESYNC_TICKS === 0
+  let counts: Partial<Record<TileType, number>>
+  if (needResync) {
     counts = {}
     for (let vy = 0; vy < WORLD_SIZE; vy++) {
       for (let vx = 0; vx < WORLD_SIZE; vx++) {
@@ -716,6 +724,8 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
         counts[tt] = (counts[tt] ?? 0) + 1
       }
     }
+  } else {
+    counts = state.tileTypeCount!
   }
   // Working counters mutated by the main loop; written back at the end of tick.
   let treeCount      = (counts.tree ?? 0) + (counts.shelter ?? 0)
@@ -1418,20 +1428,31 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
     }
   }
 
-  // Snow accumulation computed here to avoid a separate O(n²) pass in tickSimulation.
-  let snowTiles = 0, totalSnowableTiles = 0
-  for (let sy = 0; sy < WORLD_SIZE; sy++) {
-    for (let sx = 0; sx < WORLD_SIZE; sx++) {
-      const st = tiles[sy][sx]
-      if (st.type !== 'mountain' && st.type !== 'cliff' && st.type !== 'rock') {
-        totalSnowableTiles++
-        if ((st.snowDepth ?? 0) > 0.1) snowTiles++
+  // Snow accumulation tally. Only meaningful in winter or while snow lingers
+  // into spring, and the readout is only used for the UI snowAccumulation
+  // gauge — short-term drift is invisible to the player. Run on the same
+  // resync cadence as the tile-type counter; otherwise reuse last tick's value.
+  let snowAccumulation = state.snowAccumulation ?? 0
+  const snowCheckDue = needResync
+    || state.time.season === 'winter'  // keep winter readout responsive
+    || (state.snowAccumulation ?? 0) > 5
+  if (snowCheckDue && (state.time.season === 'winter' || (state.snowAccumulation ?? 0) > 0)) {
+    // mountain/cliff/rock counts come from the tile-type cache — no scan.
+    const nonSnowable = (counts.mountain ?? 0) + (counts.cliff ?? 0) + (counts.rock ?? 0)
+    const totalSnowableTiles = (WORLD_SIZE * WORLD_SIZE) - nonSnowable
+    let snowTiles = 0
+    if (totalSnowableTiles > 0) {
+      for (let sy = 0; sy < WORLD_SIZE; sy++) {
+        const row = tiles[sy]
+        for (let sx = 0; sx < WORLD_SIZE; sx++) {
+          if ((row[sx].snowDepth ?? 0) > 0.1) snowTiles++
+        }
       }
+      snowAccumulation = Math.round((snowTiles / totalSnowableTiles) * 100)
     }
+  } else if (state.time.season !== 'winter' && (state.snowAccumulation ?? 0) === 0) {
+    snowAccumulation = 0   // no snow possible; cheap path
   }
-  const snowAccumulation = totalSnowableTiles > 0
-    ? Math.round((snowTiles / totalSnowableTiles) * 100)
-    : 0
 
   // Persist the running tile-type counters so the next tick can skip the
   // pre-count scan. tree+shelter are merged in treeCount; split heuristically

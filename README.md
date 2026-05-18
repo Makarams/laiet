@@ -77,6 +77,18 @@ Each creature also carries:
 
 ---
 
+## Performance & scaling
+
+The 480×480 grid is 230k tiles. Brute-force per-tick scans would be expensive, so the simulation is structured around three rules:
+
+- **Cache anything counted across the grid.** `state.tileTypeCount` is bootstrapped at world creation and maintained inside the main tile loop. Vegetation cap checks (tree, bush, healroot, food_patch) read from the cache, never from a fresh scan. Drift from store actions and death-site writes is absorbed by a full resync every ~60 ticks.
+- **Gate expensive secondary passes.** Fire spread only iterates the grid when `anyBurning` was set during the main tile pass. River erosion runs only in storms, drying only in droughts, snow tally only in winter or while snow lingers. Each of these used to run unconditionally.
+- **Bound the renderer to the viewport.** Tile iteration in `GameCanvas` derives its grid range from the four viewport corners, so per-frame cost scales with what's actually visible — not with `WORLD_SIZE²`.
+
+Behaviour systems share work too: `tickCreatures` builds a tile-type index once at the top and reuses it across every creature's behaviour evaluation. Territory claims enforce a soft 8-tile spacing so creatures don't pile up on the same coordinates and trigger repeated conflicts.
+
+---
+
 ## Drives — the engine of behaviour
 
 Every creature carries seven continuous drives (0–1):

@@ -837,6 +837,17 @@ export const WATCH_POST_VIGILANCE_DRIFT = 0.0006
 export const WATCH_POST_FEAR_BONUS      = 3
 export const WATCH_POST_DECAY_DAYS      = 180
 
+// ─── Tile-type counter resync ────────────────────────────────────────────────
+// tickTiles maintains state.tileTypeCount incrementally as it processes the
+// grid each tick. But store actions (plantTree, dropFood, bushAction, …) and
+// tickCreatures (death_site, healroot spawn) also change tile types and don't
+// update the cache. Every TILE_COUNT_RESYNC_TICKS ticks we do one full pass
+// to absorb that drift. Between resyncs the cache may be off by a small
+// integer — never enough to break gameplay (caps are gentle), and the resync
+// itself is the same O(WORLD_SIZE^2) scan we used to do every tick, now
+// amortised across the interval.
+export const TILE_COUNT_RESYNC_TICKS = 60   // ~1 in-game minute at 1× speed
+
 // ─── Caretaker action soft-pressure system ────────────────────────────────────
 // Replaces every daily charge cap and per-tool cooldown. Actions are always
 // available. Each action adds its weight to CaretakerState.actionLoad, which
