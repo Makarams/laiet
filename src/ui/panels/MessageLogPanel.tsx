@@ -3,6 +3,7 @@ import styled, { keyframes } from 'styled-components'
 import { useLaietStore } from '@/store/gameStore'
 import { ColonyMessage, MessageCategory } from '@/types'
 import { THEME, awarenessColor } from '@/ui/theme'
+import { downloadRunLog } from '@/engine/extinctionReport'
 
 const fadeIn = keyframes`
   from { opacity:0; transform:translateY(6px); }
@@ -73,6 +74,22 @@ const UnreadBadge = styled.span`
   border-radius: ${THEME.radius.xs}px;
   margin-left: 4px;
   box-shadow: 0 0 8px ${THEME.amberGlow};
+`
+const ExportBtn = styled.button`
+  background: transparent;
+  border: 1px solid ${THEME.border};
+  color: ${THEME.textTertiary};
+  font-family: ${THEME.font};
+  font-size: ${THEME.type.sm}px; font-weight: 700;
+  padding: ${THEME.space.xs}px ${THEME.space.md}px;
+  border-radius: ${THEME.radius.sm}px;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  cursor: pointer;
+  margin-left: ${THEME.space.sm}px;
+  transition: all ${THEME.motion.fast} ${THEME.motion.easeOut};
+  display: inline-flex; align-items: center; gap: 4px;
+  &:hover { border-color: ${THEME.amber}; color: ${THEME.amber}; }
+  &:disabled { opacity: 0.4; cursor: not-allowed; }
 `
 const Log = styled.div`
   flex:1; overflow-y:auto;
@@ -206,6 +223,13 @@ export function MessageLogPanel() {
               <TabCount>{counts[f.key]}</TabCount>
             </Tab>
           ))}
+          <ExportBtn
+            onClick={e => { e.stopPropagation(); if (gameState) downloadRunLog(gameState) }}
+            title="Download run log as .txt"
+            disabled={!gameState}
+          >
+            ↓ Export
+          </ExportBtn>
         </TabRow>
       </Header>
 

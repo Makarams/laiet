@@ -315,18 +315,125 @@ export function drawAtmosphere(
       }
     }
     ctx.restore()
+
+  // ── Bloom — spring abundance after a peaceful rain ───────────────────────────
+  // Soft pastel-petal drift: pollen/petal motes float gently across the screen
+  // with a faint warm glow. No ground darkening; bloom is a celebratory state.
+  } else if (weather === 'bloom') {
+    ctx.save()
+    const baseAlpha = phase === 'night' ? 0.045 : phase === 'day' ? 0.072 : 0.058
+    ctx.fillStyle = `rgba(255, 198, 230, ${baseAlpha})`
+    ctx.fillRect(0, 0, width, height)
+    // Petals — slow, varied trajectories. Mix of pink, white, and pale yellow.
+    const PETAL_COLORS = ['255, 192, 220', '255, 248, 220', '252, 232, 240']
+    for (let i = 0; i < 36; i++) {
+      const seed = i * 173.3 + 11.1
+      const speed = 4200 + (i % 5) * 900
+      const scroll = (now / speed) % (height + 60)
+      const xDrift = Math.sin(now / (2200 + i * 31) + i * 0.37) * 18
+      const px = ((seed % (width + 40)) + xDrift) - 20
+      const py = ((seed * 0.618 % (height + 60) + scroll) % (height + 60)) - 30
+      const r = 1.4 + (i % 4) * 0.55
+      const a = (0.34 + (i % 7) * 0.04) * (phase === 'night' ? 0.5 : 1)
+      ctx.fillStyle = `rgba(${PETAL_COLORS[i % 3]}, ${a})`
+      ctx.beginPath()
+      ctx.ellipse(px, py, r * 1.4, r, (i * 0.3) % Math.PI, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    ctx.restore()
+
+  // ── Windstorm — horizontal streaking + debris ────────────────────────────────
+  // High-velocity dust streaks all running the same direction, plus occasional
+  // larger leaves/debris. Stronger ground-haze.
+  } else if (weather === 'windstorm') {
+    ctx.save()
+    const tint = season === 'autumn' ? [210, 165, 90]
+      : season === 'winter' ? [180, 200, 220]
+      : season === 'summer' ? [220, 175, 100]
+      : [185, 195, 175]
+    const baseAlpha = phase === 'night' ? 0.05 : phase === 'day' ? 0.08 : 0.062
+    ctx.fillStyle = `rgba(${tint.join(',')}, ${baseAlpha})`
+    ctx.fillRect(0, 0, width, height)
+    // Fast streaks — short horizontal slashes, all in the prevailing wind direction
+    const scroll = (now / 90) % (width + 60)
+    ctx.strokeStyle = `rgba(${tint.join(',')}, ${phase === 'night' ? 0.18 : 0.26})`
+    ctx.lineWidth = 0.7
+    ctx.beginPath()
+    for (let i = 0; i < 80; i++) {
+      const seed = i * 197.7 + 5.3
+      const sy = (seed * 0.618 % height)
+      const sx = ((seed + scroll * 1.6) % (width + 80)) - 40
+      const len = 14 + (i % 6) * 4
+      ctx.moveTo(sx, sy)
+      ctx.lineTo(sx + len, sy + Math.sin(i * 0.4) * 1.2)
+    }
+    ctx.stroke()
+    // Occasional larger debris specks (leaves)
+    for (let i = 0; i < 12; i++) {
+      const seed = i * 311.1 + 17.7
+      const sy = (seed * 0.382 % height)
+      const sx = ((seed + scroll * 2.0) % (width + 60)) - 30
+      const a = 0.25 + Math.sin(now / 700 + i) * 0.10
+      ctx.fillStyle = `rgba(${tint.join(',')}, ${a})`
+      ctx.beginPath()
+      ctx.ellipse(sx, sy, 3 + (i % 3), 1.3, 0.25, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    // Ground haze
+    const hazeGrad = ctx.createLinearGradient(0, height * 0.74, 0, height)
+    hazeGrad.addColorStop(0, `rgba(${tint.join(',')}, 0)`)
+    hazeGrad.addColorStop(1, `rgba(${tint.join(',')}, ${phase === 'night' ? 0.16 : 0.22})`)
+    ctx.fillStyle = hazeGrad
+    ctx.fillRect(0, height * 0.74, width, height * 0.26)
+    ctx.restore()
+
+  // ── Ashfall — slow grey fall after sustained fires ───────────────────────────
+  // Slow drifting motes, neutral grey, with a perceptible ground accumulation
+  // tint at the base of the screen.
+  } else if (weather === 'ashfall') {
+    ctx.save()
+    const baseAlpha = phase === 'night' ? 0.10 : phase === 'day' ? 0.14 : 0.12
+    ctx.fillStyle = `rgba(60, 56, 52, ${baseAlpha})`
+    ctx.fillRect(0, 0, width, height)
+    // Slow ash motes — drift downward with mild horizontal sway
+    for (let i = 0; i < 60; i++) {
+      const seed = i * 137.1 + 9.3
+      const speed = 1600 + (i % 5) * 380
+      const scroll = (now / speed) % (height + 50)
+      const sway = Math.sin(now / (1800 + i * 23) + i * 0.4) * 6
+      const px = ((seed % (width + 30)) + sway) - 15
+      const py = ((seed * 0.500 % (height + 50) + scroll) % (height + 50)) - 25
+      const r = 0.9 + (i % 4) * 0.35
+      const a = 0.42 + (i % 6) * 0.04
+      ctx.fillStyle = `rgba(${phase === 'night' ? '120, 116, 110' : '180, 172, 162'}, ${a})`
+      ctx.beginPath()
+      ctx.arc(px, py, r, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    // Ground accumulation bank — settled ash, neutral grey
+    const ashGrad = ctx.createLinearGradient(0, height * 0.80, 0, height)
+    ashGrad.addColorStop(0, 'rgba(110, 104, 96, 0)')
+    ashGrad.addColorStop(1, phase === 'night' ? 'rgba(90, 84, 80, 0.30)' : 'rgba(150, 142, 132, 0.34)')
+    ctx.fillStyle = ashGrad
+    ctx.fillRect(0, height * 0.80, width, height * 0.20)
+    ctx.restore()
   }
 
   // ── Phase tint ; modulated by weather ────────────────────────────────────────
+  // Night-storm and night-fog used to stack heavy overlays on top of an already
+  // dim base, which combined with the vignette could swallow terrain detail.
+  // Capping the heaviest cases at 0.44 keeps land readable even in worst weather.
   if (phase === 'night') {
-    // Storm deepens dark; snow reflects moonlight (lighter night); fog thickens darkness.
-    const nightAlpha = weather === 'storm'    ? 0.52
+    const nightAlpha = weather === 'storm'    ? 0.44
       : weather === 'drought'                ? 0.34
-      : weather === 'rain'                   ? 0.47
-      : weather === 'snow'                   ? 0.36   // snow reflects moonlight; perceptibly lighter
-      : weather === 'heatwave'               ? 0.29   // warm night; amber residual glow
-      : weather === 'fog'                    ? 0.54   // fog absorbs and scatters moonlight
-      : 0.42
+      : weather === 'rain'                   ? 0.42
+      : weather === 'snow'                   ? 0.34
+      : weather === 'heatwave'               ? 0.28
+      : weather === 'fog'                    ? 0.44
+      : weather === 'bloom'                  ? 0.32   // bloom luminous; lighter night
+      : weather === 'windstorm'              ? 0.40
+      : weather === 'ashfall'                ? 0.42
+      : 0.40
     ctx.fillStyle = `rgba(6, 8, 32, ${nightAlpha})`
     ctx.fillRect(0, 0, width, height)
   } else if (phase === 'dawn') {
@@ -371,17 +478,6 @@ export function drawAtmosphere(
   // 'day' phase has no tint (clear or handled by drought/rain/heatwave above)
 }
 
-// ─── Scanlines ; removed in Field Guide design (replaced by vignette only) ─────
-
-export function drawScanlines(
-  _ctx: CanvasRenderingContext2D,
-  _width: number,
-  _height: number
-): void {
-  // No-op: scanlines were a sci-fi CRT aesthetic.
-  // The Field Guide system uses clean isometric rendering.
-}
-
 // ─── Vignette ; dark corners for depth ────────────────────────────────────────
 
 export function drawVignette(
@@ -392,11 +488,11 @@ export function drawVignette(
   const cx = width / 2
   const cy = height / 2
   const gradient = ctx.createRadialGradient(
-    cx, cy, Math.min(cx, cy) * 0.55,
+    cx, cy, Math.min(cx, cy) * 0.60,
     cx, cy, Math.max(cx, cy) * 1.05
   )
   gradient.addColorStop(0, 'rgba(0, 0, 0, 0)')
-  gradient.addColorStop(1, 'rgba(0, 0, 8, 0.55)')
+  gradient.addColorStop(1, 'rgba(0, 0, 8, 0.42)')
   ctx.fillStyle = gradient
   ctx.fillRect(0, 0, width, height)
 }

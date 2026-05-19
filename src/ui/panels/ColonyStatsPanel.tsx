@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import styled from 'styled-components'
 import { useLaietStore } from '@/store/gameStore'
 import { ColonyStage, WeatherState } from '@/types'
 import { ACTION_LOAD_STRESS_THRESHOLD } from '@/engine/constants'
 import { THEME, stageColor, weatherColor } from '@/ui/theme'
+import { downloadExtinctionReport } from '@/engine/extinctionReport'
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
@@ -373,7 +375,7 @@ export function ColonyStatsPanel() {
       </Section>
 
       <Section>
-        <SectionTitle>Cohort Phase</SectionTitle>
+        <SectionTitle>Colony Stage</SectionTitle>
         <StageBar $stage={colonyStage}>{colonyStage}</StageBar>
         {nextStage && (
           <>
@@ -395,7 +397,7 @@ export function ColonyStatsPanel() {
         </AwarenessTrack>
         <AwarenessLabel>{AWARENESS_PROSE[awarenessStage]}</AwarenessLabel>
         <Row style={{ marginTop: 6 }}>
-          <Label>Cohort Phase</Label>
+          <Label>Cohort phase</Label>
           <Value>{COHORT_PHASE_NAMES[cohortPhase ?? 1]} · gen {totalGenerations}</Value>
         </Row>
       </Section>
@@ -416,22 +418,119 @@ export function ColonyStatsPanel() {
         </Row>
       </Section>
 
-      {gameState.fossilRecord && gameState.fossilRecord.length > 0 && (
-        <Section>
-          <SectionTitle>Past Extinctions</SectionTitle>
-          {gameState.fossilRecord.slice(-3).map(record => (
-            <div key={record.id} style={{ marginBottom: 8 }}>
-              <Row>
-                <Label>Day {record.extinctionDay}</Label>
-                <Value $color={THEME.death}>{record.extinctionCause}</Value>
-              </Row>
-              <div style={{ fontSize:10, color: THEME.textTertiary, lineHeight:1.5 }}>
-                gen {record.generationsReached} · {record.peakPopulation} recorded
-              </div>
-            </div>
-          ))}
-        </Section>
-      )}
+      <TribesSection state={gameState} />
+      <FossilSection state={gameState} />
     </Panel>
+  )
+}
+
+// ─── Tribes section ──────────────────────────────────────────────────────────
+// Lists active tribes (not dissolved) with their member counts. Shows the
+// tribal lexicon size as an indicator of cultural complexity. Hidden when no
+// tribes have formed.
+
+const TribeRow = styled.div`
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding: ${THEME.space.xs}px 0;
+`
+const TribeName = styled.span`
+  font-size: ${THEME.type.md}px; font-weight: 700;
+  color: ${THEME.amber};
+  letter-spacing: 0.04em;
+`
+const TribeMeta = styled.span`
+  font-size: ${THEME.type.sm}px;
+  color: ${THEME.textTertiary};
+  letter-spacing: 0.04em;
+`
+function TribesSection({ state }: { state: import('@/types').GameState }) {
+  const tribes = Object.values(state.tribes ?? {}).filter(t => !t.dissolvedOnDay)
+  if (tribes.length === 0) return null
+  return (
+    <Section>
+      <SectionTitle>Tribes ({tribes.length})</SectionTitle>
+      {tribes
+        .slice()
+        .sort((a, b) => b.memberIds.length - a.memberIds.length)
+        .slice(0, 5)
+        .map(t => (
+          <TribeRow key={t.id}>
+            <TribeName>{t.name}</TribeName>
+            <TribeMeta>
+              {t.memberIds.length}m · lex {t.tribalLexicon?.length ?? 0}
+            </TribeMeta>
+          </TribeRow>
+        ))}
+    </Section>
+  )
+}
+
+// ─── Fossil viewer ───────────────────────────────────────────────────────────
+// Expandable list of past extinctions. Each row supports a download of the
+// report for that specific extinction so a long-running player can compare
+// runs.
+
+const FossilHeader = styled.div`
+  display: flex; align-items: center; justify-content: space-between;
+  cursor: pointer;
+`
+const FossilToggle = styled.span`
+  font-size: ${THEME.type.xs}px;
+  color: ${THEME.textTertiary};
+  letter-spacing: 0.16em;
+`
+const FossilRow = styled.div`
+  margin-bottom: ${THEME.space.sm}px;
+  padding: ${THEME.space.xs}px ${THEME.space.sm}px;
+  background: ${THEME.bgChip};
+  border-radius: ${THEME.radius.xs}px;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: ${THEME.space.sm}px;
+`
+const FossilInfo = styled.div`flex: 1; min-width: 0;`
+const FossilDownload = styled.button`
+  background: transparent;
+  border: 1px solid ${THEME.border};
+  color: ${THEME.textTertiary};
+  font-family: ${THEME.font};
+  font-size: ${THEME.type.xs}px; font-weight: 700;
+  padding: 2px 8px;
+  border-radius: ${THEME.radius.xs}px;
+  cursor: pointer;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  &:hover { color: ${THEME.amber}; border-color: ${THEME.amber}; }
+`
+
+function FossilSection({ state }: { state: import('@/types').GameState }) {
+  const [expanded, setExpanded] = useState(false)
+  const fossils = state.fossilRecord ?? []
+  if (fossils.length === 0) return null
+  const visible = expanded ? fossils.slice().reverse() : fossils.slice(-3).reverse()
+  return (
+    <Section>
+      <FossilHeader onClick={() => setExpanded(v => !v)}>
+        <SectionTitle>Past Extinctions ({fossils.length})</SectionTitle>
+        <FossilToggle>{expanded ? '▾ hide' : `▸ ${fossils.length > 3 ? 'show all' : 'recent'}`}</FossilToggle>
+      </FossilHeader>
+      {visible.map(record => (
+        <FossilRow key={record.id}>
+          <FossilInfo>
+            <Row style={{ padding: 0 }}>
+              <Label>Day {record.extinctionDay}</Label>
+              <Value $color={THEME.death}>{record.extinctionCause}</Value>
+            </Row>
+            <div style={{ fontSize: 10, color: THEME.textTertiary, lineHeight: 1.4 }}>
+              gen {record.generationsReached} · {record.peakPopulation} recorded
+            </div>
+          </FossilInfo>
+          <FossilDownload
+            onClick={e => { e.stopPropagation(); downloadExtinctionReport(state, record) }}
+            title="Download report for this extinction"
+          >
+            ↓
+          </FossilDownload>
+        </FossilRow>
+      ))}
+    </Section>
   )
 }

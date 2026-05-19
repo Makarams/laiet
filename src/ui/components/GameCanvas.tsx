@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 import styled from 'styled-components'
 import { useLaietStore } from '@/store/gameStore'
 import {
-  drawTile, drawCreature, drawAtmosphere, drawScanlines, drawVignette,
+  drawTile, drawCreature, drawAtmosphere, drawVignette,
   gridToIso, canvasOrigin, isoToGrid, resetCanvasState, drawEnrichmentItem,
 } from '@/ui/renderer'
 import { WORLD_SIZE, ISO_TILE_HEIGHT, ISO_TILE_WIDTH, CANVAS_PADDING_Y, BUILD_TERRITORY_RADIUS } from '@/engine/constants'
@@ -47,9 +47,6 @@ const Corner = styled.div<{ pos: string }>`
   z-index: 3;
   user-select: none;
 `
-
-// CRTOverlay removed ; Field Guide design uses clean isometric rendering
-const CRTOverlay = styled.div`display: none;`
 
 const ToolHint = styled.div`
   position: absolute;
@@ -263,7 +260,7 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot', se
   const prevSeasonRef = useRef<Season | null>(null)
   const seasonOverlayRef = useRef<{ text: string; startTime: number } | null>(null)
 
-  // Tile hover tooltip (3-second hold)
+  // Tile hover tooltip (1.5-second hold)
   const [tileInfo, setTileInfo] = useState<{
     tile: Tile; cx: number; cy: number
     enrichmentItem?: EnrichmentItem
@@ -273,6 +270,22 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot', se
   const lastHoveredGridRef = useRef<{ x: number; y: number } | null>(null)
   const hoverClientRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
   const arrowHitAreasRef = useRef<Array<{ cx: number; cy: number; canvasX: number; canvasY: number }>>([])
+
+  // Territory polygon cache.
+  //
+  // The territory overlay used to recompute corner-tile rotation + iso
+  // projection + hexToRgb for every claim, every frame (60Hz). The inputs
+  // change rarely — only when (a) a claim is added/moved (per game tick), or
+  // (b) camera rotation changes, or (c) canvas width changes. Cache by a
+  // composite key; rebuild only on miss.
+  const territoryCacheRef = useRef<{
+    key: string
+    polys: Array<{
+      pts: { x: number; y: number }[]
+      rr: number; gg: number; bb: number
+      mx: number; my: number
+    }>
+  } | null>(null)
 
 
   // Camera ; mutable ref so animation loop and event handlers share state.
@@ -523,55 +536,77 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot', se
         drawEnrichmentItem(ctx, item, esx, esy)
       }
 
-      // Territory zone overlays — soft diamond per unique claim, before creatures
+      // Territory zone overlays — soft diamond per unique claim, before creatures.
+      // Polygon geometry is cached and only rebuilt when the underlying inputs
+      // change (claim set, rotation, canvas width). The cache key is a compact
+      // string of "rot|cw|claim1.x,y,bodyTraitHash|claim2..." — building it costs
+      // O(claims) but lookup is O(1) per frame.
       {
-        const seenClaims = new Set<string>()
         const R = BUILD_TERRITORY_RADIUS
+        // Build the cache key once. We hash the creature's expressed body so the
+        // colour stays in sync when a creature with a different genome takes
+        // over the same claim spot (rare, but possible after death + reclaim).
+        const claimEntries: Array<{ cx: number; cy: number; genome: typeof gs.creatures[string]['genome'] }> = []
+        const seenClaims = new Set<string>()
         for (const c of Object.values(gs.creatures)) {
           if (c.diedOnDay !== null || !c.territoryClaim) continue
-          const key = `${c.territoryClaim.x},${c.territoryClaim.y}`
-          if (seenClaims.has(key)) continue
-          seenClaims.add(key)
-          const { x: cx, y: cy } = c.territoryClaim
-          // The Chebyshev-R territory square has 4 corner tiles in unrotated grid space.
-          // In isometric projection these map to top/right/bottom/left of a rhombus.
-          const corners: [number, number][] = [
-            [cx - R, cy - R],
-            [cx + R, cy - R],
-            [cx + R, cy + R],
-            [cx - R, cy + R],
-          ]
-          const pts = corners.map(([gx, gy]) => {
-            const rg = rotateGrid(
-              Math.max(0, Math.min(WORLD_SIZE - 1, gx)),
-              Math.max(0, Math.min(WORLD_SIZE - 1, gy)),
-              rot, WORLD_SIZE,
-            )
-            const iso = gridToIso(rg.x, rg.y)
-            return { x: origin.x + iso.x, y: origin.y + iso.y }
-          })
-          const [rr, gg, bb] = hexToRgb(genomeColor(c.genome))
-          const lw = Math.max(0.5, 1.5 / cam.zoom)
-          const dash = Math.max(2, 4 / cam.zoom)
+          const k = `${c.territoryClaim.x},${c.territoryClaim.y}`
+          if (seenClaims.has(k)) continue
+          seenClaims.add(k)
+          claimEntries.push({ cx: c.territoryClaim.x, cy: c.territoryClaim.y, genome: c.genome })
+        }
+        const cacheKey = `${rot}|${cw_}|` + claimEntries.map(e => `${e.cx},${e.cy},${e.genome.body[0]}${e.genome.race ?? ''}`).join(';')
+        let cached = territoryCacheRef.current
+        if (!cached || cached.key !== cacheKey) {
+          const polys: Array<{ pts: { x: number; y: number }[]; rr: number; gg: number; bb: number; mx: number; my: number }> = []
+          for (const e of claimEntries) {
+            const { cx, cy, genome } = e
+            const corners: [number, number][] = [
+              [cx - R, cy - R],
+              [cx + R, cy - R],
+              [cx + R, cy + R],
+              [cx - R, cy + R],
+            ]
+            const pts = corners.map(([gx, gy]) => {
+              const rg = rotateGrid(
+                Math.max(0, Math.min(WORLD_SIZE - 1, gx)),
+                Math.max(0, Math.min(WORLD_SIZE - 1, gy)),
+                rot, WORLD_SIZE,
+              )
+              const iso = gridToIso(rg.x, rg.y)
+              return { x: origin.x + iso.x, y: origin.y + iso.y }
+            })
+            const [rr, gg, bb] = hexToRgb(genomeColor(genome))
+            const rc = rotateGrid(cx, cy, rot, WORLD_SIZE)
+            const ci = gridToIso(rc.x, rc.y)
+            polys.push({ pts, rr, gg, bb, mx: origin.x + ci.x, my: origin.y + ci.y + ISO_TILE_HEIGHT * 0.5 })
+          }
+          cached = { key: cacheKey, polys }
+          territoryCacheRef.current = cached
+        }
+
+        // Width/dash depend on zoom (changes every frame in flux), so they live
+        // outside the cache.
+        const lw = Math.max(0.5, 1.5 / cam.zoom)
+        const dash = Math.max(2, 4 / cam.zoom)
+        const markerR = Math.max(2, 3 / cam.zoom)
+        for (let i = 0; i < cached.polys.length; i++) {
+          const p = cached.polys[i]
           ctx.save()
           ctx.beginPath()
-          ctx.moveTo(pts[0].x, pts[0].y)
-          for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
+          ctx.moveTo(p.pts[0].x, p.pts[0].y)
+          for (let j = 1; j < p.pts.length; j++) ctx.lineTo(p.pts[j].x, p.pts[j].y)
           ctx.closePath()
-          ctx.fillStyle = `rgba(${rr},${gg},${bb},0.07)`
+          ctx.fillStyle = `rgba(${p.rr},${p.gg},${p.bb},0.07)`
           ctx.fill()
-          ctx.strokeStyle = `rgba(${rr},${gg},${bb},0.38)`
+          ctx.strokeStyle = `rgba(${p.rr},${p.gg},${p.bb},0.38)`
           ctx.lineWidth = lw
           ctx.setLineDash([dash, dash])
           ctx.stroke()
-          // Small solid marker at the claim center
-          const rc = rotateGrid(cx, cy, rot, WORLD_SIZE)
-          const ci = gridToIso(rc.x, rc.y)
-          const mx = origin.x + ci.x, my = origin.y + ci.y + ISO_TILE_HEIGHT * 0.5
           ctx.setLineDash([])
-          ctx.fillStyle = `rgba(${rr},${gg},${bb},0.55)`
+          ctx.fillStyle = `rgba(${p.rr},${p.gg},${p.bb},0.55)`
           ctx.beginPath()
-          ctx.arc(mx, my, Math.max(2, 3 / cam.zoom), 0, Math.PI * 2)
+          ctx.arc(p.mx, p.my, markerR, 0, Math.PI * 2)
           ctx.fill()
           ctx.restore()
         }
@@ -579,14 +614,19 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot', se
 
       // Pre-compute alive creature interpolated/rotated positions once;
       // reused for both depth-sorted rendering and off-screen arrow logic.
+      // Interpolation positions are defensively clamped — without this, a
+      // creature whose snapshot lags a clamped post-tick value can be drawn
+      // briefly outside [0, WORLD_SIZE-1] during the lerp.
       const aliveWithPos = Object.values(gs.creatures)
         .filter(c => c.diedOnDay === null)
         .map(c => {
           const prev = prevPositionsRef.current[c.id]
           const px = prev?.x ?? c.x
           const py = prev?.y ?? c.y
-          const lx = px + (c.x - px) * t
-          const ly = py + (c.y - py) * t
+          const lxRaw = px + (c.x - px) * t
+          const lyRaw = py + (c.y - py) * t
+          const lx = Math.max(0, Math.min(WORLD_SIZE - 1, lxRaw))
+          const ly = Math.max(0, Math.min(WORLD_SIZE - 1, lyRaw))
           const r  = rotateGrid(lx, ly, rot, WORLD_SIZE)
           return { c, r }
         })
@@ -606,7 +646,6 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot', se
       // Full-canvas overlays (no camera transform) ; atmosphere combines weather + phase
       drawAtmosphere(ctx, cw_, ch_, gs.weather ?? 'clear', phase, season)
       drawVignette(ctx, cw_, ch_)
-      drawScanlines(ctx, cw_, ch_)
 
       // Season transition overlay ; brief lowercase text fades in/out over 3 seconds
       const overlay = seasonOverlayRef.current
@@ -774,7 +813,7 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot', se
     const grid = eventToGrid(e)
     if (grid && grid.x >= 0 && grid.x < WORLD_SIZE && grid.y >= 0 && grid.y < WORLD_SIZE) {
       hoverTile(grid)
-      // Start 3-second hold timer; resets whenever the tile changes
+      // Start 1.5-second hold timer; resets whenever the tile changes
       const last = lastHoveredGridRef.current
       if (!last || last.x !== grid.x || last.y !== grid.y) {
         lastHoveredGridRef.current = grid
@@ -932,7 +971,6 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot', se
           clearHoverTimer()
         }}
       />
-      <CRTOverlay />
       <Corner pos='top-left'>Observation Field</Corner>
       <Corner pos='bottom-left'>ID {gameStateRef.current?.worldId.slice(0, 8) ?? ';'}</Corner>
       <CameraReadout>

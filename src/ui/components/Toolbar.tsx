@@ -178,19 +178,13 @@ const YearTag = styled.span`
   margin-left: 4px;
 `
 
-// ─── Caretaker pressure indicator (replaces all per-tool charge badges) ──────
-const PressureStack = styled.div`
-  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
-`
-const PressureValue = styled.span<{ $alert: boolean }>`
-  font-size: ${THEME.type.lg}px; font-weight: 700;
-  color: ${p => p.$alert ? THEME.threat : THEME.amber};
-  letter-spacing: 0.02em;
-  filter: drop-shadow(0 0 4px ${p => p.$alert ? THEME.threat + '55' : THEME.amberGlow});
-  line-height: 1;
-`
+// ─── Caretaker pressure indicator ─────────────────────────────────────────────
+// Single composed indicator: a bar with the numeric overlaid. Earlier versions
+// stacked the number above the bar, which read as two separate indicators of
+// the same value.
 const PressureBar = styled.div`
-  width: 84px; height: 5px;
+  position: relative;
+  width: 94px; height: 18px;
   background: ${THEME.bgDeep};
   border: 1px solid ${THEME.borderMid};
   border-radius: ${THEME.radius.pill}px;
@@ -202,6 +196,15 @@ const PressureFill = styled.div<{ $pct: number; $alert: boolean }>`
   background: ${p => p.$alert ? THEME.threat : THEME.amber};
   box-shadow: ${p => p.$alert ? `0 0 6px ${THEME.threat}88` : `0 0 6px ${THEME.amberGlow}`};
   transition: width ${THEME.motion.fast} ${THEME.motion.easeOut};
+`
+const PressureReadout = styled.span<{ $alert: boolean }>`
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: ${THEME.type.sm}px; font-weight: 700;
+  color: ${p => p.$alert ? '#fff' : THEME.textPrimary};
+  letter-spacing: 0.02em;
+  text-shadow: 0 0 4px rgba(0,0,0,0.55);
+  pointer-events: none;
 `
 
 // ─── Control buttons ──────────────────────────────────────────────────────────
@@ -447,12 +450,10 @@ export function Toolbar({
         </StatusCell>
         <StatusCell title="Caretaker pressure — heavy intervention bleeds ambient stress into the colony">
           <StatusLabel>Pressure</StatusLabel>
-          <PressureStack>
-            <PressureValue $alert={actionLoad >= 55}>{Math.round(actionLoad)}</PressureValue>
-            <PressureBar>
-              <PressureFill $pct={Math.min(100, actionLoad)} $alert={actionLoad >= 55} />
-            </PressureBar>
-          </PressureStack>
+          <PressureBar>
+            <PressureFill $pct={Math.min(100, actionLoad)} $alert={actionLoad >= 55} />
+            <PressureReadout $alert={actionLoad >= 55}>{Math.round(actionLoad)}</PressureReadout>
+          </PressureBar>
         </StatusCell>
       </StatusBlock>
 

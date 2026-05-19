@@ -27,6 +27,7 @@ import {
 import { findNearestTileOfType, findNearestInIndex, getTile, isTilePassable, TileTypeIndex } from '@/world/worldGen'
 import { tickSentience, seedDrives } from './factory'
 import { DRIVE_DRIFT_RATE, FEAR_BASE_RADIUS, FEAR_VIGILANCE_BONUS } from '@/engine/constants'
+import { CreatureGrid, nearbyArray } from '@/engine/spatial'
 
 // ─── Build terrain validation ────────────────────────────────────────────────
 
@@ -316,6 +317,7 @@ export function tickBehavior(
   weather?: WeatherState,
   recentFractureDay?: number,       // most-recent fracture chronicle day; behavior reads this directly
   currentDay?: number,              // today's game day, for fracture-window comparison
+  creatureGrid?: CreatureGrid,      // optional spatial grid; falls back to aliveCreatures scan
 ): Partial<Creature> {
   const c = creature
   const changes: Partial<Creature> = {}
@@ -871,7 +873,14 @@ export function tickBehavior(
           || here.type === 'river' || here.type === 'grass' || here.type === 'barren')) {
         const TERRITORY_SPACING = 8
         let conflict = false
-        for (const o of aliveCreatures) {
+        // Bucketed neighbour query — only inspects creatures within TERRITORY_SPACING
+        // cells of (c.x, c.y) instead of every alive creature. Falls back to the
+        // full alive list if the spatial grid isn't supplied.
+        const neighbors = creatureGrid
+          ? nearbyArray(creatureGrid, c.x, c.y, TERRITORY_SPACING)
+          : aliveCreatures
+        for (let i = 0; i < neighbors.length; i++) {
+          const o = neighbors[i]
           if (o.id === c.id || !o.territoryClaim) continue
           if (Math.abs(o.territoryClaim.x - c.x) <= TERRITORY_SPACING
               && Math.abs(o.territoryClaim.y - c.y) <= TERRITORY_SPACING) {
@@ -891,7 +900,10 @@ export function tickBehavior(
       }
     }
     if (d.dominance > 0.5) {
-      const rival = aliveCreatures.find(
+      const rivalCandidates = creatureGrid
+        ? nearbyArray(creatureGrid, c.x, c.y, 14)
+        : aliveCreatures
+      const rival = rivalCandidates.find(
         o => o.id !== c.id && o.lineageId !== c.lineageId
           && o.genome.personality === 'Aggressive'
           && Math.abs(o.x - c.x) <= 14 && Math.abs(o.y - c.y) <= 14
@@ -1221,8 +1233,12 @@ export function tickBehavior(
     // pick the wander target that maximises distance to the nearest neighbour.
     // High-sociality creatures bypass this — they actively prefer crowds.
     const SPACING_R = 3
+    const spacingNeighbors = creatureGrid
+      ? nearbyArray(creatureGrid, c.x, c.y, SPACING_R)
+      : aliveCreatures
     let crowd = 0
-    for (const o of aliveCreatures) {
+    for (let i = 0; i < spacingNeighbors.length; i++) {
+      const o = spacingNeighbors[i]
       if (o.id === c.id) continue
       if (Math.abs(o.x - c.x) <= SPACING_R && Math.abs(o.y - c.y) <= SPACING_R) crowd++
     }
@@ -1243,8 +1259,10 @@ export function tickBehavior(
         break
       }
       // Crowded: score by minimum distance to any other creature; keep the best.
+      // Use the spatial grid candidates we already gathered.
       let minSep = Infinity
-      for (const o of aliveCreatures) {
+      for (let i = 0; i < spacingNeighbors.length; i++) {
+        const o = spacingNeighbors[i]
         if (o.id === c.id) continue
         const dd = Math.abs(o.x - tx) + Math.abs(o.y - ty)
         if (dd < minSep) minSep = dd

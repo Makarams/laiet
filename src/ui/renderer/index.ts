@@ -3,4 +3,4 @@
 
 export { gridToIso, isoToGrid, canvasOrigin, resetCanvasState, drawTile, drawEnrichmentItem } from './tiles'
 export { drawCreature } from './creatures'
-export { drawAtmosphere, drawScanlines, drawVignette } from './overlays'
+export { drawAtmosphere, drawVignette } from './overlays'

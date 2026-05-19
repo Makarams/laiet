@@ -120,6 +120,8 @@ import { createOffspring, createAsexualOffspring, getColonyStage, recordExperien
 import { generateMessage, deathMessage, extinctionMessage, boneMemoryMessage, generateRaceRevivalMessage, neglectWarningMessage, legendaryMessage } from './messages'
 import { createRng, buildTileIndex } from '@/world/worldGen'
 import { deriveSpeechFocus, composeUtterance, learnFromNearby, unlockTierEmoji, assignRole } from '@/engine/speech'
+import { mark as profMark, isProfilerEnabled } from '@/engine/profiler'
+import { buildCreatureGrid, nearbyCreatures } from '@/engine/spatial'
 
 // ─── Experiential symbol acquisition ─────────────────────────────────────────
 // One table — every condition a creature can live through and acquire a symbol
@@ -213,25 +215,29 @@ export function tickSimulation(state: GameState): GameState {
   // Backward-compat: old saves without modifiers fall back to defaults.
   const mods = state.modifiers ?? DEFAULT_MODIFIERS
 
+  // Profiler is module-level; calls early-return when disabled so the
+  // arithmetic + closure cost is amortised across all phases regardless.
+  const _profOn = isProfilerEnabled()
+  const _tStart = _profOn ? performance.now() : 0
+  // helper: time a phase. Inlined where called so V8 keeps closure-free.
+  const tStamp = () => (_profOn ? performance.now() : 0)
+
   let next: GameState = {
     ...state,
     modifiers: mods,
-    // Backward-compat: old saves won't have weather
     weather: state.weather ?? 'clear',
     weatherTimer: state.weatherTimer ?? 20,
-    // Backward-compat: old saves won't have enrichmentItems
     enrichmentItems: state.enrichmentItems ?? {},
-    // Tiles NOT pre-cloned here; tickTiles does copy-on-write and produces
-    // a fresh tile array. Pre-cloning all 14,400 tiles here was wasted work.
     creatures: { ...state.creatures },
     messages: [...state.messages],
     events: [...state.events],
   }
 
-  next = tickTime(next)
-  next = tickWeather(next, mods)
+  let _t = tStamp()
+  next = tickTime(next);                                      if (_profOn) { profMark('time', tStamp() - _t); _t = tStamp() }
+  next = tickWeather(next, mods, _rng);                       if (_profOn) { profMark('weather', tStamp() - _t); _t = tStamp() }
   const prevWeather = state.weather ?? 'clear'
-  next = tickTiles(next, mods)
+  next = tickTiles(next, mods);                               if (_profOn) { profMark('tiles', tStamp() - _t); _t = tStamp() }
   // Chronicle weather phase transitions — heatwave onset, drought breaking,
   // storms passing. The colony notices these large environmental shifts.
   if (next.weather !== prevWeather) {
@@ -279,17 +285,27 @@ export function tickSimulation(state: GameState): GameState {
   }
   // snowAccumulation is computed inside tickTiles to avoid a redundant tile scan.
   const deathsBefore = next.totalDeaths
-  const alivePreDeath = Object.values(next.creatures).filter(c => c.diedOnDay === null).length
-  next = tickCreatures(next, _rng, mods)
+  // Single pre-tick pass over creatures. mass-die-off check + reproduction's
+  // popFactor both read the alive-count baseline; sharing the iteration is
+  // free and removes 2 of the 14 Object.values+filter pairs the profiler
+  // flagged.
+  let alivePreDeath = 0
+  for (const id in next.creatures) {
+    if (next.creatures[id].diedOnDay === null) alivePreDeath++
+  }
+  _t = tStamp()
+  next = tickCreatures(next, _rng, mods);                     if (_profOn) { profMark('creatures', tStamp() - _t); _t = tStamp() }
   const deathsThisTick = next.totalDeaths - deathsBefore
   // Population-scaled mass die-off threshold. 8% of the colony in one tick is
   // "mass" regardless of scale; floored at 3 so very small colonies still register.
   const massThreshold = Math.max(3, Math.floor(alivePreDeath * 0.08))
   if (deathsThisTick >= massThreshold) {
     // Mass die-off — find dominant cause from creatures that died today
-    const deadToday = Object.values(next.creatures).filter(c => c.diedOnDay === next.time.day)
+    const today = next.time.day
     const causeCount: Record<string, number> = {}
-    for (const d of deadToday) {
+    for (const id in next.creatures) {
+      const d = next.creatures[id]
+      if (d.diedOnDay !== today) continue
       const c = d.deathCause ?? 'unknown'
       causeCount[c] = (causeCount[c] ?? 0) + 1
     }
@@ -300,20 +316,21 @@ export function tickSimulation(state: GameState): GameState {
     })
   }
 
-  // Compute population factor again (creatures may have died this tick).
-  // Reproduction is suppressed under crowding & starvation pressure.
-  const aliveNow = Object.values(next.creatures).filter(c => c.diedOnDay === null).length
+  // Reuse the pre-tick count minus this tick's deaths to derive aliveNow.
+  // Births haven't happened yet in this tick — they fire next.
+  const aliveNow = alivePreDeath - deathsThisTick
   // popFactor: 1.0 below threshold; slopes to 0.20 minimum at threshold + DISEASE_POP_SLOPE_RANGE (120).
   // Widened from the old /55 slope so reproduction stays meaningful up to and past ascension (80).
   const popFactor = aliveNow > DISEASE_POP_THRESHOLD
     ? Math.max(0.20, 1 - (aliveNow - DISEASE_POP_THRESHOLD) / DISEASE_POP_SLOPE_RANGE)
     : 1.0
 
-  next = tickReproduction(next, _rng, popFactor)
-  next = tickTribeFormation(next, mods)
-  next = tickTribes(next)
-  next = tickEnrichment(next, _rng)
-  next = tickNaturalEnrichment(next, _rng, mods)
+  _t = tStamp()
+  next = tickReproduction(next, _rng, popFactor);             if (_profOn) { profMark('reproduction', tStamp() - _t); _t = tStamp() }
+  next = tickTribeFormation(next, mods);                      if (_profOn) { profMark('tribeFormation', tStamp() - _t); _t = tStamp() }
+  next = tickTribes(next);                                    if (_profOn) { profMark('tribes', tStamp() - _t); _t = tStamp() }
+  next = tickEnrichment(next, _rng);                          if (_profOn) { profMark('enrichment', tStamp() - _t); _t = tStamp() }
+  next = tickNaturalEnrichment(next, _rng, mods);             if (_profOn) { profMark('naturalEnrichment', tStamp() - _t); _t = tStamp() }
 
   // Single alive pass shared by colony stage, awareness tracking, and vocab window.
   const aliveAfterReproduction = Object.values(next.creatures).filter(c => !c.diedOnDay)
@@ -366,8 +383,12 @@ export function tickSimulation(state: GameState): GameState {
     next.cognitionPressure = counter
   }
 
-  next = tickCaretaker(next, mods)
-  next = checkEndgame(next, mods)
+  _t = tStamp()
+  // (awareness/cohort/legendary blocks above are folded into the 'awareness' phase)
+  if (_profOn) { profMark('awareness', tStamp() - _t); _t = tStamp() }
+  next = tickCaretaker(next, mods);                            if (_profOn) { profMark('caretaker', tStamp() - _t); _t = tStamp() }
+  next = checkEndgame(next, mods);                             if (_profOn) { profMark('endgame', tStamp() - _t) }
+  if (_profOn) profMark('total', tStamp() - _tStart)
 
   // ── Neglect warning — colony distress accumulator ─────────────────────────
   // The colony doesn't get surveilled by the engine and notified by threshold.
@@ -473,7 +494,9 @@ export function tickSimulation(state: GameState): GameState {
 
   // ── Race population tracking & revival detection ──────────────────────────────
   {
-    const alive = Object.values(next.creatures).filter(c => !c.diedOnDay)
+    // Reuses the aliveAfterReproduction array computed above instead of
+    // rebuilding the same filter (was line 487 before consolidation).
+    const alive = aliveAfterReproduction
     const newRacePops: Partial<Record<RaceTrait, number>> = {}
     for (const c of alive) {
       const r = c.genome.race
@@ -563,7 +586,7 @@ function tickTime(state: GameState): GameState {
 
 // ─── Weather ─────────────────────────────────────────────────────────────────
 
-function tickWeather(state: GameState, mods: SimModifiers): GameState {
+function tickWeather(state: GameState, mods: SimModifiers, rng: () => number): GameState {
   let weather = (state.weather ?? 'clear') as WeatherState
   let timer = Math.max(0, (state.weatherTimer ?? 20) - DAY_FRACTION_PER_TICK)
 
@@ -591,7 +614,7 @@ function tickWeather(state: GameState, mods: SimModifiers): GameState {
     if (burnedTiles >= ASHFALL_FIRE_THRESHOLD * 3) {
       weather = 'ashfall'
       const [aMin, aMax] = WEATHER_DURATION.ashfall ?? [5, 12]
-      timer = aMin + Math.random() * (aMax - aMin)
+      timer = aMin + rng() * (aMax - aMin)
     }
   }
 
@@ -611,12 +634,12 @@ function tickWeather(state: GameState, mods: SimModifiers): GameState {
     if (recentHardship === 0) {
       weather = 'bloom'
       const [bMin, bMax] = WEATHER_DURATION.bloom ?? [4, 8]
-      timer = bMin + Math.random() * (bMax - bMin)
+      timer = bMin + rng() * (bMax - bMin)
     }
   }
 
   if (timer <= 0) {
-    const rnd = Math.random()
+    const rnd = rng()
     type Trans = [WeatherState, number][]
     const isSpring = season === 'spring'
     const isSummer = season === 'summer'
@@ -686,7 +709,7 @@ function tickWeather(state: GameState, mods: SimModifiers): GameState {
     const durationMult = weather === 'drought' ? mods.droughtDurationMult
       : (weather === 'storm' || weather === 'heatwave' || weather === 'windstorm') ? sev
       : 1.0
-    timer = (min + Math.random() * (max - min)) * durationMult
+    timer = (min + rng() * (max - min)) * durationMult
   }
 
   return { ...state, weather, weatherTimer: timer }
@@ -1516,11 +1539,14 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
   let nextAwaitingResponseUntil = state.caretaker.awaitingResponseUntil ?? 0
   let clearRespondedFlag = false
 
-  // Pre-build alive array and tile index once; shared across all creature iterations.
-  // Avoids O(n) Object.values + filter per creature and O(d²) tile scans in behavior.
+  // Pre-build alive array, tile index, and creature spatial grid once; shared
+  // across all creature iterations. Avoids O(n) Object.values + filter per
+  // creature and O(d²) tile scans in behavior, and turns previously O(N²)
+  // witness/conflict scans into O(neighbors).
   const aliveCreatures = Object.values(creatures).filter(c => c.diedOnDay === null)
   const aliveCount = aliveCreatures.length
   const tileIdx = buildTileIndex(srcTiles)
+  const creatureGrid = buildCreatureGrid(aliveCreatures)
 
   // Most-recent fracture chronicle entry — behavior.ts reads this directly so
   // each creature can independently decide whether to flee. No global stamp.
@@ -1780,7 +1806,7 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
       if ((c.stateTimer ?? 0) >= 30) { c.state = 'idle'; c.stateTimer = 0 }
     }
 
-    const behaviorChanges = tickBehavior(c, tiles, creatures, state.time.season, aliveCreatures, tileIdx, state.enrichmentItems, weather, recentFractureDay, state.time.day)
+    const behaviorChanges = tickBehavior(c, tiles, creatures, state.time.season, aliveCreatures, tileIdx, state.enrichmentItems, weather, recentFractureDay, state.time.day, creatureGrid)
     c = { ...c, ...behaviorChanges }
 
     // Playing state; applies stress reduction and times out after PLAY_DURATION_TICKS
@@ -2117,7 +2143,9 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
         // own drives, their bond to the deceased (if any), and their recent
         // experiences with death. Personality no longer dictates the reaction —
         // it merely seeded the drives that now mediate it.
-        for (const witness of Object.values(creatures)) {
+        // Bucketed neighbour query — only iterates creatures whose cell overlaps
+        // a radius-3 box around (c.x, c.y) instead of every alive creature.
+        for (const witness of nearbyCreatures(creatureGrid, c.x, c.y, 3)) {
           if (witness.id === c.id || witness.diedOnDay !== null) continue
           if (Math.abs(witness.x - c.x) <= 3 && Math.abs(witness.y - c.y) <= 3) {
             const drives = witness.drives
@@ -3834,26 +3862,6 @@ function defaultOptions(type: EventType): GameEvent['options'] {
   }
 }
 
-// ─── Passive time-skipping ────────────────────────────────────────────────────
-
-// Passive ticks apply only when the tab was fully closed (beforeunload fired).
-// The simulation pauses automatically when the tab is hidden, so background
-// idle is no longer a concern. The cap here is intentionally small; just
-// enough to advance weather and day/night by a couple of minutes on genuine
-// tab-close/reopen, without endangering the colony through a long drought.
-const MAX_PASSIVE_TICKS = 240   // 4 real minutes of catch-up maximum
-
-export function computePassiveTicks(lastSessionEnd: number | null): number {
-  if (!lastSessionEnd) return 0
-  const elapsed = Date.now() - lastSessionEnd
-  if (elapsed <= 0) return 0
-  const realMinutes = elapsed / 60_000
-  return Math.min(Math.floor(realMinutes * 60), MAX_PASSIVE_TICKS)
-}
-
-// How many real hours the player was away (used for absence message)
-export function computeAbsenceHours(lastSessionEnd: number | null): number {
-  if (!lastSessionEnd) return 0
-  const elapsed = Date.now() - lastSessionEnd
-  return Math.max(0, elapsed / 3_600_000)
-}
+// Passive-tick helpers live in their own module now. Re-exported here for
+// backward compat with any code that imports them from '@/engine/tick'.
+export { computePassiveTicks, computeAbsenceHours } from '@/engine/passiveTicks'

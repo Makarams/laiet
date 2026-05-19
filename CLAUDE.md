@@ -115,6 +115,7 @@ tickTime → tickWeather → tickTiles → tickCreatures → tickReproduction
 - **Fear is per-witness, per-target** — no global apex tag; combat deaths attribute via `lastAttackerId`, witnesses gain personal `feared[id] = day`
 - **Bloom and ashfall are state-triggered**, not random — bloom needs 12 peaceful days during rain; ashfall fires when total burned tiles in 12 days crosses threshold
 - **UI tokens only** — every styled-component must pull from `src/ui/theme.ts`. Raw hex/radius/duration in a component is a code smell.
+- **Performance gates.** Per-tick `Object.values(creatures).filter` should be reused, not rebuilt — `tickSimulation` computes alive baselines once and threads them. Per-creature radius queries (witnesses, conflict, rivals) MUST use the `CreatureGrid` from `src/engine/spatial.ts` once it's available in the calling phase; never re-introduce O(N²) scans. The `mark()` calls in `tickSimulation` feed the in-game profiler HUD (toggle: backtick) — if you add a new phase, time it the same way.
 
 ---
 
@@ -246,10 +247,47 @@ Helper functions: `creatureColor(body)`, `stageColor(stage)`, `awarenessColor(le
 
 ## Known stubs / cleanups
 
-- **Fossil record display** — `loadFossilRecords()` fetches but no UI to view past extinctions
-- **`ascension` EndgameType** — preserved for save compat; `checkEndgame()` does not fire it
+- **`ascension` EndgameType** — already removed from `EndgameType`; one comment in `gameStore.loadWorld` references it for migration only
 - **ESLint config** — repo has ESLint 9 but config is in old v8 format; `npm run lint` errors
 - **Subspecies recognition** — chronicle event kind exists with composer support, but no emitter wired yet
+
+## Pending refactor: full tick.ts split
+
+`src/engine/tick.ts` is still ~3,800 lines. Partial extractions already done:
+`passiveTicks.ts`, `profiler.ts`, `spatial.ts`. The remaining split (deferred —
+must be done with verification, never in one shot) is the target structure:
+
+```
+src/engine/tick/
+├── index.ts            tickSimulation (orchestrator only)
+├── time.ts             tickTime
+├── weather.ts          tickWeather + state-trigger logic (ashfall, bloom)
+├── tiles.ts            tickTiles + write-on-copy + fire spread
+├── creatures.ts        tickCreatures + EXPERIENTIAL_SYMBOL_TABLE + fear decay
+├── reproduction.ts     tickReproduction + hasNestNear + checkBoneMemory
+├── tribes.ts           tickTribeFormation + tickTribes + pickTribeName
+├── enrichment.ts       tickEnrichment + tickNaturalEnrichment + spawnNaturalNearby
+├── caretaker.ts        tickCaretaker + action-load decay
+├── awareness.ts        evaluateStageConditions + persistence hysteresis
+└── endgame.ts          inferExtinctionCause + checkEndgame + createEvent + defaultOptions
+```
+
+`behavior.ts` (~1,650 lines) target structure:
+
+```
+src/creatures/behavior/
+├── index.ts            tickBehavior orchestrator
+├── drives.ts           drive selector + decision weights
+├── needs.ts            tickNeeds
+├── seek.ts             food/water/warmth/healroot seek
+├── social.ts           bond formation, territory, conflict, mourning
+├── movement.ts         tickMovement + terrain cost
+└── traits.ts           personality/role hooks (build, harvest, etc.)
+```
+
+When you split, do it one folder at a time, run `npx tsc --noEmit` between
+each module move, and never re-introduce O(N²) creature scans or unguarded
+`Object.values+filter` per phase (see the **Performance gates** rule above).
 
 ---
 

@@ -6,6 +6,7 @@ import { DossierPanel } from '../panels/DossierPanel'
 import { MessageLogPanel } from '../panels/MessageLogPanel'
 import { ColonyStatsPanel } from '../panels/ColonyStatsPanel'
 import { EventPopupLayer } from './EventPopup'
+import { ProfilerHud } from './ProfilerHud'
 import { Toolbar, Tool, BuildKind } from './Toolbar'
 import { updateMusicContext, computeMusicKey, updateWeatherAudio, setMuted, isMuted, unlockAudio } from '@/audio/chiptune'
 import { EnrichmentType } from '@/types'
@@ -353,6 +354,7 @@ export function GameLayout() {
           <Center>
             <GameCanvas activeTool={activeTool} selectedEnrichment={selectedEnrichment} selectedBuild={selectedBuild} />
             <EventPopupLayer />
+            <ProfilerHud />
             <LogArea><MessageLogPanel /></LogArea>
           </Center>
           <Right><DossierPanel /></Right>
