@@ -7,14 +7,29 @@ const IDB_STORE   = 'game_state'
 
 // ─── IndexedDB ────────────────────────────────────────────────────────────────
 
+// A single connection is opened lazily and reused for the tab's lifetime.
+// Re-opening on every save leaked one connection per call (one every 30 s) —
+// and, critically, those stale handles blocked deleteDatabase() during a
+// world reset, so old colony data was never actually wiped. The handle is
+// dropped on versionchange (another tab deleting the DB) and on close so the
+// next call reopens cleanly.
+let _idbConn: IDBDatabase | null = null
+
 function openIDB(): Promise<IDBDatabase> {
+  if (_idbConn) return Promise.resolve(_idbConn)
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(IDB_NAME, IDB_VERSION)
     req.onupgradeneeded = () => {
       req.result.createObjectStore(IDB_STORE, { keyPath: 'worldId' })
     }
-    req.onsuccess = () => resolve(req.result)
-    req.onerror   = () => reject(req.error)
+    req.onsuccess = () => {
+      const db = req.result
+      db.onversionchange = () => { db.close(); _idbConn = null }
+      db.onclose = () => { _idbConn = null }
+      _idbConn = db
+      resolve(db)
+    }
+    req.onerror = () => reject(req.error)
   })
 }
 
@@ -75,6 +90,10 @@ export async function deleteFromIDB(worldId: string): Promise<void> {
 // Delete the entire IndexedDB database. Used during full reset when the
 // worldId may be unknown. Rejects if another tab holds an open connection.
 export function wipeAllIDB(): Promise<void> {
+  // Drop our own connection first so deleteDatabase is never blocked by this
+  // tab. Without this, leaked save-time connections kept the wipe pending and
+  // a world reset silently left stale data behind.
+  if (_idbConn) { _idbConn.close(); _idbConn = null }
   return new Promise((resolve, reject) => {
     const req = indexedDB.deleteDatabase(IDB_NAME)
     req.onsuccess = () => resolve()
@@ -107,19 +126,26 @@ async function attemptCloudUpsert(state: GameState): Promise<boolean> {
 }
 
 export async function saveToCloud(state: GameState): Promise<void> {
-  // IDB first; local copy is always preserved before any network attempt.
+  // IDB first; the full local copy (all dead creatures, full history) is
+  // always preserved before any network attempt.
   await saveToIDB(state)
 
   // One cloud save at a time; skip if a previous attempt is still in flight.
   if (cloudSaveInProgress) return
   cloudSaveInProgress = true
 
+  // Cloud only needs a living-world snapshot — trim dead creatures and excess
+  // messages so the JSONB payload (and Supabase storage + egress) stays small.
+  // Matches what the cloud auto-save timer already does; previously manual and
+  // session-end saves pushed the full untrimmed state.
+  const trimmed = trimStateForCloud(state)
+
   try {
     // Exponential backoff: immediate, then 800 ms, then 3 200 ms.
     const delays = [0, 800, 3200]
     for (let i = 0; i < delays.length; i++) {
       if (delays[i] > 0) await new Promise(r => setTimeout(r, delays[i]))
-      if (await attemptCloudUpsert(state)) return
+      if (await attemptCloudUpsert(trimmed)) return
     }
     console.warn('[laiet] Cloud save failed after 3 attempts (IDB backup preserved)')
   } catch (e) {
