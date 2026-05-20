@@ -147,12 +147,20 @@ export function App() {
   const [pendingProfile, setPendingProfile] = useState<CaretakerProfile | null>(null)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session?.user) {
-        setUser(data.session.user.id, data.session.user.email ?? '')
-      }
-      setAuthChecked(true)
-    })
+    supabase.auth.getSession()
+      .then(({ data }) => {
+        if (data.session?.user) {
+          setUser(data.session.user.id, data.session.user.email ?? '')
+        }
+      })
+      .catch(e => {
+        // Auth backend unreachable — fall through to the login screen
+        // rather than hanging on the loading screen forever.
+        console.warn('[laiet] getSession failed:', e)
+      })
+      .finally(() => {
+        setAuthChecked(true)
+      })
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {

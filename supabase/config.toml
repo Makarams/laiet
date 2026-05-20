@@ -1,0 +1,4 @@
+# Supabase project configuration.
+# `project_id` is a local label used by the CLI. The hosted GitHub integration
+# links to the actual project through the Supabase dashboard, not this file.
+project_id = "laiet"
