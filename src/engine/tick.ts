@@ -94,7 +94,7 @@ import {
   NATURAL_ENRICHMENT_SPAWN_CHANCE, NATURAL_ENRICHMENT_ATTEMPTS_PER_TICK,
   NATURAL_ENRICHMENT_MAX_USES, NATURAL_ENRICHMENT_REGEN_RADIUS,
   NATURAL_ENRICHMENT_CAP_BASE, NATURAL_ENRICHMENT_CAP_PER_N_ALIVE, NATURAL_ENRICHMENT_CAP_MAX,
-  NATURAL_ENRICHMENT_AMBIENT_CAP,
+  NATURAL_ENRICHMENT_AMBIENT_CAP, NATURAL_ENRICHMENT_MIN_SPACING,
   NATURAL_ENRICHMENT_BIOME_TYPES, NATURAL_ENRICHMENT_SEASON_MOD,
   // build-kit constants
   CAIRN_DECAY_DAYS, CAIRN_STRESS_RADIUS, CAIRN_STRESS_RELIEF,
@@ -118,10 +118,10 @@ import {
 import { DEFAULT_MODIFIERS } from '@/engine/profile'
 import { createOffspring, createAsexualOffspring, getColonyStage, recordExperience } from '@/creatures/factory'
 import { generateMessage, deathMessage, extinctionMessage, boneMemoryMessage, generateRaceRevivalMessage, neglectWarningMessage, legendaryMessage } from './messages'
-import { createRng, buildTileIndex } from '@/world/worldGen'
+import { createRng, buildTileIndex, isTilePassable } from '@/world/worldGen'
 import { deriveSpeechFocus, composeUtterance, learnFromNearby, unlockTierEmoji, assignRole } from '@/engine/speech'
 import { mark as profMark, isProfilerEnabled } from '@/engine/profiler'
-import { buildCreatureGrid, nearbyCreatures } from '@/engine/spatial'
+import { buildCreatureGrid, nearbyCreatures, nearbyArray } from '@/engine/spatial'
 
 // ─── Experiential symbol acquisition ─────────────────────────────────────────
 // One table — every condition a creature can live through and acquire a symbol
@@ -1906,11 +1906,13 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
         }
       }
 
-      // Harvesting — creature has arrived at a tree or rock tile; collect resource
+      // Harvesting — creature has arrived at a tree or cave tile; collect resource.
+      // Note: rock/mountain/cliff are impassable, so a creature can never stand
+      // on them — only tree/shelter (wood) and cave (stone) are harvestable.
       if (c.state === 'harvesting' && c.targetX === c.x && c.targetY === c.y) {
         const isTree = currentTile.type === 'tree' || currentTile.type === 'shelter'
-        const isRock = currentTile.type === 'rock' || currentTile.type === 'cave'
-        if (isTree || isRock) {
+        const isStone = currentTile.type === 'cave'
+        if (isTree || isStone) {
           c = { ...c, carrying: isTree ? 'wood' : 'stone', state: 'idle', targetX: null, targetY: null }
         } else {
           // Arrived but tile type changed (e.g. tree burned); abandon this task
@@ -1930,7 +1932,7 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
           outer: for (let dy = -FENCE_STRESS_RADIUS * 2; dy <= FENCE_STRESS_RADIUS * 2; dy++) {
             for (let dx = -FENCE_STRESS_RADIUS * 2; dx <= FENCE_STRESS_RADIUS * 2; dx++) {
               const tx = claim.x + dx, ty = claim.y + dy
-              if (tx < 0 || ty < 0 || tx >= 240 || ty >= 240) continue
+              if (tx < 0 || ty < 0 || tx >= WORLD_SIZE || ty >= WORLD_SIZE) continue
               const t = tiles[ty]?.[tx]
               if (!t || !validBuildTypes.has(t.type)) continue
               const dist = Math.abs(dx) + Math.abs(dy)
@@ -2893,9 +2895,76 @@ function hasNestNear(state: GameState, x: number, y: number, radius: number): bo
   return false
 }
 
+// Births land on a passable tile a short distance off the parent, biased into
+// the open space *away* from the local crowd centroid. Previously every
+// newborn dropped 1-4 tiles off the parent in a random direction — the comment
+// promised an outward nudge that the code never applied, so the colony piled
+// every generation onto the breeding core and never grew its spatial
+// footprint. Now the birth heading is consistently outward (so it compounds
+// across generations into a steadily widening disk) and the distance grows
+// gently with generation depth. The growth is capped so deep lineages still
+// settle within reach of the colony's food rather than stranding their young.
+// Falls back to the parent tile if no passable spot is found.
+function pickBirthTile(
+  tiles: GameState['tiles'],
+  px: number,
+  py: number,
+  generation: number,
+  crowdX: number,   // local crowd centroid; caller passes the parent's own
+  crowdY: number,   // position when there are no neighbours
+  rng: () => number,
+): { x: number; y: number } {
+  // Outward heading: from the local crowd centroid toward (and past) the
+  // parent. When the parent sits on the centroid, fall back to a random angle.
+  let ox = px - crowdX
+  let oy = py - crowdY
+  const mag = Math.hypot(ox, oy)
+  if (mag < 0.5) {
+    const a = rng() * Math.PI * 2
+    ox = Math.cos(a); oy = Math.sin(a)
+  } else {
+    ox /= mag; oy /= mag
+  }
+  // Distance scales slowly with generation depth (capped) — deep lineages push
+  // the frontier outward without ever spawning a newborn far from the colony.
+  const genReach = Math.min(generation, 24) * 0.25
+  for (let i = 0; i < 8; i++) {
+    const d = 2 + rng() * 3 + genReach
+    // Jitter the heading so siblings fan out instead of forming a hard spoke.
+    const spin = (rng() - 0.5) * 1.4
+    const dirX = ox * Math.cos(spin) - oy * Math.sin(spin)
+    const dirY = ox * Math.sin(spin) + oy * Math.cos(spin)
+    const tx = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(px + dirX * d)))
+    const ty = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(py + dirY * d)))
+    const t = tiles[ty]?.[tx]
+    if (t && isTilePassable(t)) return { x: tx, y: ty }
+  }
+  return { x: px, y: py }
+}
+
+// Local crowd centroid for a breeding parent — the average position of alive
+// creatures within `radius` tiles. Used to aim births into open ground. Reads
+// the spatial grid so the scan stays O(neighbours), not O(colony).
+function localCrowdCentroid(
+  grid: ReturnType<typeof buildCreatureGrid>,
+  x: number, y: number, radius: number,
+): { x: number; y: number } {
+  const near = nearbyArray(grid, x, y, radius)
+  let n = 0, sx = 0, sy = 0
+  for (let i = 0; i < near.length; i++) {
+    const o = near[i]
+    if (o.x === x && o.y === y) continue
+    if (Math.abs(o.x - x) <= radius && Math.abs(o.y - y) <= radius) { n++; sx += o.x; sy += o.y }
+  }
+  return n > 0 ? { x: sx / n, y: sy / n } : { x, y }
+}
+
 function tickReproduction(state: GameState, tickRng: () => number, popFactor: number): GameState {
   const creatures = { ...state.creatures }
   const alive = Object.values(creatures).filter(c => c.diedOnDay === null)
+  // One O(N) grid build; births read it to aim newborns away from the local
+  // crowd so the colony footprint expands instead of stacking on the core.
+  const reproGrid = buildCreatureGrid(alive)
   const newCreatures: Creature[] = []
   let totalCreaturesEver = state.totalCreaturesEver
   let totalGenerations = state.totalGenerations
@@ -2942,7 +3011,10 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
         const lineageHostility = Math.max(0, -(state.lineageRelations?.[lineageKey] ?? 0)) / 100
         const divergencePressure = Math.min(1, geoSep * 0.35 + avgStress * 0.40 + lineageHostility * 0.25)
 
-        const offspring = createOffspring(c, partner, c.x, c.y, state.time.day, tickRng, state.modifiers?.mutationChance, combinedLex, envCtx, divergencePressure, state.modifiers?.adaptationInheritMult ?? 1, state.modifiers?.lifespanMult ?? 1)
+        const offGen = Math.max(c.generation, partner.generation) + 1
+        const crowd = localCrowdCentroid(reproGrid, c.x, c.y, 20)
+        const birth = pickBirthTile(state.tiles, c.x, c.y, offGen, crowd.x, crowd.y, tickRng)
+        const offspring = createOffspring(c, partner, birth.x, birth.y, state.time.day, tickRng, state.modifiers?.mutationChance, combinedLex, envCtx, divergencePressure, state.modifiers?.adaptationInheritMult ?? 1, state.modifiers?.lifespanMult ?? 1)
         if (nestNearby) offspring.health = Math.min(100, offspring.health + NEST_OFFSPRING_HEALTH)
         newCreatures.push(offspring)
 
@@ -3022,7 +3094,9 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
       && tickRng() < ASEXUAL_BASE_CHANCE * popFactor) {
       const asexSpawnTile = state.tiles[c.y]?.[c.x]
       const asexEnvCtx: EnvContext = { biome: asexSpawnTile?.biome ?? 'temperate', weather: state.weather ?? 'clear', season: state.time.season }
-      const offspring = createAsexualOffspring(c, c.x, c.y, state.time.day, tickRng, asexEnvCtx, (state.modifiers?.mutationChance ?? 0.10) / 0.10, state.modifiers?.adaptationInheritMult ?? 1, state.modifiers?.lifespanMult ?? 1)
+      const asexCrowd = localCrowdCentroid(reproGrid, c.x, c.y, 20)
+      const asexBirth = pickBirthTile(state.tiles, c.x, c.y, c.generation + 1, asexCrowd.x, asexCrowd.y, tickRng)
+      const offspring = createAsexualOffspring(c, asexBirth.x, asexBirth.y, state.time.day, tickRng, asexEnvCtx, (state.modifiers?.mutationChance ?? 0.10) / 0.10, state.modifiers?.adaptationInheritMult ?? 1, state.modifiers?.lifespanMult ?? 1)
       newCreatures.push(offspring)
       creatures[c.id] = {
         ...creatures[c.id],
@@ -3228,7 +3302,11 @@ function spawnNaturalNearby(
     if (['rock', 'river', 'mountain', 'cliff', 'flooded'].includes(tile.type)) continue
     const eligible = NATURAL_ENRICHMENT_BIOME_TYPES[tile.biome] ?? []
     if (!eligible.includes(type)) continue
-    if (Object.values(existingItems).some(e => e.x === nx && e.y === ny)) continue
+    // Keep a minimum gap from every existing item so respawned zones don't
+    // stack on the depleted one's neighbourhood.
+    if (Object.values(existingItems).some(e =>
+        Math.abs(e.x - nx) < NATURAL_ENRICHMENT_MIN_SPACING
+        && Math.abs(e.y - ny) < NATURAL_ENRICHMENT_MIN_SPACING)) continue
     return {
       id: uuid(),
       type: type as EnrichmentType,
@@ -3279,15 +3357,22 @@ function tickNaturalEnrichment(state: GameState, rng: () => number, mods: SimMod
       anchorY = inset + Math.floor(rng() * (WORLD_SIZE - 2 * inset))
     }
     const angle = rng() * Math.PI * 2
-    const dist  = 3 + rng() * 15  // 3-18 tiles; always within ENRICHMENT_SEEK_RADIUS (20)
+    // 4-26 tiles off the anchor. A clustered colony used to stamp every zone
+    // within an 18-tile blob of one creature; the wider throw + the larger
+    // NATURAL_ENRICHMENT_MIN_SPACING spreads zones across the colony's spread.
+    const dist  = 4 + rng() * 22
     const x = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(anchorX + Math.cos(angle) * dist)))
     const y = Math.max(0, Math.min(WORLD_SIZE - 1, Math.round(anchorY + Math.sin(angle) * dist)))
     const tile = state.tiles[y]?.[x]
     if (!tile) continue
     if (['rock', 'river', 'mountain', 'cliff', 'flooded'].includes(tile.type)) continue
 
+    // Reject spots too close to an existing item so zones spread across the
+    // map instead of overlapping into one blob around a creature cluster.
     const allItems = { ...state.enrichmentItems, ...newItems }
-    if (Object.values(allItems).some(e => e.x === x && e.y === y)) continue
+    if (Object.values(allItems).some(e =>
+        Math.abs(e.x - x) < NATURAL_ENRICHMENT_MIN_SPACING
+        && Math.abs(e.y - y) < NATURAL_ENRICHMENT_MIN_SPACING)) continue
 
     const eligible = NATURAL_ENRICHMENT_BIOME_TYPES[tile.biome]
     if (!eligible || eligible.length === 0) continue

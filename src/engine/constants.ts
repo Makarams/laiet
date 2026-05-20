@@ -444,6 +444,11 @@ export const NATURAL_ENRICHMENT_CAP_MAX          = 50     // absolute ceiling
 // When the colony is tiny or extinct, the world still seeds enrichment using
 // biome-anchored tile sampling so zones don't latch off post–Gen 0.
 export const NATURAL_ENRICHMENT_AMBIENT_CAP      = 12     // floor world keeps even with 0 alive creatures
+// Minimum Chebyshev gap between any two natural items — keeps freshly-spawned
+// zones from stacking on top of each other when the colony is clustered.
+// Raised from 5: at 5 tiles two zones visually overlap (a zone glyph spans
+// several tiles), so a clustered colony produced one indistinct blob of items.
+export const NATURAL_ENRICHMENT_MIN_SPACING      = 9
 
 // Which enrichment types can appear naturally in each biome
 export const NATURAL_ENRICHMENT_BIOME_TYPES: Record<string, string[]> = {
@@ -558,10 +563,14 @@ export const EARLY_GEN_MAX            = 3    // cohesion applies through gen 3
 export const EARLY_GEN_COHESION_RADIUS = 50  // tile radius to search for nearest creature (scaled with 480 world)
 
 // ─── Population pressure dispersal ───────────────────────────────────────────
-// When local density exceeds CROWD_DISPERSE_THRESHOLD within CROWD_DISPERSE_RADIUS
-// tiles, gen 1+ non-social creatures wander away from the cluster centroid.
-// This is the primary driver of natural group splitting as the colony grows.
-export const CROWD_DISPERSE_THRESHOLD    = 10   // neighbors within radius to trigger dispersal
+// Density-gradient dispersal: once a gen-1+ non-clustering creature senses at
+// least CROWD_DISPERSE_SOFT_THRESHOLD neighbours within CROWD_DISPERSE_RADIUS
+// tiles, it drifts down the density gradient toward open ground. The urge
+// scales smoothly with how crowded the spot is — there is no hard cliff — so
+// the colony footprint grows continuously with population instead of piling
+// every new generation onto the founding tiles. This is the primary driver of
+// natural group splitting and map exploration as the colony grows.
+export const CROWD_DISPERSE_SOFT_THRESHOLD = 6  // neighbours within radius before the dispersal urge engages
 export const CROWD_DISPERSE_RADIUS       = 10   // tile radius for the density check
 export const CROWD_DISPERSE_DISTANCE_MIN = 20   // minimum dispersal distance in tiles
 export const CROWD_DISPERSE_DISTANCE_MAX = 45   // maximum dispersal distance in tiles

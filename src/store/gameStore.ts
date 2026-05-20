@@ -79,6 +79,17 @@ function antiSpamOk(ct: CaretakerState): boolean {
   return Date.now() - (ct.lastActionMs ?? 0) >= ACTION_BASE_COOLDOWN_MS
 }
 
+// Tile types a caretaker-placed structure may overwrite. Kept generous and
+// consistent so a click on the food_patch / bush ground that blankets an
+// established colony actually places the object instead of silently failing.
+// Impassable terrain (rock/mountain/cliff), water, trees, and existing built
+// tiles are still rejected.
+const STRUCTURE_BUILD_TILES = new Set(['grass', 'barren', 'mud', 'food_patch', 'bush'])
+// Fences may additionally cap a death_site (matches the creature build path).
+const FENCE_BUILD_TILES = new Set([...STRUCTURE_BUILD_TILES, 'death_site'])
+// Cairns are memorials — open ground or, meaningfully, a death_site.
+const CAIRN_BUILD_TILES = new Set(['grass', 'barren', 'mud', 'death_site'])
+
 // ─── Store interface ──────────────────────────────────────────────────────────
 
 interface LaietStore {
@@ -667,7 +678,11 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     if (!antiSpamOk(state.caretaker)) return
     const tile = state.tiles[y]?.[x]
     if (!tile) return
-    if (tile.type !== 'grass' && tile.type !== 'barren' && tile.type !== 'mud') return
+    // Buildable ground. Previously only grass/barren/mud — so a click on the
+    // food_patch / bush / death_site tiles that blanket an established colony
+    // silently did nothing and the fence "never appeared". Matches the tile
+    // set the creature build path accepts (plus mud).
+    if (!FENCE_BUILD_TILES.has(tile.type)) return
 
     const tiles = state.tiles.slice()
     tiles[y] = state.tiles[y].slice()
@@ -687,7 +702,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     if (!antiSpamOk(state.caretaker)) return
     const tile = state.tiles[y]?.[x]
     if (!tile) return
-    if (tile.type !== 'grass' && tile.type !== 'barren' && tile.type !== 'death_site') return
+    if (!CAIRN_BUILD_TILES.has(tile.type)) return
 
     // If placed on a death_site, the cairn inherits the lost creature's identity.
     const memorial = tile.type === 'death_site' && tile.deathSiteOf
@@ -719,7 +734,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     if (!antiSpamOk(state.caretaker)) return
     const tile = state.tiles[y]?.[x]
     if (!tile) return
-    if (tile.type !== 'grass' && tile.type !== 'barren') return
+    if (!STRUCTURE_BUILD_TILES.has(tile.type)) return
 
     const tiles = state.tiles.slice()
     tiles[y] = state.tiles[y].slice()
@@ -739,7 +754,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     if (!antiSpamOk(state.caretaker)) return
     const tile = state.tiles[y]?.[x]
     if (!tile) return
-    if (tile.type !== 'grass' && tile.type !== 'barren') return
+    if (!STRUCTURE_BUILD_TILES.has(tile.type)) return
 
     const tiles = state.tiles.slice()
     tiles[y] = state.tiles[y].slice()

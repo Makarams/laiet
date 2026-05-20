@@ -17,7 +17,7 @@ import {
   ENRICHMENT_USE_RADIUS, ENRICHMENT_SEEK_RADIUS, ENRICHMENT_EFFECTS, ENRICHMENT_COOLDOWN_TICKS,
   HEALROOT_SEEK_HEALTH, HEALROOT_HEAL_PER_USE, HEALROOT_CONSUME_AMOUNT,
   EARLY_GEN_MAX, EARLY_GEN_COHESION_RADIUS,
-  CROWD_DISPERSE_THRESHOLD, CROWD_DISPERSE_RADIUS,
+  CROWD_DISPERSE_SOFT_THRESHOLD, CROWD_DISPERSE_RADIUS,
   CROWD_DISPERSE_DISTANCE_MIN, CROWD_DISPERSE_DISTANCE_MAX,
   WEATHER_BREED_MULT,
   PUDDLE_MOVE_MODIFIER, PUDDLE_MOVE_THRESHOLD,
@@ -792,20 +792,46 @@ export function tickBehavior(
       })
     }
 
-    // ── Sociality candidate: seek a peer (any non-hostile creature) ──────
+    // ── Sociality candidate: rejoin a bond partner, or (if unbonded) seek a peer ──
+    // Previously every social creature drifted toward *any* nearby non-hostile
+    // creature each tick. That was a constant colony-wide attraction spring: it
+    // pulled the whole population into one tight blob and instantly re-absorbed
+    // anything that tried to disperse, so the colony never grew its footprint.
+    //
+    // Now a creature that already has strong bonds homes only toward its *own*
+    // bond partners (and only once they have drifted past breeding range) —
+    // keeping families and breeding pairs together without merging the entire
+    // colony. Creatures without strong bonds still seek any peer so new bonds
+    // can form, and in the cold everyone may still close ranks to huddle.
     if (d.sociality > 0.30) {
-      const peer = aliveCreatures.find(
-        o => o.id !== c.id
-          && o.genome.personality !== 'Aggressive'
-          && Math.abs(o.x - c.x) <= 18 && Math.abs(o.y - c.y) <= 18
-      )
+      const strongBonds = c.bonds.filter(b => b.strength >= REPRODUCE_BOND_MIN_STRENGTH)
+      const wantsWarmth = season === 'winter' || c.warmth < 45
+      let peer: Creature | undefined
+      if (strongBonds.length > 0 && !wantsWarmth) {
+        // Bonded: rejoin the nearest partner that has wandered out of range.
+        let bestDist = Infinity
+        for (const b of strongBonds) {
+          const o = _allCreatures[b.targetId]
+          if (!o || o.diedOnDay !== null || o.id === c.id) continue
+          const dd = Math.abs(o.x - c.x) + Math.abs(o.y - c.y)
+          if (dd > 6 && dd < bestDist) { bestDist = dd; peer = o }
+        }
+      } else {
+        // Unbonded (or cold and seeking a huddle): close on any nearby peer.
+        peer = aliveCreatures.find(
+          o => o.id !== c.id
+            && o.genome.personality !== 'Aggressive'
+            && Math.abs(o.x - c.x) <= 18 && Math.abs(o.y - c.y) <= 18
+        )
+      }
       if (peer) {
+        const target = peer
         candidates.push({
           weight: d.sociality * 110,
           apply: () => {
             const jitter = 3
-            const tx = Math.max(0, Math.min(WORLD_SIZE - 1, peer.x + Math.floor(Math.random() * (jitter * 2 + 1)) - jitter))
-            const ty = Math.max(0, Math.min(WORLD_SIZE - 1, peer.y + Math.floor(Math.random() * (jitter * 2 + 1)) - jitter))
+            const tx = Math.max(0, Math.min(WORLD_SIZE - 1, target.x + Math.floor(Math.random() * (jitter * 2 + 1)) - jitter))
+            const ty = Math.max(0, Math.min(WORLD_SIZE - 1, target.y + Math.floor(Math.random() * (jitter * 2 + 1)) - jitter))
             if (tiles[ty]?.[tx] && isTilePassable(tiles[ty][tx])) {
               changes.state = 'bonding'
               changes.targetX = tx
@@ -1009,8 +1035,11 @@ export function tickBehavior(
       && c.state !== 'building') {
 
     if (!c.carrying) {
-      // Phase 1: find a nearby resource to harvest (tree → wood, rock → stone)
-      const resourceTile = findNearest(['tree', 'shelter', 'rock', 'cave'], HARVEST_RADIUS)
+      // Phase 1: find a nearby resource to harvest (tree/shelter → wood, cave → stone).
+      // 'rock' is excluded: rock tiles are impassable, so a harvester sent to one
+      // could never stand on it and would stall in 'harvesting' forever — no fence
+      // ever got built from that attempt. Cave is the reachable stone source.
+      const resourceTile = findNearest(['tree', 'shelter', 'cave'], HARVEST_RADIUS)
       if (resourceTile && Math.random() < 0.10) {
         changes.state = 'harvesting'
         changes.targetX = resourceTile.x
@@ -1177,57 +1206,113 @@ export function tickBehavior(
     }
   }
 
-  // ── 6.7. Population pressure dispersal; dense clusters push gen≥1 non-social creatures outward ──
-  // Only activates after the founding generation so early bonding is not disrupted.
-  // Social, Nurturing, and Timid personalities prefer proximity and are excluded.
-  // Recluse already has stronger dispersal logic above.
+  // ── 6.7. Population pressure dispersal — density-gradient, grid-backed ──
+  // The single force that grows the colony's spatial footprint as it grows in
+  // number. A gen-1+ non-clustering creature reads its local crowd through the
+  // spatial grid; the dispersal urge scales smoothly with crowd size so dense
+  // spots shed creatures continuously rather than only past a hard threshold.
+  // Gated on calm needs and mild weather so dispersal never overrides survival
+  // or strands a creature in a killing season. Social/Nurturing/Timid cluster
+  // by nature and are excluded; Recluse already disperses through its drive
+  // candidate above. Only fires when idle (no target) so a creature commits to
+  // one heading instead of re-rolling a fresh long hop mid-journey.
   if (!targetSet
+      && c.targetX === null
       && c.generation >= 1
       && c.genome.personality !== 'Social'
       && c.genome.personality !== 'Nurturing'
       && c.genome.personality !== 'Timid'
       && c.genome.personality !== 'Recluse'
-      && Math.random() < 0.03) {
-    const crowdNearby = aliveCreatures.filter(
-      o => o.id !== c.id
-        && Math.abs(o.x - c.x) <= CROWD_DISPERSE_RADIUS
-        && Math.abs(o.y - c.y) <= CROWD_DISPERSE_RADIUS
-    )
-    if (crowdNearby.length > CROWD_DISPERSE_THRESHOLD) {
-      const cx = crowdNearby.reduce((s, o) => s + o.x, 0) / crowdNearby.length
-      const cy = crowdNearby.reduce((s, o) => s + o.y, 0) / crowdNearby.length
-      const dx = Math.sign(c.x - cx) || (Math.random() < 0.5 ? -1 : 1)
-      const dy = Math.sign(c.y - cy) || (Math.random() < 0.5 ? -1 : 1)
-      const dist = CROWD_DISPERSE_DISTANCE_MIN
-        + Math.floor(Math.random() * (CROWD_DISPERSE_DISTANCE_MAX - CROWD_DISPERSE_DISTANCE_MIN + 1))
-      const tx = Math.max(0, Math.min(WORLD_SIZE - 1, c.x + dx * dist))
-      const ty = Math.max(0, Math.min(WORLD_SIZE - 1, c.y + dy * dist))
-      if (tiles[ty]?.[tx] && isTilePassable(tiles[ty][tx])) {
-        changes.state = 'wandering'
-        changes.targetX = tx
-        changes.targetY = ty
-        targetSet = true
+      && c.health > 55
+      && c.hunger < 50
+      && c.thirst < 50
+      && season !== 'winter'
+      && weather !== 'storm'
+      && weather !== 'heatwave'
+      && weather !== 'snow') {
+    const senseR = CROWD_DISPERSE_RADIUS
+    const crowdSrc = creatureGrid
+      ? nearbyArray(creatureGrid, c.x, c.y, senseR)
+      : aliveCreatures
+    let crowdN = 0, sumX = 0, sumY = 0
+    for (let i = 0; i < crowdSrc.length; i++) {
+      const o = crowdSrc[i]
+      if (o.id === c.id) continue
+      if (Math.abs(o.x - c.x) <= senseR && Math.abs(o.y - c.y) <= senseR) {
+        crowdN++; sumX += o.x; sumY += o.y
+      }
+    }
+    if (crowdN >= CROWD_DISPERSE_SOFT_THRESHOLD) {
+      // Urge ramps with crowd size: ~3.5%/tick at the soft threshold, capped
+      // at 22% in a packed spot.
+      const urge = Math.min(0.22, (crowdN - CROWD_DISPERSE_SOFT_THRESHOLD + 1) * 0.035)
+      if (Math.random() < urge) {
+        const ccx = sumX / crowdN
+        const ccy = sumY / crowdN
+        let dx = c.x - ccx
+        let dy = c.y - ccy
+        const mag = Math.hypot(dx, dy)
+        if (mag < 0.5) {
+          // Creature sits on the crowd centroid — pick a random heading out.
+          const a = Math.random() * Math.PI * 2
+          dx = Math.cos(a); dy = Math.sin(a)
+        } else {
+          dx /= mag; dy /= mag
+        }
+        const dist = CROWD_DISPERSE_DISTANCE_MIN
+          + Math.floor(Math.random() * (CROWD_DISPERSE_DISTANCE_MAX - CROWD_DISPERSE_DISTANCE_MIN + 1))
+        // Step inward from the full distance until a passable landing tile is
+        // found, so blocked terrain shortens the hop instead of cancelling it.
+        for (let step = 0; step < 5; step++) {
+          const f = 1 - step * 0.18
+          const tx = Math.max(2, Math.min(WORLD_SIZE - 3, Math.round(c.x + dx * dist * f)))
+          const ty = Math.max(2, Math.min(WORLD_SIZE - 3, Math.round(c.y + dy * dist * f)))
+          if (tiles[ty]?.[tx] && isTilePassable(tiles[ty][tx])) {
+            changes.state = 'migrating'
+            changes.targetX = tx
+            changes.targetY = ty
+            targetSet = true
+            break
+          }
+        }
       }
     }
   }
 
   // ── 7. Default idle wander — high chance so creatures are almost always moving ──
+  // Ranges raised across the board for the 480-tile world: the prior values
+  // (default 16) were tuned for a 240 grid and left creatures shuffling within
+  // a tiny patch of their birthplace. Homebody personalities (Lazy/Timid/
+  // Furtive/Hoarder) stay small; explorers (Curious/Wanderer/Nomadic) range far.
   if (!targetSet && c.targetX === null && Math.random() < 0.68) {
-    const baseRange = c.genome.personality === 'Lazy' ? 5
-      : c.genome.personality === 'Timid' ? 7
-      : c.genome.personality === 'Curious' ? 30
-      : c.genome.personality === 'Wanderer' ? 35
-      : c.genome.personality === 'Recluse' ? 16
-      : c.genome.personality === 'Furtive' ? 5
-      : c.genome.personality === 'Stoic' ? 10
-      : c.genome.personality === 'Social' ? 10
-      : c.genome.personality === 'Hoarder' ? 6
-      : c.genome.personality === 'Empath' ? 12
-      : c.genome.personality === 'Territorial' ? 8
-      : 16
+    const baseRange = c.genome.personality === 'Lazy' ? 6
+      : c.genome.personality === 'Timid' ? 9
+      : c.genome.personality === 'Curious' ? 34
+      : c.genome.personality === 'Wanderer' ? 40
+      : c.genome.personality === 'Nomadic' ? 38
+      : c.genome.personality === 'Scavenger' ? 28
+      : c.genome.personality === 'Recluse' ? 20
+      : c.genome.personality === 'Furtive' ? 7
+      : c.genome.personality === 'Stoic' ? 16
+      : c.genome.personality === 'Social' ? 14
+      : c.genome.personality === 'Nurturing' ? 14
+      : c.genome.personality === 'Hoarder' ? 8
+      : c.genome.personality === 'Empath' ? 18
+      : c.genome.personality === 'Vigilant' ? 18
+      : c.genome.personality === 'Territorial' ? 12
+      : 24
     const raceMult = (c.genome.race && RACE_PROFILES[c.genome.race]?.wanderRangeMult) ?? 1.0
+    // Harsh-season damping: in winter and violent weather, shorten wander hops
+    // so the raised ranges don't send creatures on long cold treks away from
+    // shelter and food. Keeps the exploration boost from costing lives — the
+    // colony still ranges far in the seasons that can sustain it.
+    const seasonMult = season === 'winter' ? 0.55
+      : (weather === 'storm' || weather === 'snow' || weather === 'heatwave') ? 0.70
+      : 1.0
     // Early-gen creatures stay closer to the group while bonding is still forming
-    const range = Math.round((c.generation <= EARLY_GEN_MAX ? Math.min(baseRange, 12) : baseRange) * raceMult)
+    const range = Math.max(3, Math.round(
+      (c.generation <= EARLY_GEN_MAX ? Math.min(baseRange, 12) : baseRange) * raceMult * seasonMult
+    ))
 
     // Spacing/repulsion: count immediate neighbours within 3 tiles. If crowded,
     // pick the wander target that maximises distance to the nearest neighbour.
