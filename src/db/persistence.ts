@@ -109,13 +109,67 @@ export function wipeAllIDB(): Promise<void> {
 
 let cloudSaveInProgress = false
 
-async function attemptCloudUpsert(state: GameState): Promise<boolean> {
+// `colonies.state` stores a gzip envelope, NOT the raw GameState. The state —
+// dominated by its WORLD_SIZE² procedural tile grid — serialises to tens of MB.
+// Upserting that into a JSONB column every few minutes buried Postgres in WAL
+// and dead-tuple churn until the project's disk filled and the instance
+// crash-looped (every dependent service then reporting "connection refused").
+// The grid is highly repetitive, so gzip shrinks the payload ~20-50× to a few
+// hundred KB — an ordinary row update again. Never write the uncompressed
+// state to the cloud.
+const CLOUD_FMT = 2
+
+interface CloudEnvelope {
+  fmt: number
+  gz:  string   // base64-encoded gzip of JSON.stringify(state)
+}
+
+function isCloudEnvelope(v: unknown): v is CloudEnvelope {
+  return !!v && typeof v === 'object' && typeof (v as CloudEnvelope).gz === 'string'
+}
+
+// btoa() chokes on the multi-MB intermediate string produced by spreading the
+// whole byte array into String.fromCharCode, so walk the buffer in chunks.
+function base64FromBytes(bytes: Uint8Array): string {
+  let bin = ''
+  const CHUNK = 0x8000
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+  }
+  return btoa(bin)
+}
+
+function bytesFromBase64(b64: string): Uint8Array<ArrayBuffer> {
+  const bin = atob(b64)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  return bytes
+}
+
+async function gzip(text: string): Promise<string> {
+  const stream = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))
+  const buf = await new Response(stream).arrayBuffer()
+  return base64FromBytes(new Uint8Array(buf))
+}
+
+async function gunzip(b64: string): Promise<string> {
+  const stream = new Blob([bytesFromBase64(b64)]).stream()
+    .pipeThrough(new DecompressionStream('gzip'))
+  return new Response(stream).text()
+}
+
+async function buildCloudEnvelope(state: GameState): Promise<CloudEnvelope> {
+  const json = JSON.stringify({ ...state, lastSaved: Date.now() })
+  return { fmt: CLOUD_FMT, gz: await gzip(json) }
+}
+
+async function attemptCloudUpsert(state: GameState, payload: CloudEnvelope): Promise<boolean> {
   const { error } = await supabase
     .from('colonies')
     .upsert({
       world_id:   state.worldId,
       user_id:    state.userId,
-      state:      { ...state, lastSaved: Date.now() },
+      state:      payload,
       updated_at: new Date().toISOString(),
     })
   if (error) {
@@ -123,6 +177,20 @@ async function attemptCloudUpsert(state: GameState): Promise<boolean> {
     return false
   }
   return true
+}
+
+// Compress a (trimmed) state once, then upsert with exponential backoff. The
+// envelope is built before the retry loop so a transient network failure never
+// re-compresses the large state. Caller owns the cloudSaveInProgress guard.
+async function pushTrimmedToCloud(trimmed: GameState): Promise<void> {
+  const payload = await buildCloudEnvelope(trimmed)
+  // Exponential backoff: immediate, then 800 ms, then 3 200 ms.
+  const delays = [0, 800, 3200]
+  for (let i = 0; i < delays.length; i++) {
+    if (delays[i] > 0) await new Promise(r => setTimeout(r, delays[i]))
+    if (await attemptCloudUpsert(trimmed, payload)) return
+  }
+  console.warn('[laiet] Cloud save failed after 3 attempts (IDB backup preserved)')
 }
 
 export async function saveToCloud(state: GameState): Promise<void> {
@@ -134,20 +202,10 @@ export async function saveToCloud(state: GameState): Promise<void> {
   if (cloudSaveInProgress) return
   cloudSaveInProgress = true
 
-  // Cloud only needs a living-world snapshot — trim dead creatures and excess
-  // messages so the JSONB payload (and Supabase storage + egress) stays small.
-  // Matches what the cloud auto-save timer already does; previously manual and
-  // session-end saves pushed the full untrimmed state.
-  const trimmed = trimStateForCloud(state)
-
   try {
-    // Exponential backoff: immediate, then 800 ms, then 3 200 ms.
-    const delays = [0, 800, 3200]
-    for (let i = 0; i < delays.length; i++) {
-      if (delays[i] > 0) await new Promise(r => setTimeout(r, delays[i]))
-      if (await attemptCloudUpsert(trimmed)) return
-    }
-    console.warn('[laiet] Cloud save failed after 3 attempts (IDB backup preserved)')
+    // Cloud only needs a living-world snapshot — trim dead creatures and
+    // excess messages, then gzip, so the JSONB payload stays small.
+    await pushTrimmedToCloud(trimStateForCloud(state))
   } catch (e) {
     console.warn('[laiet] Cloud save exception (IDB backup preserved):', e)
   } finally {
@@ -169,7 +227,14 @@ export async function loadFromCloud(userId: string): Promise<GameState | null> {
       console.warn('[laiet] Cloud load failed:', error.message)
       return null
     }
-    return data?.state as GameState ?? null
+    const raw = data?.state
+    if (!raw) return null
+    // Current format: gzip envelope. Legacy rows (written before compression)
+    // stored the raw GameState object directly — still load those verbatim.
+    if (isCloudEnvelope(raw)) {
+      return JSON.parse(await gunzip(raw.gz)) as GameState
+    }
+    return raw as GameState
   } catch (e) {
     console.warn('[laiet] Cloud load exception:', e)
     return null
@@ -250,7 +315,7 @@ function trimStateForCloud(state: GameState): GameState {
 // ─── Auto-save manager ────────────────────────────────────────────────────────
 // Two separate timers:
 //   idbTimer  — every 30 s, full state to IndexedDB only (zero network cost)
-//   cloudTimer — every 5 min, trimmed state to Supabase (10× fewer cloud writes)
+//   cloudTimer — every 5 min, trimmed + gzipped state to Supabase
 
 let idbTimer:   ReturnType<typeof setInterval> | null = null
 let cloudTimer: ReturnType<typeof setInterval> | null = null
@@ -271,22 +336,14 @@ export function startAutoSave(
   }, 30_000)
 
   cloudTimer = setInterval(async () => {
+    if (cloudSaveInProgress) return
+    cloudSaveInProgress = true
     try {
-      const trimmed = trimStateForCloud(getState())
-      if (cloudSaveInProgress) return
-      cloudSaveInProgress = true
-      try {
-        const delays = [0, 800, 3200]
-        for (let i = 0; i < delays.length; i++) {
-          if (delays[i] > 0) await new Promise(r => setTimeout(r, delays[i]))
-          if (await attemptCloudUpsert(trimmed)) return
-        }
-        console.warn('[laiet] Cloud auto-save failed after 3 attempts (IDB preserved)')
-      } finally {
-        cloudSaveInProgress = false
-      }
+      await pushTrimmedToCloud(trimStateForCloud(getState()))
     } catch (e) {
       console.warn('[laiet] Cloud auto-save error:', e)
+    } finally {
+      cloudSaveInProgress = false
     }
   }, 300_000)
 }

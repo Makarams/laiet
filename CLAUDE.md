@@ -107,6 +107,7 @@ tickTime → tickWeather → tickTiles → tickCreatures → tickReproduction
 - Sentience growth is **deliberately slow** — many generations of accumulated experience before stage 5
 - Colony **survives without the player** — passive ticks on return (cap 240); absence imprint only fires when real hardship occurred during the gap
 - **Fossil records persist** across extinctions
+- **Cloud saves are always gzip-compressed** — `colonies.state` holds a `{ fmt, gz }` envelope, never the raw GameState. The uncompressed state is tens of MB (WORLD_SIZE² tile grid); writing it raw to a JSONB column crash-loops the database. Never bypass `buildCloudEnvelope` / regress to raw-state upserts.
 - **Asexual reproduction is Spore-only** — other body types must bond
 - **Weather and day phase are inseparable** — always render via `drawAtmosphere()` together
 - **Roles are emergent labels, not behaviour drivers** — drive-pattern catalogue replaces the per-role behavior switch
@@ -178,11 +179,11 @@ The **Presence** axis was deleted in v3.2 — caretaker actions are unlimited, b
 
 ## Save system
 
-1. Auto-save every 30s to Supabase (`colonies` table, JSONB)
-2. IndexedDB local fallback on every cloud save
-3. `Ctrl+S` manual save
-4. On tab close: `markSessionEnd()` writes `lastSessionEnd`
-5. On load: `computePassiveTicks()` → batch-apply passive ticks (cap 240) before live loop; chronicle window during absence computes `absenceHardship` for imprint scaling
+1. IndexedDB auto-save every 30s (full state, local, zero network)
+2. Supabase cloud auto-save every 5 min — trimmed + **gzip-compressed**; `colonies.state` stores a `{ fmt, gz }` envelope, never the raw GameState
+3. `Ctrl+S` manual save · tab-hide saves to IndexedDB only
+4. On tab close: `markSessionEnd()` writes `lastSessionEnd` and pushes a final cloud save
+5. On load: `loadFromCloud` decompresses the envelope (legacy uncompressed rows still load); `computePassiveTicks()` → batch-apply passive ticks (cap 240) before live loop; chronicle window during absence computes `absenceHardship` for imprint scaling
 
 ---
 
@@ -194,6 +195,8 @@ fossil_records(id uuid pk, user_id uuid, fossil jsonb, created_at timestamptz)
 ```
 
 Both tables have RLS. `reset_user_data()` (SECURITY DEFINER) deletes user's data; `admin_reset_all_app_data()` (service role only).
+
+⚠️ **`colonies.state` must always hold a gzip envelope** (`{ fmt, gz }`), never the raw GameState. The state is dominated by the WORLD_SIZE² tile grid and serialises to tens of MB uncompressed — writing that into a JSONB column on every save floods WAL, out-runs autovacuum on the TOAST table, and fills the project disk until Postgres crash-loops (the v3.5-era incident). `src/db/persistence.ts` compresses on write and decompresses on read.
 
 ---
 

@@ -5,8 +5,12 @@
 
 -- ─── Tables ─────────────────────────────────────────────────────────────────
 
--- One row per world per user. Upserted on every save; the full GameState
--- JSONB blob stays under ~200 KB at max population.
+-- One row per world per user. Upserted on every save. `state` holds a gzip
+-- envelope ({ fmt, gz }) of the GameState, NOT the raw object — see
+-- src/db/persistence.ts. The uncompressed state (tens of MB, dominated by the
+-- procedural tile grid) must never be written here: doing so floods WAL, bloats
+-- this table's TOAST faster than autovacuum can reclaim it, and fills the
+-- project disk until Postgres crash-loops. Keep the payload compressed.
 create table if not exists colonies (
   world_id    uuid        primary key,
   user_id     uuid        not null references auth.users(id) on delete cascade,

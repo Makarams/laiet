@@ -10,7 +10,7 @@ import { ProfilerHud } from './ProfilerHud'
 import { Toolbar, Tool, BuildKind } from './Toolbar'
 import { updateMusicContext, computeMusicKey, updateWeatherAudio, setMuted, isMuted, unlockAudio } from '@/audio/chiptune'
 import { EnrichmentType } from '@/types'
-import { saveToCloud } from '@/db/persistence'
+import { saveToIDB } from '@/db/persistence'
 import { downloadExtinctionReport } from '@/engine/extinctionReport'
 import { THEME } from '@/ui/theme'
 
@@ -287,7 +287,11 @@ export function GameLayout() {
       if (document.hidden) {
         const state = useLaietStore.getState().gameState
         if (state && !state.endgame) {
-          saveToCloud(state).catch(()=>{})
+          // Persist locally on tab-hide — cheap and reliable. Cloud durability
+          // is covered by the 5-min auto-save timer and markSessionEnd on
+          // pagehide/beforeunload; a full cloud upload on every alt-tab was
+          // wasteful and a major contributor to database write load.
+          saveToIDB(state).catch(()=>{})
         }
       }
     }
