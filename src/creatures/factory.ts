@@ -388,8 +388,9 @@ export function createAsexualOffspring(
 // not forced homozygous. The hidden allele pool is real from tick zero, which
 // makes mutation surface latent traits sooner.
 //
-// Starters spawn at scattered, biome-aware positions — not preset symmetric
-// offsets from world centre. They must actually find each other to bond.
+// Starters spawn in a tight cluster around the world centroid and share one
+// founding lineageId with pre-seeded bonds — they are the colony's first
+// generation, not rival strangers. See createStarterCreatures below.
 
 const ALL_PERSONALITIES: PersonalityTrait[] = [
   'Curious', 'Timid', 'Aggressive', 'Lazy', 'Greedy', 'Nurturing', 'Wanderer',
@@ -452,6 +453,16 @@ export function createStarterCreatures(
 
   const genomes = pickStarterGenomes(rng, count)
 
+  // The founding generation is one colony, not four rival lineages. Every
+  // founder shares a single founding lineageId so the engine does not treat
+  // them as hostile strangers from tick zero — that mislabel was driving
+  // rival-proximity stress, dominance-fuelled rival pursuit, and lineage-clash
+  // messages among creatures that are explicitly pre-bonded below. Offspring
+  // still diverge into distinct lineages over generations via deriveLineageId's
+  // divergence-pressure fork; fracture stays the slow, emergent process it is
+  // meant to be. Founders keep their distinct familyNames (tribe naming).
+  const foundingLineageId = uuid()
+
   const creatures = Array.from({ length: count }, (_, i) => {
     const pair = namedPairs[i] ?? {
       name:       generateName(rng),
@@ -461,6 +472,7 @@ export function createStarterCreatures(
       ...pair,
       ...positions[i],
       genome:    genomes[i],
+      lineageId: foundingLineageId,
       bornOnDay: currentDay,
       lifespanMult,
     }, rng)

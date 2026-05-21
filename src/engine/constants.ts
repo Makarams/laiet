@@ -720,6 +720,12 @@ export const ABSENCE_IMPRINT_STRESS_PER_TICK = 0.22  // extra stress per tick du
 export const RIVAL_PROXIMITY_RADIUS = 5          // tile radius to detect rival-lineage creature
 export const RIVAL_STRESS_PER_TICK = 0.14        // stress per tick when rival lineage is nearby
 
+// A creature will not pick a spontaneous fight with anyone it shares a bond
+// with at or above this strength. Protects the pre-bonded founding generation
+// (bonded at STARTER_BOND_STRENGTH) and removes the incoherence of a creature
+// attacking an ally that the group-defense path would then rally against.
+export const SPONTANEOUS_COMBAT_BOND_GUARD = 12
+
 // ─── Tribal fracture ─────────────────────────────────────────────────────────
 export const TRIBE_BORDER_STRESS_PER_TICK = 0.28 // stress/tick when near an enemy-lineage cluster
 export const TRIBE_WAR_FIGHT_CHANCE = 0.008      // per-tick chance of inter-lineage attack when adjacent

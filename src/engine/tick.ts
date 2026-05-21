@@ -18,7 +18,7 @@ import {
   RIVER_FOOD_ADJACENT_BONUS,
   ABSENCE_IMPRINT_STRESS_PER_TICK,
   RIVAL_PROXIMITY_RADIUS, RIVAL_STRESS_PER_TICK,
-  TRIBE_WAR_FIGHT_CHANCE, TRIBE_WAR_SUSTAIN_DAYS,
+  TRIBE_WAR_FIGHT_CHANCE, TRIBE_WAR_SUSTAIN_DAYS, SPONTANEOUS_COMBAT_BOND_GUARD,
   FIRE_DURATION_TICKS, FIRE_SPREAD_CHANCE, FIRE_TICK_DAMAGE,
   FENCE_INITIAL_DURABILITY, FENCE_STRESS_RADIUS, FENCE_DECAY_BASE, FENCE_DECAY_STORM,
   ASEXUAL_BASE_CHANCE, REPRODUCE_BOND_MIN_STRENGTH,
@@ -2640,6 +2640,10 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
           o.id !== c.id
           && o.genome.personality !== 'Timid'
           && (o.drives?.vigilance ?? 0.3) < 0.7
+          // Never pick a fight with a bonded ally — the group-defense path
+          // would rally the rest of the colony against the aggressor. This
+          // also keeps the pre-bonded founding generation from self-culling.
+          && !c.bonds.some(b => b.targetId === o.id && b.strength >= SPONTANEOUS_COMBAT_BOND_GUARD)
         )
         if (target) {
           const result = resolveFight(c, { ...target })
