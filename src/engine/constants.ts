@@ -5,6 +5,7 @@ export const DEBUG = false
 export const REAL_MS_PER_GAME_DAY = 60_000        // 1 real minute = 1 game day
 export const TICK_INTERVAL_MS = 1_000             // simulation ticks every 1s
 export const DAY_FRACTION_PER_TICK = TICK_INTERVAL_MS / REAL_MS_PER_GAME_DAY
+export const TICKS_PER_DAY = REAL_MS_PER_GAME_DAY / TICK_INTERVAL_MS  // 60 ticks = 1 game day
 
 export const DAYS_PER_SEASON = 30                 // 30 game days per season
 export const SEASONS_PER_YEAR = 4
@@ -35,6 +36,13 @@ export const MAX_AGE_BY_BODY = {
   Wisp:  600,
 } as const
 
+// Per-creature maxAge variance. Each creature's actual maxAge is its body base
+// × lifespanMult, then scattered by ±this fraction. Wide on purpose: without it
+// a cohort born together also DIES together, the colony pulses boom-bust, and
+// one bust wave ends it. Spreading deaths overlaps generations into a
+// continuous age structure. (Was a flat ±5 ticks — far too tight to matter.)
+export const MAX_AGE_VARIANCE_FRACTION = 0.18
+
 export const MOVE_SPEED_BY_BODY = {
   Spore: 1.2,
   Shell: 0.5,
@@ -49,14 +57,22 @@ export const FIGHT_POWER_BY_BODY = {
   Wisp:  0.3,
 } as const
 
-// Reproduction: chance per tick when conditions are met.
-// Spore raised to compensate for their shorter lifespan (r-strategist role).
-// Wisp raised slightly; high-bonding creatures reproduce readily when bonded.
+// Reproduction: chance per tick that a bond-ready creature conceives.
+//
+// These set the CONCEPTION LAG — how long after becoming fertile a pair waits
+// for a successful roll. The old values (0.004-0.010) gave a lag of 1.3-3.2
+// game days; stacked on the maturity + bond-building runway, a short-lived
+// Spore (7.5d) or Wisp (10d) pair only managed ~2 offspring before aging out
+// — exactly replacement, no growth margin. A 4-founder colony then drifted to
+// extinction on the first unlucky stretch (see the all-old_age extinction
+// report). Roughly 2-2.5x'd here so a non-Shell pair clears ~3 offspring in
+// good seasons: r-strategists (Spore) conceive fast, K-strategists (Shell)
+// slow, every body type grows above replacement.
 export const REPRODUCE_RATE_BY_BODY = {
-  Spore: 0.010,  // was 0.008; rapid colonizer; short life needs faster turnover
-  Shell: 0.004,  // was 0.003; K-strategist; slow but stable
-  Spike: 0.004,  // unchanged
-  Wisp:  0.006,  // was 0.004; high social bonding drives reproduction
+  Spore: 0.024,  // rapid colonizer — conceives within ~half a day of readiness
+  Shell: 0.007,  // K-strategist; slow but its long life still clears 3-4 births
+  Spike: 0.010,  // mid-tempo
+  Wisp:  0.015,  // high social bonding drives reproduction
 } as const
 
 // Pre-seeded bond strength given to all starter creatures toward each other.
@@ -70,6 +86,13 @@ export const STARTER_BOND_STRENGTH = 25
 // Replaces the prior "central third" scatter; founders begin within sight of
 // each other so bonds form before the first generation ages out.
 export const STARTER_SPAWN_RADIUS = 6
+
+// Founders all spawn at once; if they also all start at age 0 they age out in
+// one synchronised wave and their offspring inherit that cluster, pulsing the
+// colony boom-bust until a bust wave ends it. Each founder instead starts at a
+// random age up to this fraction of its own maxAge, so the founding generation
+// dies spread out and seeds an overlapping age structure from tick zero.
+export const STARTER_AGE_STAGGER_FRACTION = 0.35
 
 // ─── Needs decay per tick ─────────────────────────────────────────────────────
 // Lower rates → more survival time, creatures don't die in minutes
@@ -154,18 +177,24 @@ export const ASEXUAL_MUTATION_CHANCE   = 0.20     // higher than sexual (single-
 // Minimum bond strength for sexual reproduction partnership
 export const REPRODUCE_BOND_MIN_STRENGTH = 35    // achievable in ~20 adjacency ticks from starter bond
 
-// Reproduction cooldown — game days a creature must wait after producing
+// Reproduction cooldown — how long a creature must wait after producing
 // offspring before it can breed again. The first birth is never gated.
-// Per-creature jitter (derived deterministically from the creature id, range
-// 0..JITTER) means colony-mates come off cooldown at staggered times — so the
-// colony develops a real age structure instead of one synchronised birth wave
-// that all matures, breeds, and ages out together. The synchronised cohort is
-// what froze awareness at stage 1 and made every run end in the same die-off:
-// no creature lived long enough, and no generation overlapped enough, for
-// sentience, tribes, or language to accumulate. Staggered births are the
-// foundation of emergent multi-generational structure.
-export const REPRODUCE_COOLDOWN_DAYS   = 7
-export const REPRODUCE_COOLDOWN_JITTER = 8
+//
+// The cooldown is a FRACTION OF THE CREATURE'S OWN LIFESPAN, not a flat day
+// count. A flat 7-15 day cooldown outlived a Spore (7.5d), Wisp (10d) and
+// Spike (11.7d) entirely — those bodies bred at most once, and since one birth
+// event yields one offspring while retiring BOTH parents, any colony not
+// dominated by long-lived Shells shrank ~2x per generation and went extinct of
+// pure old age. As a lifespan fraction every body type instead gets a
+// comparable NUMBER of breeding windows (~3-5): r-strategists (Spore) recover
+// fast, K-strategists (Shell) recover slow, and both out-replace themselves.
+//
+// Per-creature jitter (derived deterministically from the creature id) means
+// colony-mates come off cooldown at staggered times — so the colony develops a
+// real age structure instead of one synchronised birth wave that all matures,
+// breeds, and ages out together.
+export const REPRODUCE_COOLDOWN_LIFE_FRACTION   = 0.13  // base cooldown = 13% of lifespan
+export const REPRODUCE_COOLDOWN_JITTER_FRACTION = 0.10  // + up to 10% more of lifespan, hashed per creature
 
 // ─── Colony stage thresholds ─────────────────────────────────────────────────
 export const COLONY_STAGE_THRESHOLDS = {
@@ -190,30 +219,40 @@ export const COHORT_PHASE_THRESHOLDS: Record<number, number> = {
 }
 
 // ─── Awareness — emergent stage conditions ────────────────────────────────────
-// Stage 1→2: behavioral specialization via role diversity.
-// At least this many distinct community roles must be simultaneously held by
-// alive creatures, sustained for the window duration before the stage advances.
-export const AWARENESS_STAGE_2_ROLES_REQUIRED = 4
-export const AWARENESS_STAGE_2_WINDOW_DAYS    = 7   // in-game days conditions must hold
+// Each value here is read directly by evaluateStageConditions() in tick.ts —
+// nothing in this block is decorative. Stage conditions are evaluated from live
+// creature state every tick; a change must hold (or fail) for the hysteresis
+// window below before the colony's stage label actually moves.
+//
+// Stage 1→2: behavioural specialisation — N distinct community roles held by
+// living creatures, with the colony past a minimum size.
+export const AWARENESS_STAGE_2_ROLES_REQUIRED = 3
+export const AWARENESS_STAGE_2_MIN_POP        = 8
 
-// Stage 2→3: cultural depth via colony vocabulary.
-// The union of all alive creatures' known emoji must reach this size,
-// sustained for the window duration. Represents a mature shared language.
-export const AWARENESS_STAGE_3_LEXICON_MIN    = 30
-export const AWARENESS_STAGE_3_WINDOW_DAYS    = 7
+// Stage 2→3: cultural depth — colony-wide emoji vocabulary union, plus a median
+// sentience floor so a lone awakened outlier can't carry the whole colony.
+export const AWARENESS_STAGE_3_LEXICON_MIN          = 25
+export const AWARENESS_STAGE_3_MEDIAN_SENTIENCE_MIN = 25
 
-// Stage 3→4: ancestral memory — cohort phase 4 (gen ≥ 30) and at least one
-// creature whose sentience has reached deep awakening, sustained for the window.
-export const AWARENESS_STAGE_4_SENTIENCE_MIN  = 80   // at least one alive creature must reach this
-export const AWARENESS_STAGE_4_WINDOW_DAYS    = 14   // longer window; generational depth is hard-won
+// Stage 3→4: generational depth — several creatures of deep sentience, more
+// than one lineage, and the cohort ratchet past the Lineage phase.
+export const AWARENESS_STAGE_4_DEEP_SENTIENCE   = 60
+export const AWARENESS_STAGE_4_DEEP_COUNT_MIN   = 2
+export const AWARENESS_STAGE_4_LINEAGES_MIN     = 2
+export const AWARENESS_STAGE_4_COHORT_PHASE_MIN = 3
 
-// Stage 4→5: transcendence — cohort phase 5 (gen ≥ 60) and at least one Sentinel
-// Elder whose sentience is fully realised, or a Dreaming Elder at ≥ 95, sustained
-// for the window. Sentinel path lowered to 88 to be reachable; Dreaming path
-// remains at 95 as a harder alternate when no Sentinel Elders are present.
-export const AWARENESS_STAGE_5_SENTIENCE_MIN  = 88   // Sentinel Elder threshold (was 95)
-export const AWARENESS_STAGE_5_DREAMING_MIN   = 95   // Dreaming Elder alternate path
-export const AWARENESS_STAGE_5_WINDOW_DAYS    = 21
+// Stage 4→5: transcendence — a culturally-anchored elder/shaman of near-full
+// sentience with deep bonds, once the cohort has reached its Eternal phase.
+export const AWARENESS_STAGE_5_SENTIENCE_MIN    = 85
+export const AWARENESS_STAGE_5_BOND_STRENGTH    = 30
+export const AWARENESS_STAGE_5_BOND_COUNT_MIN   = 2
+export const AWARENESS_STAGE_5_COHORT_PHASE_MIN = 5
+
+// Stage hysteresis — ticks the target condition must hold to advance, or fail
+// to regress. Asymmetric: an advance confirms quickly, a regression is slow, so
+// the stage label can't flicker from a noisy single tick. ~60 ticks = 1 day.
+export const AWARENESS_HOLD_TICKS = 80
+export const AWARENESS_FAIL_TICKS = 200
 
 // ─── Sentience growth ────────────────────────────────────────────────────────
 export const SENTIENCE_GROWTH_BY_MIND: Record<string, number> = {

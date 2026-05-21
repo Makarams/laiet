@@ -12,6 +12,8 @@ import {
   DRIVE_PERSONALITY_SEEDS,
   STARTER_BOND_STRENGTH,
   STARTER_SPAWN_RADIUS,
+  STARTER_AGE_STAGGER_FRACTION,
+  MAX_AGE_VARIANCE_FRACTION,
 } from '@/engine/constants'
 import {
   randomGenome,
@@ -85,7 +87,17 @@ export function spawnCreature(
     lineageId: overrides.lineageId ?? id,
 
     age: 0,
-    maxAge: Math.round(MAX_AGE_BY_BODY[genome.body] * lifespanMult) + Math.floor((rng() - 0.5) * 10),
+    // maxAge scattered by ±MAX_AGE_VARIANCE_FRACTION so same-body cohort-mates
+    // don't all die on the same tick. Floored at 60 ticks (1 game day) as a
+    // guard — the variance never reaches that, but it keeps maxAge sane if a
+    // future lifespanMult is set very low.
+    maxAge: Math.max(
+      60,
+      Math.round(
+        MAX_AGE_BY_BODY[genome.body] * lifespanMult
+          * (1 + (rng() - 0.5) * 2 * MAX_AGE_VARIANCE_FRACTION),
+      ),
+    ),
     health: 100,
     hunger: 0,
     thirst: 0,
@@ -477,6 +489,16 @@ export function createStarterCreatures(
       lifespanMult,
     }, rng)
   })
+
+  // Stagger founder starting ages across STARTER_AGE_STAGGER_FRACTION of each
+  // one's lifespan. Founders all spawn simultaneously; if they also all start
+  // at age 0 they age out together and the colony pulses boom-bust. A spread of
+  // ages means the founding generation dies gradually and seeds an overlapping
+  // age structure. Newborn stats (health, needs) are untouched — only the age
+  // counter shifts — so an "older" founder is just closer to its own maxAge.
+  for (const creature of creatures) {
+    creature.age = Math.floor(rng() * STARTER_AGE_STAGGER_FRACTION * creature.maxAge)
+  }
 
   // Pre-seed bonds between every founder pair at STARTER_BOND_STRENGTH (below
   // the breeding threshold so bond-seeking stays active, but high enough that

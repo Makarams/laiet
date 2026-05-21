@@ -1014,7 +1014,7 @@ export function learnFromNearby(
 // A creature crystallizes new concepts as sentience deepens. When the creature
 // has recent experiences, the unlock is biased toward concepts they have lived
 // rather than random acquisition — vocabulary grows from life, not luck.
-export function unlockTierEmoji(c: Creature, rng: () => number): string | null {
+export function unlockTierEmoji(c: Creature, rng: () => number, currentDay: number): string | null {
   const known = new Set(c.knownEmoji)
 
   // Build a weighted candidate list biased by experience log
@@ -1027,7 +1027,7 @@ export function unlockTierEmoji(c: Creature, rng: () => number): string | null {
     const aligned: string[] = []
     for (const [evType, day] of Object.entries(expLog) as [ExperienceEventType, number][]) {
       // Only count experiences from the last 80 game-days as shaping recent thought
-      if (day !== undefined && c.bornOnDay !== undefined && day >= (c.bornOnDay - 80)) {
+      if (day !== undefined && day >= currentDay - 80) {
         const candidates = EXPERIENCE_EMOJI_MAP[evType] ?? []
         for (const e of candidates) {
           if (missing.includes(e)) aligned.push(e)

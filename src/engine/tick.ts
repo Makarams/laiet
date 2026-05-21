@@ -14,7 +14,7 @@ import {
   CANNIBAL_STRESS_PENALTY, CANNIBAL_WITNESS_STRESS,
   DISEASE_POP_THRESHOLD, DISEASE_POP_SLOPE_RANGE, DISEASE_CONTACT_CHANCE, DISEASE_HEALTH_DRAIN, DISEASE_RECOVERY_HEALTH,
   DISEASE_IMMUNITY_GAIN, DISEASE_IMMUNITY_PROTECTION, DISEASE_BOND_SPREAD_MULT,
-  REPRODUCE_COOLDOWN_DAYS, REPRODUCE_COOLDOWN_JITTER,
+  REPRODUCE_COOLDOWN_LIFE_FRACTION, REPRODUCE_COOLDOWN_JITTER_FRACTION, TICKS_PER_DAY,
   RIVER_FOOD_ADJACENT_BONUS,
   ABSENCE_IMPRINT_STRESS_PER_TICK,
   RIVAL_PROXIMITY_RADIUS, RIVAL_STRESS_PER_TICK,
@@ -86,6 +86,14 @@ import {
   CANNIBAL_TRAUMA_DURATION_DAYS, CANNIBAL_TRAUMA_STRESS_PER_TICK,
   // cohort phase thresholds (awareness stage 3-5 still depend on cohort depth)
   COHORT_PHASE_THRESHOLDS,
+  // awareness stage conditions + hysteresis windows
+  AWARENESS_STAGE_2_ROLES_REQUIRED, AWARENESS_STAGE_2_MIN_POP,
+  AWARENESS_STAGE_3_LEXICON_MIN, AWARENESS_STAGE_3_MEDIAN_SENTIENCE_MIN,
+  AWARENESS_STAGE_4_DEEP_SENTIENCE, AWARENESS_STAGE_4_DEEP_COUNT_MIN,
+  AWARENESS_STAGE_4_LINEAGES_MIN, AWARENESS_STAGE_4_COHORT_PHASE_MIN,
+  AWARENESS_STAGE_5_SENTIENCE_MIN, AWARENESS_STAGE_5_BOND_STRENGTH,
+  AWARENESS_STAGE_5_BOND_COUNT_MIN, AWARENESS_STAGE_5_COHORT_PHASE_MIN,
+  AWARENESS_HOLD_TICKS, AWARENESS_FAIL_TICKS,
   // neglect & legendary
   NEGLECT_WARMTH_THRESHOLD, NEGLECT_HUNGER_THRESHOLD, NEGLECT_MIN_AFFECTED, NEGLECT_WARNING_COOLDOWN,
   LEGENDARY_AGE_MULT, LEGENDARY_OFFSPRING_MIN, LEGENDARY_LINEAGE_GEN_MIN,
@@ -175,10 +183,11 @@ function evaluateStageConditions(state: GameState, alive: Creature[]): import('@
   const nonFeral = alive.filter(c => c.genome.mind !== 'Feral')
   if (nonFeral.length === 0) return 1
 
-  // Stage 2 — at least 3 distinct community roles are held by living creatures.
+  // Stage 2 — distinct community roles are held by living creatures.
   // Specialization has emerged; the colony is no longer a homogeneous mass.
   const distinctRoles = new Set(alive.map(c => c.role).filter(r => r !== undefined)).size
-  const cond2 = distinctRoles >= 3 && alive.length >= 8
+  const cond2 = distinctRoles >= AWARENESS_STAGE_2_ROLES_REQUIRED
+    && alive.length >= AWARENESS_STAGE_2_MIN_POP
 
   // Stage 3 — shared vocabulary AND meaningful median sentience.
   // A single sentient outlier no longer counts; the colony's middle has awakened.
@@ -186,21 +195,26 @@ function evaluateStageConditions(state: GameState, alive: Creature[]): import('@
   for (const c of alive) for (const e of c.knownEmoji) colonyVocab.add(e)
   const sortedSent = nonFeral.map(c => c.sentience).sort((a, b) => a - b)
   const median = sortedSent[Math.floor(sortedSent.length / 2)] ?? 0
-  const cond3 = cond2 && colonyVocab.size >= 25 && median >= 25
+  const cond3 = cond2 && colonyVocab.size >= AWARENESS_STAGE_3_LEXICON_MIN
+    && median >= AWARENESS_STAGE_3_MEDIAN_SENTIENCE_MIN
 
   // Stage 4 — generational depth with multi-lineage cognition.
-  const deepCount = nonFeral.filter(c => c.sentience >= 60).length
+  const deepCount = nonFeral.filter(c => c.sentience >= AWARENESS_STAGE_4_DEEP_SENTIENCE).length
   const lineages = new Set(alive.map(c => c.lineageId)).size
-  const cond4 = cond3 && deepCount >= 2 && lineages >= 2 && (state.cohortPhase ?? 1) >= 3
+  const cond4 = cond3 && deepCount >= AWARENESS_STAGE_4_DEEP_COUNT_MIN
+    && lineages >= AWARENESS_STAGE_4_LINEAGES_MIN
+    && (state.cohortPhase ?? 1) >= AWARENESS_STAGE_4_COHORT_PHASE_MIN
 
   // Stage 5 — a culturally-anchored elder of full sentience with deep bonds,
   // and the cohort itself has reached eternal depth.
   const transcendent = nonFeral.some(c =>
-    c.sentience >= 85
+    c.sentience >= AWARENESS_STAGE_5_SENTIENCE_MIN
     && (c.role === 'elder' || c.role === 'shaman')
-    && c.bonds.filter(b => b.strength >= 30).length >= 2
+    && c.bonds.filter(b => b.strength >= AWARENESS_STAGE_5_BOND_STRENGTH).length
+       >= AWARENESS_STAGE_5_BOND_COUNT_MIN
   )
-  const cond5 = cond4 && transcendent && (state.cohortPhase ?? 1) >= 5
+  const cond5 = cond4 && transcendent
+    && (state.cohortPhase ?? 1) >= AWARENESS_STAGE_5_COHORT_PHASE_MIN
 
   if (cond5) return 5
   if (cond4) return 4
@@ -370,19 +384,17 @@ export function tickSimulation(state: GameState): GameState {
   {
     const targetStage = evaluateStageConditions(next, aliveAfterReproduction)
     const currentStage = next.awarenessStage ?? 1
-    const HOLD_TICKS = 80  // ~1.3 in-game days of sustained condition to advance
-    const FAIL_TICKS = 200 // ~3.3 in-game days of failure to regress (asymmetric)
 
     let counter = next.cognitionPressure ?? 0
     if (targetStage > currentStage) {
       counter = Math.max(0, counter) + 1
-      if (counter >= HOLD_TICKS) {
+      if (counter >= AWARENESS_HOLD_TICKS) {
         next.awarenessStage = (currentStage + 1) as typeof next.awarenessStage
         counter = 0
       }
     } else if (targetStage < currentStage) {
       counter = Math.min(0, counter) - 1
-      if (-counter >= FAIL_TICKS) {
+      if (-counter >= AWARENESS_FAIL_TICKS) {
         next.awarenessStage = (currentStage - 1) as typeof next.awarenessStage
         counter = 0
       }
@@ -2708,7 +2720,7 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
 
     // ─── Speech system ─────────────────────────────────────────────────────
     // 1. Sentience-gated tier unlock; creature may learn a new emoji this tick
-    const newTierEmoji = unlockTierEmoji(c, Math.random)
+    const newTierEmoji = unlockTierEmoji(c, Math.random, state.time.day)
     if (newTierEmoji && !c.knownEmoji.includes(newTierEmoji)) {
       c = { ...c, knownEmoji: [...c.knownEmoji, newTierEmoji] }
     }
@@ -2987,16 +2999,22 @@ function localCrowdCentroid(
   return n > 0 ? { x: sx / n, y: sy / n } : { x, y }
 }
 
-// Per-creature reproduction cooldown. The cooldown length carries a
-// deterministic per-creature jitter (hashed from the id, 0..JITTER) so
-// colony-mates do not all become fertile on the same day — births stagger,
-// generations overlap, and the colony grows a real age structure instead of
-// one synchronised cohort. The first birth is never gated.
+// Per-creature reproduction cooldown. The cooldown is a fraction of the
+// creature's OWN lifespan (see REPRODUCE_COOLDOWN_LIFE_FRACTION) so a short-
+// lived Spore and a long-lived Shell each get a comparable number of breeding
+// windows rather than the Spore breeding once and dying. A deterministic
+// per-creature jitter (hashed from the id) staggers fertility so colony-mates
+// do not all breed on the same day — generations overlap, and the colony
+// grows a real age structure instead of one synchronised cohort. The first
+// birth is never gated.
 function reproductionReady(c: Creature, day: number): boolean {
   if (c.lastBirthDay === undefined) return true
   let h = 0
   for (let i = 0; i < c.id.length; i++) h = ((h * 31) + c.id.charCodeAt(i)) | 0
-  const cooldown = REPRODUCE_COOLDOWN_DAYS + (Math.abs(h) % (REPRODUCE_COOLDOWN_JITTER + 1))
+  const lifespanDays = c.maxAge / TICKS_PER_DAY
+  const jitterFrac = (Math.abs(h) % 1000) / 1000  // deterministic 0..1 per creature
+  const cooldown = lifespanDays
+    * (REPRODUCE_COOLDOWN_LIFE_FRACTION + jitterFrac * REPRODUCE_COOLDOWN_JITTER_FRACTION)
   return day - c.lastBirthDay >= cooldown
 }
 
