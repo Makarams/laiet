@@ -14,6 +14,7 @@ import {
   CANNIBAL_STRESS_PENALTY, CANNIBAL_WITNESS_STRESS,
   DISEASE_POP_THRESHOLD, DISEASE_POP_SLOPE_RANGE, DISEASE_CONTACT_CHANCE, DISEASE_HEALTH_DRAIN, DISEASE_RECOVERY_HEALTH,
   DISEASE_IMMUNITY_GAIN, DISEASE_IMMUNITY_PROTECTION, DISEASE_BOND_SPREAD_MULT,
+  REPRODUCE_COOLDOWN_DAYS, REPRODUCE_COOLDOWN_JITTER,
   RIVER_FOOD_ADJACENT_BONUS,
   ABSENCE_IMPRINT_STRESS_PER_TICK,
   RIVAL_PROXIMITY_RADIUS, RIVAL_STRESS_PER_TICK,
@@ -319,10 +320,12 @@ export function tickSimulation(state: GameState): GameState {
   // Reuse the pre-tick count minus this tick's deaths to derive aliveNow.
   // Births haven't happened yet in this tick — they fire next.
   const aliveNow = alivePreDeath - deathsThisTick
-  // popFactor: 1.0 below threshold; slopes to 0.20 minimum at threshold + DISEASE_POP_SLOPE_RANGE (120).
-  // Widened from the old /55 slope so reproduction stays meaningful up to and past ascension (80).
+  // popFactor: the reproduction soft-cap. 1.0 below the threshold, then tapers
+  // down the slope to a 0.04 floor (was 0.20). The low floor means a colony at
+  // carrying capacity (~260) has near-zero net growth — it plateaus and lives
+  // through winter instead of overshooting into a synchronised die-off.
   const popFactor = aliveNow > DISEASE_POP_THRESHOLD
-    ? Math.max(0.20, 1 - (aliveNow - DISEASE_POP_THRESHOLD) / DISEASE_POP_SLOPE_RANGE)
+    ? Math.max(0.04, 1 - (aliveNow - DISEASE_POP_THRESHOLD) / DISEASE_POP_SLOPE_RANGE)
     : 1.0
 
   _t = tStamp()
@@ -336,6 +339,13 @@ export function tickSimulation(state: GameState): GameState {
   const aliveAfterReproduction = Object.values(next.creatures).filter(c => !c.diedOnDay)
   const liveCount = aliveAfterReproduction.length
   next.colonyStage = getColonyStage(liveCount) as GameState['colonyStage']
+
+  // Peak concurrent population — the true high-water mark of living creatures,
+  // distinct from totalCreaturesEver (cumulative count of every creature born).
+  if (liveCount > (next.peakPopulation ?? 0)) {
+    next.peakPopulation = liveCount
+    next.peakPopulationDay = next.time.day
+  }
 
   // ── Cohort phase — permanent generational ratchet ──────────────────────────
   // Derived from totalGenerations (max generation ever born). Never decreases.
@@ -2635,8 +2645,22 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
           const result = resolveFight(c, { ...target })
           c = result.attacker
           creatures[target.id] = result.defender
-          events.push(createEvent('fight', [c.id, target.id], state.time.day,
-            `${c.name} challenged ${target.name}`))
+          // The simulation resolves the fight itself (resolveFight already
+          // applied power, adaptations, decisiveness, damage and stress). It is
+          // recorded as a passive Field-Log observation — never an interactive
+          // popup. The caretaker observes conflict; it does not mediate it.
+          const fightWinner = result.attackerWon ? result.attacker : result.defender
+          const fightLoser  = result.attackerWon ? result.defender : result.attacker
+          messages.push({
+            id: uuid(),
+            text: `${fightWinner.name} overpowered ${fightLoser.name}.`,
+            stage: 1,
+            creatureId: fightWinner.id,
+            day: state.time.day,
+            timestamp: Date.now(),
+            read: false,
+            category: 'event',
+          })
 
           if (c.lineageId !== target.lineageId) {
             const key = [c.lineageId, target.lineageId].sort().join(':')
@@ -2959,6 +2983,19 @@ function localCrowdCentroid(
   return n > 0 ? { x: sx / n, y: sy / n } : { x, y }
 }
 
+// Per-creature reproduction cooldown. The cooldown length carries a
+// deterministic per-creature jitter (hashed from the id, 0..JITTER) so
+// colony-mates do not all become fertile on the same day — births stagger,
+// generations overlap, and the colony grows a real age structure instead of
+// one synchronised cohort. The first birth is never gated.
+function reproductionReady(c: Creature, day: number): boolean {
+  if (c.lastBirthDay === undefined) return true
+  let h = 0
+  for (let i = 0; i < c.id.length; i++) h = ((h * 31) + c.id.charCodeAt(i)) | 0
+  const cooldown = REPRODUCE_COOLDOWN_DAYS + (Math.abs(h) % (REPRODUCE_COOLDOWN_JITTER + 1))
+  return day - c.lastBirthDay >= cooldown
+}
+
 function tickReproduction(state: GameState, tickRng: () => number, popFactor: number): GameState {
   const creatures = { ...state.creatures }
   const alive = Object.values(creatures).filter(c => c.diedOnDay === null)
@@ -2982,8 +3019,11 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
     const nestNearby = hasNestNear(state, c.x, c.y, NEST_RADIUS)
 
     // ── Sexual reproduction (bonded pair) ──
-    const baseRoll  = canReproduce(c, state.time.season, popFactor, state.weather)
-    const boostRoll = !baseRoll && nestNearby
+    // Cooldown gate: a creature that bred recently sits out until its
+    // (jittered) cooldown elapses, so births stagger across the colony.
+    const ready     = reproductionReady(c, state.time.day)
+    const baseRoll  = ready && canReproduce(c, state.time.season, popFactor, state.weather)
+    const boostRoll = ready && !baseRoll && nestNearby
       && canReproduce(c, state.time.season, popFactor * Math.max(1, NEST_BREED_MULT - 1), state.weather)
     if (baseRoll || boostRoll) {
       const bondedIds = c.bonds.filter(b => b.strength >= REPRODUCE_BOND_MIN_STRENGTH).map(b => b.targetId)
@@ -2992,6 +3032,7 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
         .find(p => p && p.diedOnDay === null
           && p.genome.personality !== 'Aggressive'
           && !pairedThisTick.has(p.id)
+          && reproductionReady(p, state.time.day)
           && Math.abs(p.x - c.x) <= 12 && Math.abs(p.y - c.y) <= 12)
 
       if (partner) {
@@ -3039,10 +3080,12 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
         creatures[c.id] = {
           ...creatures[c.id],
           offspringIds: [...creatures[c.id].offspringIds, offspring.id],
+          lastBirthDay: state.time.day,
         }
         creatures[partner.id] = {
           ...creatures[partner.id],
           offspringIds: [...creatures[partner.id].offspringIds, offspring.id],
+          lastBirthDay: state.time.day,
         }
 
         // Experience: raised_offspring fires after several offspring accumulate
@@ -3090,7 +3133,7 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
     // ── Asexual division (single-cell-like) ──
     // Always-on path that doesn't need a partner. Only triggers when the
     // creature is genuinely thriving and population isn't overstretched.
-    if (canAsexuallyReproduce(c, state.time.season, popFactor)
+    if (ready && canAsexuallyReproduce(c, state.time.season, popFactor)
       && tickRng() < ASEXUAL_BASE_CHANCE * popFactor) {
       const asexSpawnTile = state.tiles[c.y]?.[c.x]
       const asexEnvCtx: EnvContext = { biome: asexSpawnTile?.biome ?? 'temperate', weather: state.weather ?? 'clear', season: state.time.season }
@@ -3101,6 +3144,7 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
       creatures[c.id] = {
         ...creatures[c.id],
         offspringIds: [...creatures[c.id].offspringIds, offspring.id],
+        lastBirthDay: state.time.day,
         // Division costs the parent; drops health and adds a hunger spike
         health: Math.max(40, creatures[c.id].health - 18),
         hunger: Math.min(100, creatures[c.id].hunger + 22),
@@ -3516,7 +3560,7 @@ function tickTribeFormation(state: GameState, mods: SimModifiers): GameState {
           const subCx = groupB.reduce((s, id) => s + creatures[id].x, 0) / groupB.length
           const subCy = groupB.reduce((s, id) => s + creatures[id].y, 0) / groupB.length
           tribes[newId] = {
-            id: newId, name: newName, memberIds: groupB,
+            id: newId, name: newName, memberIds: groupB, peakMembers: groupB.length,
             territory: [], foundedOnDay: state.time.day, color: newColor,
             tribalLexicon: [...new Set(t.tribalLexicon)],  // inherits parent vocab
             lineageRoot: t.lineageRoot, parentTribeId: t.id,
@@ -3541,7 +3585,11 @@ function tickTribeFormation(state: GameState, mods: SimModifiers): GameState {
     // Recompute lexicon + centroid for the surviving tribe
     const lex = new Set(t.tribalLexicon ?? [])
     for (const id of living) for (const e of creatures[id].knownEmoji) lex.add(e)
-    tribes[tribeId] = { ...t, memberIds: living, tribalLexicon: [...lex], centroidX: cx, centroidY: cy }
+    tribes[tribeId] = {
+      ...t, memberIds: living,
+      peakMembers: Math.max(t.peakMembers ?? living.length, living.length),
+      tribalLexicon: [...lex], centroidX: cx, centroidY: cy,
+    }
   }
 
   // ── B. Form new tribes from un-tribed creatures with deep cluster bonds
@@ -3596,7 +3644,7 @@ function tickTribeFormation(state: GameState, mods: SimModifiers): GameState {
     const lex = new Set<string>()
     for (const m of cluster) for (const e of m.knownEmoji) lex.add(e)
     tribes[id] = {
-      id, name, memberIds: cluster.map(m => m.id), territory: [],
+      id, name, memberIds: cluster.map(m => m.id), peakMembers: cluster.length, territory: [],
       foundedOnDay: state.time.day, color, tribalLexicon: [...lex],
       lineageRoot: lineageId, dissolvedOnDay: null,
       centroidX: cx, centroidY: cy,
@@ -3822,7 +3870,7 @@ function checkEndgame(state: GameState, mods: SimModifiers): GameState {
       id: uuid(),
       extinctionDay: state.time.day,
       extinctionCause: cause,
-      peakPopulation: state.totalCreaturesEver,
+      peakPopulation: state.peakPopulation ?? state.totalCreaturesEver,
       generationsReached: state.totalGenerations,
       finalMessage: extinctionMessage(null),
       creatureCount: state.totalCreaturesEver,
@@ -3924,10 +3972,8 @@ function createEvent(
 
 function defaultOptions(type: EventType): GameEvent['options'] {
   switch (type) {
-    case 'fight': return [
-      { label: 'Break up the fight', action: 'break_up' },
-      { label: 'Let them settle it', action: 'observe' },
-    ]
+    // 'fight' deliberately has no interactive options — conflict is resolved
+    // autonomously by the simulation and surfaced as a passive observation.
     case 'sickness': return [
       { label: 'Use a heal charge', action: 'heal_creature' },
       { label: 'Let nature decide', action: 'ignore' },

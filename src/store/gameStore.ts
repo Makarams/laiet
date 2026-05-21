@@ -213,6 +213,8 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
       totalCreaturesEver: 4,
       totalGenerations: 0,
       totalDeaths: 0,
+      peakPopulation: 4,
+      peakPopulationDay: 0,
       lastSaved: Date.now(),
       lastSessionEnd: null,
       snowAccumulation: 0,

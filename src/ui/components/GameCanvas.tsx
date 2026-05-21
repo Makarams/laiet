@@ -352,21 +352,21 @@ export function GameCanvas({ activeTool, selectedEnrichment = 'resting_spot', se
   useEffect(() => { selectedIdRef.current = selectedCreatureId }, [selectedCreatureId])
   useEffect(() => { hoveredTileRef.current = hoveredTile }, [hoveredTile])
 
-  // Re-frame the camera whenever a new world is loaded (worldId changes) OR
-  // when the very first valid gameState arrives. Waits for canvasReady so the
-  // initial frame uses true canvas dimensions (otherwise stale defaults would
-  // leave the world off-viewport).
+  // Frame the camera ONCE per world — when the first valid gameState arrives
+  // and on a new world / reset (worldId changes). Keyed on worldId, NOT the
+  // gameState object: a per-tick dependency here made this effect run every
+  // tick and re-frame on the live creature centroid, so the camera chased the
+  // colony and the world jolted ("pop pop") once per second. After the initial
+  // frame the camera belongs to the user; only the `0` key (recenter) and a
+  // window resize re-derive it.
   useEffect(() => {
     if (!gameState || !canvasReady) return
-    if (framedWorldIdRef.current === gameState.worldId && userHasMovedCameraRef.current) return
-    if (framedWorldIdRef.current !== gameState.worldId) {
-      userHasMovedCameraRef.current = false
-    }
-    const fresh = makeInitialCamera(cwRef.current, chRef.current, gameState)
-    cameraRef.current = fresh
+    if (framedWorldIdRef.current === gameState.worldId) return
+    userHasMovedCameraRef.current = false
+    cameraRef.current = makeInitialCamera(cwRef.current, chRef.current, gameState)
     framedWorldIdRef.current = gameState.worldId
     setCameraTick(t => t + 1)
-  }, [gameState, canvasReady])
+  }, [gameState?.worldId, canvasReady]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clear tooltip when tool changes
   useEffect(() => {

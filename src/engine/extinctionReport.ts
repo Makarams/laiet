@@ -23,6 +23,17 @@ function fmtDay(d: number): string {
   return `Y${year + 1} ${seasons[season]} d${day + 1}`
 }
 
+// Real-world elapsed time, compact ("1h 4m" / "37m 14s" / "9s").
+function fmtDuration(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = s % 60
+  if (h > 0) return `${h}h ${m}m`
+  if (m > 0) return `${m}m ${sec}s`
+  return `${sec}s`
+}
+
 function countBy<K extends string>(items: { [k in K]?: string }[], key: K): Record<string, number> {
   const out: Record<string, number> = {}
   for (const it of items) {
@@ -61,16 +72,46 @@ export function generateExtinctionReport({ state, fossil }: ReportInput): string
   lines.push('')
 
   // ── Headline stats ─────────────────────────────────────────────────────
+  // Peak population is the true high-water mark of concurrently-living
+  // creatures — distinct from totalCreaturesEver, the cumulative count of
+  // every creature ever born (which, on extinction, equals total deaths).
+  const peak = state.peakPopulation ?? fossil?.peakPopulation ?? state.totalCreaturesEver
+  const peakDay = state.peakPopulationDay
   lines.push('SUMMARY')
   lines.push('-------')
   lines.push(`Cause of extinction   : ${cause}`)
-  lines.push(`Peak population       : ${state.totalCreaturesEver}`)
+  lines.push(`Peak population       : ${peak}${peakDay !== undefined ? `  (reached ${fmtDay(peakDay)})` : ''}`)
+  lines.push(`Total creatures ever  : ${state.totalCreaturesEver}`)
   lines.push(`Final generation      : ${state.totalGenerations}`)
   lines.push(`Total deaths recorded : ${state.totalDeaths}`)
   lines.push(`Awareness reached     : stage ${state.awarenessStage} / 5`)
   lines.push(`Cohort phase reached  : ${state.cohortPhase ?? 1} / 5`)
   lines.push(`Colony stage at end   : ${state.colonyStage}`)
   lines.push('')
+
+  // ── Derived run metrics ────────────────────────────────────────────────
+  {
+    const deadList = Object.values(state.creatures).filter(c => c.diedOnDay !== null)
+    const lifespans = deadList
+      .map(c => (c.diedOnDay as number) - c.bornOnDay)
+      .filter(n => n >= 0)
+    const avgLife = lifespans.length
+      ? lifespans.reduce((a, b) => a + b, 0) / lifespans.length
+      : 0
+    const maxLife = lifespans.reduce((m, n) => Math.max(m, n), 0)
+    const cadence = state.totalGenerations > 0
+      ? (extinctionDay / state.totalGenerations).toFixed(1)
+      : 'n/a'
+    lines.push('RUN METRICS')
+    lines.push('-----------')
+    lines.push(`Real time elapsed     : ${fmtDuration(Date.now() - state.createdAt)}`)
+    lines.push(`Generation cadence    : ${cadence} days per generation`)
+    if (lifespans.length > 0) {
+      lines.push(`Lifespan (recorded)   : avg ${avgLife.toFixed(1)}d · longest ${maxLife}d  (${lifespans.length} deaths)`)
+    }
+    lines.push(`Winters survived      : ${Math.floor(extinctionDay / 120)}`)
+    lines.push('')
+  }
 
   // ── Profile + modifiers ────────────────────────────────────────────────
   if (state.profile) {
@@ -115,8 +156,10 @@ export function generateExtinctionReport({ state, fossil }: ReportInput): string
     lines.push('TRIBES (formed during this run)')
     lines.push('-------------------------------')
     for (const t of tribes) {
-      const status = t.dissolvedOnDay ? `dissolved d${t.dissolvedOnDay}` : 'still standing at end'
-      lines.push(`${t.name.padEnd(20)} : founded d${t.foundedOnDay} · ${t.memberIds.length} members · ${status}`)
+      const status = t.dissolvedOnDay ? `dissolved ${fmtDay(t.dissolvedOnDay)}` : 'still standing at end'
+      // memberIds shrinks as members die — peakMembers is the tribe's true scale.
+      const peakM = t.peakMembers ?? t.memberIds.length
+      lines.push(`${t.name.padEnd(20)} : founded ${fmtDay(t.foundedOnDay)} · peak ${peakM} members · ${status}`)
     }
     lines.push('')
   }
@@ -133,6 +176,8 @@ export function generateExtinctionReport({ state, fossil }: ReportInput): string
   if (notable.length > 0) {
     lines.push(`NOTABLE EVENTS (${notable.length})`)
     lines.push('---------------')
+    lines.push('(from the colony chronicle — a bounded log; xN = per-event')
+    lines.push(' magnitude, meaning varies by event kind)')
     for (const e of notable) {
       const tag = `[${fmtDay(e.day)}]`.padEnd(18)
       const who = e.creatureName ? ` ${e.creatureName}` : ''
@@ -147,8 +192,11 @@ export function generateExtinctionReport({ state, fossil }: ReportInput): string
   const freq = chronicleFrequency(chron)
   const freqSorted = Object.entries(freq).sort((a, b) => b[1] - a[1])
   if (freqSorted.length > 0) {
-    lines.push('CHRONICLE TOTALS (all event kinds)')
+    lines.push(`CHRONICLE TOTALS (most recent ${chron.length} events)`)
     lines.push('----------------------------------')
+    lines.push('note: the chronicle is a bounded ring — these counts reflect only')
+    lines.push('its current window, not the colony\'s full history. The DEATH')
+    lines.push('CAUSES tally above is complete and uncapped.')
     for (const [kind, n] of freqSorted) {
       lines.push(`${kind.padEnd(28)} : ${n}`)
     }
@@ -242,6 +290,7 @@ export function generateRunLogReport(state: GameState): string {
   // ── 1. OVERVIEW ───────────────────────────────────────────────────────
   lines.push(...section('Overview'))
   lines.push(`Alive                : ${alive.length}`)
+  lines.push(`Peak population      : ${state.peakPopulation ?? alive.length}`)
   lines.push(`Recorded (total ever): ${state.totalCreaturesEver}`)
   lines.push(`Deaths               : ${state.totalDeaths}`)
   lines.push(`Generations          : ${state.totalGenerations}`)

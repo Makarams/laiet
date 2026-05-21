@@ -136,8 +136,13 @@ export const WEATHER_BREED_MULT: Record<string, number> = {
 }
 
 export const DISEASE_RECOVERY_HEALTH   = 40       // health level at which sick state auto-clears
-export const DISEASE_POP_THRESHOLD     = 50       // overcrowding kicks in (calibrated for 240×240)
-export const DISEASE_POP_SLOPE_RANGE   = 95       // denominator for popFactor slope; minimum (0.20) reached at threshold + this value
+export const DISEASE_POP_THRESHOLD     = 50       // population at which the reproduction soft-cap begins to taper
+// Denominator for the popFactor slope. Widened (95 → 220) so the reproduction
+// rate tapers gradually across a 480² world instead of slamming to its floor
+// by ~145; combined with the lower floor in tick.ts this turns popFactor from
+// a soft slowdown into a genuine carrying-capacity cap (~260 creatures), so a
+// colony plateaus and survives instead of overshooting into a die-off cliff.
+export const DISEASE_POP_SLOPE_RANGE   = 220
 export const DISEASE_CONTACT_CHANCE    = 0.0018   // per tick when crowded
 export const DISEASE_HEALTH_DRAIN      = 0.3      // extra health loss per tick when sick
 
@@ -148,6 +153,19 @@ export const ASEXUAL_MUTATION_CHANCE   = 0.20     // higher than sexual (single-
 
 // Minimum bond strength for sexual reproduction partnership
 export const REPRODUCE_BOND_MIN_STRENGTH = 35    // achievable in ~20 adjacency ticks from starter bond
+
+// Reproduction cooldown — game days a creature must wait after producing
+// offspring before it can breed again. The first birth is never gated.
+// Per-creature jitter (derived deterministically from the creature id, range
+// 0..JITTER) means colony-mates come off cooldown at staggered times — so the
+// colony develops a real age structure instead of one synchronised birth wave
+// that all matures, breeds, and ages out together. The synchronised cohort is
+// what froze awareness at stage 1 and made every run end in the same die-off:
+// no creature lived long enough, and no generation overlapped enough, for
+// sentience, tribes, or language to accumulate. Staggered births are the
+// foundation of emergent multi-generational structure.
+export const REPRODUCE_COOLDOWN_DAYS   = 7
+export const REPRODUCE_COOLDOWN_JITTER = 8
 
 // ─── Colony stage thresholds ─────────────────────────────────────────────────
 export const COLONY_STAGE_THRESHOLDS = {

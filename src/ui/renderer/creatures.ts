@@ -1,5 +1,5 @@
 import { Creature, DayPhase, WeatherState } from '@/types'
-import { ISO_TILE_WIDTH, ISO_TILE_HEIGHT, CAVE_CREATURE_ALPHA, MUTATION_DISPLAY_DAYS } from '@/engine/constants'
+import { ISO_TILE_WIDTH, ISO_TILE_HEIGHT, CAVE_CREATURE_ALPHA, MUTATION_DISPLAY_DAYS, MICRO_ANIM_DURATION_MS } from '@/engine/constants'
 import { genomeColor, mindGlow } from '@/engine/genetics'
 import { lighten, darken, adjustBrightness } from './utils'
 
@@ -43,8 +43,27 @@ export function drawCreature(
     ? Math.sin(Date.now() / 120 + creature.id.charCodeAt(0)) * 3.5
     : 0
 
-  const cx = screenX
-  const cy = screenY + ISO_TILE_HEIGHT * 0.5 + playBounce
+  // Micro-animation ; a short body-language burst (jump / shake / sneeze /
+  // groom / wag). The simulation (tick.ts) sets creature.microAnim = { type,
+  // startMs }; the renderer plays it out over MICRO_ANIM_DURATION_MS as a
+  // translation offset, the same way playBounce folds into the anchor.
+  let animX = 0, animY = 0
+  if (creature.microAnim) {
+    const dur = MICRO_ANIM_DURATION_MS[creature.microAnim.type] ?? 0
+    const p = dur > 0 ? (Date.now() - creature.microAnim.startMs) / dur : 1
+    if (p >= 0 && p < 1) {
+      switch (creature.microAnim.type) {
+        case 'jump':   animY = -Math.sin(p * Math.PI) * 5.5; break
+        case 'shake':  animX = Math.sin(p * Math.PI * 9) * 3.0 * (1 - p); break
+        case 'sneeze': animY = -Math.sin(Math.min(1, p * 2) * Math.PI) * 2.6; break
+        case 'groom':  animX = Math.sin(p * Math.PI * 2) * 1.8; break
+        case 'wag':    animX = Math.sin(p * Math.PI * 5) * 2.4 * (1 - p * 0.5); break
+      }
+    }
+  }
+
+  const cx = screenX + animX
+  const cy = screenY + ISO_TILE_HEIGHT * 0.5 + playBounce + animY
 
   // Age factor ; grows from 60% at birth to 100% at maturity
   const ageRatio = Math.min(1.0, creature.age / 40)

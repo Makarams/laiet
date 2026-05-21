@@ -254,6 +254,10 @@ export interface Creature {
   diedOnDay: number | null
   killCount: number
   offspringIds: string[]
+  // Game day this creature last produced offspring; gates the reproduction
+  // cooldown so a creature cannot breed every tick. Undefined until the first
+  // birth. Optional for backward compatibility with pre-v3.5 saves.
+  lastBirthDay?: number
   messagesSent: number
 
   // thought bubble
@@ -503,6 +507,10 @@ export interface Tribe {
   id: string
   name: string
   memberIds: string[]
+  // Highest member count this tribe ever reached. memberIds shrinks as members
+  // die, so its current length understates the tribe's true scale. Optional
+  // for backward compatibility with pre-v3.5 saves.
+  peakMembers?: number
   territory: { x: number; y: number }[]
   foundedOnDay: number
   color: string // hex for rendering
@@ -811,6 +819,11 @@ export interface GameState {
   totalCreaturesEver: number
   totalGenerations: number
   totalDeaths: number
+  // Peak concurrent living population, and the game day it was reached.
+  // Distinct from totalCreaturesEver (cumulative births ever). Optional for
+  // backward compatibility with pre-v3.5 saves.
+  peakPopulation?: number
+  peakPopulationDay?: number
   lastSaved: number
   lastSessionEnd: number | null
 
