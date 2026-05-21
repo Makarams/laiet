@@ -3839,7 +3839,7 @@ function inferExtinctionCause(state: GameState): ExtinctionRecord['extinctionCau
     drowning:     'flood',
   }
   const scores: Record<ExtCause, number> = {
-    neglect: 0, war: 0, drought: 0, flood: 0, winter: 0, starvation: 0, heatwave: 0,
+    neglect: 0, war: 0, drought: 0, flood: 0, winter: 0, starvation: 0, heatwave: 0, old_age: 0,
   }
   for (const [c, n] of Object.entries(counts) as [DeathCause, number][]) {
     const bucket = map[c]
@@ -3853,12 +3853,16 @@ function inferExtinctionCause(state: GameState): ExtinctionRecord['extinctionCau
   // long enough for the accumulator to register), independent of any single
   // creature's death cause.
   if ((state.colonyDistressAccumulator ?? 0) > 50) scores.neglect += Math.floor((state.colonyDistressAccumulator ?? 0) / 10)
-  if (state.tribeWarStart !== undefined) scores.war += 3
+  if (state.tribeWarStart !== undefined && (counts.combat ?? 0) > 0) scores.war += 3
+  // If old_age is the sole or dominant death cause, score it directly so it
+  // beats the fallback rather than letting an incidental bonus manufacture a
+  // different cause. Other mechanical causes still outscore it when present.
+  scores.old_age += counts.old_age ?? 0
 
   const sorted = (Object.entries(scores) as [ExtCause, number][])
     .filter(([, n]) => n > 0)
     .sort((a, b) => b[1] - a[1])
-  return sorted[0]?.[0] ?? 'starvation'
+  return sorted[0]?.[0] ?? 'old_age'
 }
 
 function checkEndgame(state: GameState, mods: SimModifiers): GameState {

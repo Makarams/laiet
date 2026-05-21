@@ -597,7 +597,7 @@ export type EventAction =
 export interface ExtinctionRecord {
   id: string
   extinctionDay: number
-  extinctionCause: 'neglect' | 'war' | 'drought' | 'flood' | 'winter' | 'starvation' | 'heatwave'
+  extinctionCause: 'neglect' | 'war' | 'drought' | 'flood' | 'winter' | 'starvation' | 'heatwave' | 'old_age'
   peakPopulation: number
   generationsReached: number
   finalMessage: string | null
