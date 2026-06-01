@@ -18,6 +18,7 @@ import {
   FENCE_INITIAL_DURABILITY,
   // Soft pressure (replaces all daily caps and per-tool cooldowns)
   ACTION_BASE_COOLDOWN_MS, ACTION_LOAD_WEIGHTS,
+  INTERVENTION_LOG_MAX,
 } from '@/engine/constants'
 
 // ─── Default caretaker state ──────────────────────────────────────────────────
@@ -77,6 +78,17 @@ function applyCaretakerPresence(
 // action 10× in a frame. NOT a tool cooldown. Same value for every tool.
 function antiSpamOk(ct: CaretakerState): boolean {
   return Date.now() - (ct.lastActionMs ?? 0) >= ACTION_BASE_COOLDOWN_MS
+}
+
+// Appends a caretaker intervention to the bounded log. Oldest entries are
+// dropped once the cap is reached so the log stays compact for the report.
+function logIntervention(state: GameState, action: string, detail?: string): GameState {
+  const entry = { day: state.time.day, action, detail }
+  const existing = state.interventionLog ?? []
+  const trimmed = existing.length >= INTERVENTION_LOG_MAX
+    ? existing.slice(-(INTERVENTION_LOG_MAX - 1))
+    : existing
+  return { ...state, interventionLog: [...trimmed, entry] }
 }
 
 // Tile types a caretaker-placed structure may overwrite. Kept generous and
@@ -505,11 +517,12 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     const withChronicle = pushChronicle(state, {
       kind: 'caretaker_food', day: state.time.day, x, y,
     })
+    const withLog = logIntervention(withChronicle, 'food_drop', `(${x},${y})`)
     set({
       gameState: {
-        ...withChronicle,
+        ...withLog,
         tiles,
-        caretaker: { ...withChronicle.caretaker, ...applyCaretakerPresence(withChronicle.caretaker, x, y, 'placement', 'food') },
+        caretaker: { ...withLog.caretaker, ...applyCaretakerPresence(withLog.caretaker, x, y, 'placement', 'food') },
       }
     })
   },
@@ -526,7 +539,8 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     tiles[y][x] = { ...srcTile, type: 'tree', treeAge: 0, shelter: false }
 
     const withChronicle = pushChronicle(state, { kind: 'caretaker_plant', day: state.time.day, x, y })
-    set({ gameState: { ...withChronicle, tiles, caretaker: { ...withChronicle.caretaker, ...applyCaretakerPresence(withChronicle.caretaker, x, y, 'placement', 'plant') } } })
+    const withLog = logIntervention(withChronicle, 'plant_tree', `(${x},${y})`)
+    set({ gameState: { ...withLog, tiles, caretaker: { ...withLog.caretaker, ...applyCaretakerPresence(withLog.caretaker, x, y, 'placement', 'plant') } } })
   },
 
   // ── Environmental: Thunder strike ─────────────────────────────────────────
@@ -840,13 +854,14 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
       creatureId: creature.id, creatureName: creature.name,
       x: creature.x, y: creature.y,
     })
+    const withLog = logIntervention(withChronicle, 'heal', creature.name)
     set({
       gameState: {
-        ...withChronicle,
+        ...withLog,
         creatures,
         caretaker: {
-          ...withChronicle.caretaker,
-          ...applyCaretakerPresence(withChronicle.caretaker, creature.x, creature.y, 'intervention', 'heal'),
+          ...withLog.caretaker,
+          ...applyCaretakerPresence(withLog.caretaker, creature.x, creature.y, 'intervention', 'heal'),
         },
       }
     })

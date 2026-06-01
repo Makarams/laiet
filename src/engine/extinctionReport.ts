@@ -203,6 +203,63 @@ export function generateExtinctionReport({ state, fossil }: ReportInput): string
     lines.push('')
   }
 
+  // ── Rare birth outcome analysis ───────────────────────────────────────
+  const rareBirths = chron.filter(e => e.kind === 'rare_birth')
+  if (rareBirths.length > 0) {
+    lines.push('RARE BIRTH OUTCOMES')
+    lines.push('-------------------')
+    lines.push('(adaptation acquired · lifespan vs colony avg · trait propagated)')
+    const deadList = Object.values(state.creatures)
+    const allLifespans = deadList
+      .filter(c => c.diedOnDay !== null)
+      .map(c => (c.diedOnDay as number) - c.bornOnDay)
+    const colonyAvgLife = allLifespans.length
+      ? allLifespans.reduce((a, b) => a + b, 0) / allLifespans.length : 0
+
+    for (const rb of rareBirths) {
+      const c = rb.creatureId ? state.creatures[rb.creatureId] : null
+      const name = rb.creatureName ?? '?'
+      const detail = rb.detail ?? 'unknown mutation'
+
+      if (!c) {
+        lines.push(`  ${name.padEnd(12)} (${detail}) — no record`)
+        continue
+      }
+
+      const lifespan = c.diedOnDay !== null
+        ? (c.diedOnDay - c.bornOnDay)
+        : (extinctionDay - c.bornOnDay)
+      const lifeDelta = colonyAvgLife > 0
+        ? ((lifespan - colonyAvgLife) / colonyAvgLife * 100).toFixed(0)
+        : '?'
+      const sign = Number(lifeDelta) >= 0 ? '+' : ''
+
+      // Check if any offspring carry the same rare adaptation
+      const adaptations = c.genome?.adaptations ?? []
+      const offspringWithTrait = c.offspringIds?.filter(id => {
+        const o = state.creatures[id]
+        return o && adaptations.some(a => o.genome?.adaptations?.includes(a))
+      }).length ?? 0
+      const propagated = offspringWithTrait > 0 ? `propagated (${offspringWithTrait})` : 'not propagated'
+
+      lines.push(`  ${name.padEnd(12)} ${detail.padEnd(20)} · ${lifespan}d (${sign}${lifeDelta}% avg) · ${propagated}`)
+    }
+    lines.push('')
+  }
+
+  // ── Caretaker intervention log ────────────────────────────────────────
+  const interventions = state.interventionLog ?? []
+  if (interventions.length > 0) {
+    lines.push('CARETAKER INTERVENTIONS')
+    lines.push('-----------------------')
+    for (const entry of interventions) {
+      const tag = `[${fmtDay(entry.day)}]`.padEnd(18)
+      const det = entry.detail ? ` — ${entry.detail}` : ''
+      lines.push(`${tag} ${entry.action}${det}`)
+    }
+    lines.push('')
+  }
+
   // ── Top family lines ──────────────────────────────────────────────────
   const creatureList = Object.values(state.creatures)
   const familyCounts = countBy(creatureList as { familyName: string }[], 'familyName')

@@ -340,6 +340,12 @@ export interface Creature {
     detail?: string
   }[]
 
+  // ─── Spatial migration memory ──────────────────────────────────────────────
+  // Weighted record of tile coordinates where the creature successfully found
+  // food or shelter. Used to bias movement toward historically productive tiles.
+  // Each entry: { x, y, score, lastVisitDay }
+  spatialMemorySites?: { x: number; y: number; score: number; lastVisitDay: number }[]
+
   // Mechanical cause of death set at the tick of death. Aggregated into
   // GameState.deathCauseCounts; used by extinction inference and by chronicle
   // composition. Null while alive.
@@ -369,6 +375,7 @@ export type CreatureState =
   | 'scavenging'       // consuming a corpse (cannibalism)
   | 'dying'
   | 'playing'          // social play; reduces stress, emerges from high satisfaction
+  | 'resting'          // night idle; faster health/stress recovery; no movement
   | 'using_enrichment' // interacting with a placed enrichment item
   | 'grooming'         // social grooming; reduces stress of both parties
   | 'harvesting'       // heading to a resource tile to collect wood or stone
@@ -799,6 +806,20 @@ export interface GameState {
   // Per-lineage reproductive fitness multipliers. Seeded at colony start with variance
   // so some lineages naturally dominate and others stay marginal. Range: 0.5..1.5.
   lineageReproFitness?: Record<string, number>
+
+  // ─── Predator pressure ────────────────────────────────────────────────────
+  // 0..1; rises as population grows dense, falls when small or dispersed.
+  // Creatures randomly lose health and flee when pressure is high.
+  predatorPressure?: number
+
+  // ─── Tribal legacies ──────────────────────────────────────────────────────
+  // Dissolved tribes that lasted long enough leave a lasting cultural imprint.
+  // Boosts cognitionPressure and awareness stage progression.
+  tribalLegacies?: { tribeName: string; foundedOnDay: number; dissolvedOnDay: number; peakMembers: number }[]
+
+  // ─── Caretaker intervention log ───────────────────────────────────────────
+  // Bounded ring of caretaker actions with timestamps; shown in extinction report.
+  interventionLog?: { day: number; action: string; detail?: string }[]
 
   // neglect & legendary tracking — optional for backward compat
   lastNeglectWarning?: number  // game day of last neglect warning message

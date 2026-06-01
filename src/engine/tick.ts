@@ -118,6 +118,17 @@ import {
   THERMAL_VENT_WARMTH_GAIN, BIOLUMINESCENT_STRESS_RADIUS, BIOLUMINESCENT_STRESS_RELIEF,
   SPORE_RESISTANT_DISEASE_MULT, MIRE_DISEASE_RESIST,
   EMBER_FIRE_STRESS_RELIEF, VEIL_FOG_STRESS_RELIEF,
+  // new improvements
+  ELDER_TEACH_RADIUS, ELDER_TEACH_CHANCE, ELDER_WARMTH_BONUS, ELDER_STRESS_BONUS,
+  ELDER_MIN_AGE_RATIO, JUVENILE_MAX_AGE_RATIO,
+  PREDATOR_PRESSURE_RISE, PREDATOR_POP_THRESHOLD, PREDATOR_PRESSURE_DECAY,
+  PREDATOR_ATTACK_CHANCE, PREDATOR_HEALTH_DRAIN, PREDATOR_FLEE_STRESS, PREDATOR_PRESSURE_CAP,
+  RIVER_FREEZE_THRESHOLD, RIVER_FROZEN_THIRST_EFF, SNOW_EAT_THIRST_RELIEF, SNOW_EAT_WARMTH_COST,
+  TRIBE_LEGACY_MIN_DAYS, TRIBE_LEGACY_AWARENESS_BOOST, TRIBE_LEGACY_MAX,
+  REST_HEALTH_RECOVERY, REST_STRESS_RECOVERY, REST_HUNGER_COST,
+  FOOD_DENSITY_RADIUS, FOOD_DENSITY_MAX_SUPPRESSION, FOOD_DENSITY_POP_CAP,
+  SPATIAL_MEMORY_MAX_SITES, SPATIAL_MEMORY_DECAY, SPATIAL_MEMORY_SUCCESS, SPATIAL_MEMORY_FAIL,
+  INTERVENTION_LOG_MAX,
 } from './constants'
 import {
   tickNeeds, tickBehavior, tickMovement,
@@ -348,6 +359,8 @@ export function tickSimulation(state: GameState): GameState {
   next = tickTribes(next);                                    if (_profOn) { profMark('tribes', tStamp() - _t); _t = tStamp() }
   next = tickEnrichment(next, _rng);                          if (_profOn) { profMark('enrichment', tStamp() - _t); _t = tStamp() }
   next = tickNaturalEnrichment(next, _rng, mods);             if (_profOn) { profMark('naturalEnrichment', tStamp() - _t); _t = tStamp() }
+  next = tickPredatorPressure(next, _rng);                    if (_profOn) { profMark('predators', tStamp() - _t); _t = tStamp() }
+  next = tickElderTeaching(next, _rng);                       if (_profOn) { profMark('elderTeaching', tStamp() - _t); _t = tStamp() }
 
   // Single alive pass shared by colony stage, awareness tracking, and vocab window.
   const aliveAfterReproduction = Object.values(next.creatures).filter(c => !c.diedOnDay)
@@ -387,7 +400,11 @@ export function tickSimulation(state: GameState): GameState {
 
     let counter = next.cognitionPressure ?? 0
     if (targetStage > currentStage) {
-      counter = Math.max(0, counter) + 1
+      // Tribal legacies add fractional pressure toward advancement — accumulated
+      // cultural history makes the colony more likely to sustain the next stage.
+      const legacyCount = Math.min(TRIBE_LEGACY_MAX, (next.tribalLegacies ?? []).length)
+      const legacyBoost = legacyCount * TRIBE_LEGACY_AWARENESS_BOOST
+      counter = Math.max(0, counter) + 1 + legacyBoost
       if (counter >= AWARENESS_HOLD_TICKS) {
         next.awarenessStage = (currentStage + 1) as typeof next.awarenessStage
         counter = 0
@@ -820,7 +837,18 @@ function tickTiles(state: GameState, mods: SimModifiers): GameState {
             riverAdj = true
           }
           const riverMult = riverAdj ? RIVER_FOOD_ADJACENT_BONUS : 1.0
-          writeTile(y, x).foodAmount = Math.min(100, t.foodAmount + FOOD_REGROW_RATE_BASE * regrowMod * riverMult)
+          // Ecological density pressure: count alive creatures feeding within radius.
+          // Heavy local traffic suppresses regrowth, creating boom-bust food cycles.
+          const alive = Object.values(state.creatures).filter(c => c.diedOnDay === null)
+          let nearbyFeeders = 0
+          for (const c of alive) {
+            if (Math.abs(c.x - x) <= FOOD_DENSITY_RADIUS && Math.abs(c.y - y) <= FOOD_DENSITY_RADIUS) {
+              if (c.state === 'seeking_food' || c.state === 'idle' || c.state === 'wandering') nearbyFeeders++
+            }
+          }
+          const densityFraction = Math.min(1, nearbyFeeders / FOOD_DENSITY_POP_CAP)
+          const densitySuppression = 1 - densityFraction * FOOD_DENSITY_MAX_SUPPRESSION
+          writeTile(y, x).foodAmount = Math.min(100, t.foodAmount + FOOD_REGROW_RATE_BASE * regrowMod * riverMult * densitySuppression)
         } else if (!hasMatureTree && t.foodAmount <= 0) {
           const wt = writeTile(y, x)
           wt.type = t.biome === 'arid' ? 'barren' : 'grass'
@@ -1902,6 +1930,20 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
         if (!clonedTileRows[c.y]) { tiles[c.y] = srcTiles[c.y].slice(); clonedTileRows[c.y] = 1 }
         tiles[c.y][c.x] = result.tile
         if (c.state === 'seeking_food') c.state = 'idle'
+        // Spatial memory: record this tile as a productive food source
+        const existingSites = c.spatialMemorySites ?? []
+        const siteIdx = existingSites.findIndex(s => s.x === c.x && s.y === c.y)
+        if (siteIdx >= 0) {
+          c.spatialMemorySites = existingSites.map((s, i) =>
+            i === siteIdx ? { ...s, score: Math.min(10, s.score + SPATIAL_MEMORY_SUCCESS), lastVisitDay: state.time.day } : s
+          )
+        } else {
+          const newSite = { x: c.x, y: c.y, score: SPATIAL_MEMORY_SUCCESS, lastVisitDay: state.time.day }
+          const trimmed = existingSites.length >= SPATIAL_MEMORY_MAX_SITES
+            ? [...existingSites.sort((a, b) => a.score - b.score).slice(1), newSite]
+            : [...existingSites, newSite]
+          c.spatialMemorySites = trimmed
+        }
         if (DEBUG) console.log(`[EAT] ${c.name} hunger ${before.toFixed(1)} → ${c.hunger.toFixed(1)} (tile food: ${tiles[c.y][c.x].foodAmount.toFixed(1)})`)
       }
 
@@ -2003,6 +2045,28 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
           && (state.time.phase === 'day' || state.time.phase === 'dawn')
           && (currentTile.biome === 'temperate' || currentTile.biome === 'arid')) {
         c.warmth = Math.min(100, c.warmth + SOLAR_WARMTH_BONUS)
+      }
+
+      // ── Night rest: idle creatures enter a resting state at night ─────────
+      // Resting accelerates health and stress recovery and costs a small amount
+      // of hunger (metabolic cost of staying still). Creatures only rest when
+      // not in crisis; any pressing need breaks rest immediately.
+      const isNight = state.time.phase === 'night'
+      const inCrisis = c.hunger > 60 || c.thirst > 60 || c.warmth < 35 || c.stress > 75 || c.health < 30
+      if (isNight && !inCrisis && (c.state === 'idle' || c.state === 'resting')) {
+        c.state = 'resting'
+        c.health = Math.min(100, c.health + REST_HEALTH_RECOVERY)
+        c.stress  = Math.max(0, c.stress  - REST_STRESS_RECOVERY)
+        c.hunger  = Math.min(100, c.hunger + REST_HUNGER_COST)
+      } else if (c.state === 'resting' && (inCrisis || !isNight)) {
+        c.state = 'idle'
+      }
+
+      // ── Spatial memory decay: old sites fade over time ────────────────────
+      if (c.spatialMemorySites && c.spatialMemorySites.length > 0) {
+        c.spatialMemorySites = c.spatialMemorySites
+          .map(s => ({ ...s, score: s.score - SPATIAL_MEMORY_DECAY }))
+          .filter(s => s.score > 0.1)
       }
 
       // Winter huddling: bonded creatures that are adjacent share body heat.
@@ -2132,14 +2196,31 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
         tiles[c.y][c.x] = { ...tiles[c.y][c.x], puddleLevel: Math.max(0, (currentTile.puddleLevel ?? 0) - 0.008) }
       }
 
-      // Drink when on river tile and thirsty; consumes water from the tile
+      // Drink when on river tile and thirsty; consumes water from the tile.
+      // In deep winter with heavy snow, rivers partially freeze — reduced effectiveness.
       if (currentTile.type === 'river' && currentTile.waterLevel > 0 && c.thirst > 15) {
         const before = c.thirst
+        const isFrozen = state.time.season === 'winter' && (state.snowAccumulation ?? 0) >= RIVER_FREEZE_THRESHOLD
         c = drinkFromTile(c, currentTile)
+        if (isFrozen) {
+          // Partial freeze: undo most of the thirst relief — creature can only chip ice
+          const reliefGained = before - c.thirst
+          const reducedRelief = reliefGained * RIVER_FROZEN_THIRST_EFF
+          c.thirst = Math.min(100, before - reducedRelief)
+        }
         const wt = writeTile(c.y, c.x)
         wt.waterLevel = Math.max(0, wt.waterLevel - WATER_DRINK_DRAIN)
         if (c.state === 'seeking_water') c.state = 'idle'
         if (DEBUG) console.log(`[DRINK] ${c.name} thirst ${before.toFixed(1)} → ${c.thirst.toFixed(1)}`)
+      }
+
+      // Snow eating: thirsty creatures on snowy tiles can eat snow in winter —
+      // provides modest thirst relief at a warmth cost.
+      if (state.time.season === 'winter' && c.thirst > 35 && (currentTile.snowDepth ?? 0) > 0.2
+          && c.state !== 'resting') {
+        c.thirst  = Math.max(0, c.thirst  - SNOW_EAT_THIRST_RELIEF)
+        c.warmth  = Math.max(0, c.warmth  - SNOW_EAT_WARMTH_COST)
+        if (c.state === 'seeking_water') c.state = 'idle'
       }
 
       // Drink when adjacent to a river tile; position-aware so the drained tile is tracked
@@ -3599,6 +3680,18 @@ function tickTribeFormation(state: GameState, mods: SimModifiers): GameState {
         })
         creatures[id] = { ...updated, bonds: boostedBonds }
       }
+      // Record a tribal legacy if the tribe lasted long enough.
+      // Legacies persist in GameState and compound awareness stage progression.
+      const daysDuration = state.time.day - t.foundedOnDay
+      if (daysDuration >= TRIBE_LEGACY_MIN_DAYS) {
+        const legacy = {
+          tribeName: t.name,
+          foundedOnDay: t.foundedOnDay,
+          dissolvedOnDay: state.time.day,
+          peakMembers: t.peakMembers ?? t.memberIds.length,
+        }
+        state = { ...state, tribalLegacies: [...(state.tribalLegacies ?? []), legacy] }
+      }
       chronicle = pushChronicle(chronicle, {
         kind: 'tribe_dissolved', day: state.time.day,
         detail: t.name, count: Math.floor(gensLasted / 30),
@@ -3848,6 +3941,115 @@ function tickTribes(state: GameState): GameState {
   }
 
   return { ...state, tribes, messages, tribeWarStart }
+}
+
+// ─── Predator pressure ────────────────────────────────────────────────────────
+// No explicit predator creature is tracked — instead, a colony-wide pressure
+// score rises as population grows dense and falls when it shrinks or disperses.
+// When pressure is high, random creatures take health hits and flee, simulating
+// unseen predation without adding AI complexity.
+
+function tickPredatorPressure(state: GameState, rng: () => number): GameState {
+  const alive = Object.values(state.creatures).filter(c => c.diedOnDay === null)
+  const liveCount = alive.length
+  let pressure = state.predatorPressure ?? 0
+
+  if (liveCount > PREDATOR_POP_THRESHOLD) {
+    // Pressure rises proportional to how far above the threshold the colony is
+    pressure = Math.min(PREDATOR_PRESSURE_CAP, pressure + PREDATOR_PRESSURE_RISE * (liveCount - PREDATOR_POP_THRESHOLD))
+  } else {
+    pressure = Math.max(0, pressure - PREDATOR_PRESSURE_DECAY)
+  }
+
+  if (pressure <= 0.05) return { ...state, predatorPressure: pressure }
+
+  // Apply predator attacks at random to creatures not sheltered in caves/shelters
+  const creatures = { ...state.creatures }
+  for (const c of alive) {
+    if (rng() > PREDATOR_ATTACK_CHANCE * pressure) continue
+    const tile = state.tiles[c.y]?.[c.x]
+    if (tile?.type === 'cave' || tile?.type === 'shelter') continue  // shelter blocks attack
+    if (c.genome.adaptations?.includes('ridge_armor')) continue      // armor reduces chance
+    const updated = {
+      ...creatures[c.id],
+      health: Math.max(0, c.health - PREDATOR_HEALTH_DRAIN),
+      stress:  Math.min(100, c.stress  + PREDATOR_FLEE_STRESS),
+      state:   'fleeing' as const,
+    }
+    creatures[c.id] = updated
+  }
+
+  return { ...state, creatures, predatorPressure: pressure }
+}
+
+// ─── Elder teaching ───────────────────────────────────────────────────────────
+// Elders (creatures past 60% of their maxAge) teach nearby juveniles (below 30%
+// of maxAge). Teaching provides warmth bonus, stress reduction, and boosts the
+// juvenile's terrainMemory with the elder's best-known food sites — simulating
+// cultural transmission of survival knowledge across generations.
+
+function tickElderTeaching(state: GameState, rng: () => number): GameState {
+  const alive = Object.values(state.creatures).filter(c => c.diedOnDay === null)
+  if (alive.length < 2) return state
+
+  const elders   = alive.filter(c => c.age >= c.maxAge * ELDER_MIN_AGE_RATIO)
+  const juveniles = alive.filter(c => c.age <= c.maxAge * JUVENILE_MAX_AGE_RATIO)
+  if (elders.length === 0 || juveniles.length === 0) return state
+
+  const creatures = { ...state.creatures }
+
+  for (const elder of elders) {
+    for (const juv of juveniles) {
+      // Distance check
+      if (Math.abs(elder.x - juv.x) > ELDER_TEACH_RADIUS) continue
+      if (Math.abs(elder.y - juv.y) > ELDER_TEACH_RADIUS) continue
+      if (rng() > ELDER_TEACH_CHANCE) continue
+
+      const juvUpdated = { ...creatures[juv.id] }
+
+      // Warmth and stress benefit — presence of an elder is calming and warming
+      juvUpdated.warmth = Math.min(100, juvUpdated.warmth + ELDER_WARMTH_BONUS)
+      juvUpdated.stress = Math.max(0,   juvUpdated.stress  - ELDER_STRESS_BONUS)
+
+      // Knowledge transfer: elder's best spatial memory sites are shared with juvenile.
+      // The juvenile's own memory scores are boosted for sites the elder knows well.
+      if (elder.spatialMemorySites && elder.spatialMemorySites.length > 0) {
+        const topElderSites = elder.spatialMemorySites
+          .filter(s => s.score > 2)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 3)
+
+        const juvSites = [...(juvUpdated.spatialMemorySites ?? [])]
+        for (const elderSite of topElderSites) {
+          const existing = juvSites.findIndex(s => s.x === elderSite.x && s.y === elderSite.y)
+          if (existing >= 0) {
+            juvSites[existing] = {
+              ...juvSites[existing],
+              score: Math.min(10, juvSites[existing].score + elderSite.score * 0.4),
+            }
+          } else if (juvSites.length < SPATIAL_MEMORY_MAX_SITES) {
+            juvSites.push({ ...elderSite, score: elderSite.score * 0.5, lastVisitDay: state.time.day })
+          }
+        }
+        juvUpdated.spatialMemorySites = juvSites
+      }
+
+      // Terrain memory: elder's successful tile-type experiences bleed into juvenile
+      if (elder.terrainMemory) {
+        const juvTerrain = { ...(juvUpdated.terrainMemory ?? {}) }
+        for (const [tileType, score] of Object.entries(elder.terrainMemory)) {
+          if ((score ?? 0) > 1) {
+            juvTerrain[tileType] = Math.min(10, (juvTerrain[tileType] ?? 0) + (score ?? 0) * 0.2)
+          }
+        }
+        juvUpdated.terrainMemory = juvTerrain
+      }
+
+      creatures[juv.id] = juvUpdated
+    }
+  }
+
+  return { ...state, creatures }
 }
 
 // ─── Caretaker ────────────────────────────────────────────────────────────────

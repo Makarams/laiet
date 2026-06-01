@@ -293,6 +293,27 @@ export function ColonyStatsPanel() {
   // snowAccumulation is optional on GameState (new feature)
   const snowAcc = (gameState as any).snowAccumulation ?? 0
 
+  // Live death cause breakdown — rolling totals, shown as relative proportions
+  const deathCounts = (gameState as any).deathCauseCounts ?? {} as Record<string, number>
+  const deathEntries = Object.entries(deathCounts as Record<string, number>)
+    .filter(([, n]) => n > 0)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 5)
+  const totalDeathsTracked = deathEntries.reduce((s, [, n]) => s + n, 0)
+
+  const CAUSE_COLORS: Record<string, string> = {
+    cold:         '#6ab0d4',
+    starvation:   '#d4a06a',
+    dehydration:  '#a0c4d4',
+    old_age:      '#8888aa',
+    sickness:     '#b0d46a',
+    combat:       '#d46a6a',
+    fire:         '#d4946a',
+    lightning:    '#e8c84a',
+    drowning:     '#6ab0d4',
+    unknown:      '#666688',
+  }
+
   return (
     <Panel>
       <PanelHeader>
@@ -313,6 +334,40 @@ export function ColonyStatsPanel() {
           <Value $color={lineageCount > 1 ? THEME.amber : THEME.textTertiary}>{lineageCount}</Value>
         </Row>
       </Section>
+
+      {deathEntries.length > 0 && (
+        <Section>
+          <SectionTitle>Cause of Death</SectionTitle>
+          {deathEntries.map(([cause, n]) => (
+            <BarRow key={cause}>
+              <BarLabel style={{ width: 72, fontSize: THEME.type.xs }}>{cause.replace('_', ' ')}</BarLabel>
+              <BarTrack>
+                <BarFill
+                  $w={totalDeathsTracked > 0 ? (n / totalDeathsTracked) * 100 : 0}
+                  $color={CAUSE_COLORS[cause] ?? THEME.amber}
+                />
+              </BarTrack>
+              <BarNum>{n}</BarNum>
+            </BarRow>
+          ))}
+        </Section>
+      )}
+
+      {((gameState as any).predatorPressure ?? 0) > 0.05 && (
+        <Section>
+          <SectionTitle>Predator Pressure</SectionTitle>
+          <BarRow>
+            <BarLabel style={{ width: 72, fontSize: THEME.type.xs }}>threat</BarLabel>
+            <BarTrack>
+              <BarFill
+                $w={Math.round(((gameState as any).predatorPressure ?? 0) * 100)}
+                $color={(gameState as any).predatorPressure > 0.6 ? THEME.death : THEME.amber}
+              />
+            </BarTrack>
+            <BarNum>{Math.round(((gameState as any).predatorPressure ?? 0) * 100)}%</BarNum>
+          </BarRow>
+        </Section>
+      )}
 
       <Section>
         <SectionTitle>Morphotypes</SectionTitle>

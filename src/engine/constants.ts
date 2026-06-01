@@ -960,3 +960,49 @@ export const ACTION_LOAD_WEIGHTS = {
   fire:       16,
   observe:    0,
 } as const
+// ─── Cultural transmission (elder teaching) ───────────────────────────────────
+export const ELDER_TEACH_RADIUS       = 6    // tiles; elder must be this close to a juvenile
+export const ELDER_TEACH_CHANCE       = 0.004 // per tick; chance an elder teaches a nearby juvenile
+export const ELDER_WARMTH_BONUS       = 4    // warmth points added to juvenile per teaching tick
+export const ELDER_STRESS_BONUS       = 0.08 // stress reduced per tick for juveniles near an elder
+export const ELDER_MIN_AGE_RATIO      = 0.6  // creature must be this fraction of maxAge to be an elder
+export const JUVENILE_MAX_AGE_RATIO   = 0.3  // creature must be below this fraction to be a juvenile
+
+// ─── Predator pressure ────────────────────────────────────────────────────────
+export const PREDATOR_PRESSURE_RISE   = 0.0004 // added per tick per alive creature above threshold
+export const PREDATOR_POP_THRESHOLD   = 8      // colony size above which predator pressure starts building
+export const PREDATOR_PRESSURE_DECAY  = 0.0008 // per tick; pressure falls when colony is small or dispersed
+export const PREDATOR_ATTACK_CHANCE   = 0.00012 // per tick per creature when pressure > 0.3
+export const PREDATOR_HEALTH_DRAIN    = 6       // health lost per predator attack
+export const PREDATOR_FLEE_STRESS     = 18      // stress added when attacked by predator
+export const PREDATOR_PRESSURE_CAP    = 1.0     // max pressure value
+
+// ─── River freezing (winter) ──────────────────────────────────────────────────
+export const RIVER_FREEZE_THRESHOLD   = 0.55   // snowAccumulation above which rivers partially freeze
+export const RIVER_FROZEN_THIRST_EFF  = 0.35   // fraction of normal thirst satisfaction when drinking from frozen river
+export const SNOW_EAT_THIRST_RELIEF   = 6      // thirst relieved by eating snow (creature on snowy tile)
+export const SNOW_EAT_WARMTH_COST     = 3      // warmth lost when eating snow
+
+// ─── Tribal legacy ────────────────────────────────────────────────────────────
+export const TRIBE_LEGACY_MIN_DAYS    = 20     // tribe must last at least this many days to leave a legacy
+export const TRIBE_LEGACY_AWARENESS_BOOST = 0.8 // cognitionPressure added per legacy when computing awareness
+export const TRIBE_LEGACY_MAX         = 5       // max legacies that contribute to the bonus (caps the effect)
+
+// ─── Sleep/rest cycles ────────────────────────────────────────────────────────
+export const REST_HEALTH_RECOVERY     = 0.04   // health restored per tick while resting at night
+export const REST_STRESS_RECOVERY     = 0.12   // stress reduced per tick while resting at night
+export const REST_HUNGER_COST         = 0.008  // slight hunger cost while resting (metabolic baseline)
+
+// ─── Ecological food density pressure ────────────────────────────────────────
+export const FOOD_DENSITY_RADIUS      = 6      // tile radius to count nearby feeders
+export const FOOD_DENSITY_MAX_SUPPRESSION = 0.55  // max regrowth suppression (at full crowd)
+export const FOOD_DENSITY_POP_CAP     = 6      // creature count within radius that fully suppresses regrowth
+
+// ─── Spatial migration memory ─────────────────────────────────────────────────
+export const SPATIAL_MEMORY_MAX_SITES = 8      // max remembered food/shelter sites per creature
+export const SPATIAL_MEMORY_DECAY     = 0.002  // score decay per tick (forgotten over time)
+export const SPATIAL_MEMORY_SUCCESS   = 1.2    // score added on successful find
+export const SPATIAL_MEMORY_FAIL      = 0.4    // score subtracted on empty find
+
+// ─── Caretaker intervention log ───────────────────────────────────────────────
+export const INTERVENTION_LOG_MAX     = 40     // max entries stored in GameState.interventionLog

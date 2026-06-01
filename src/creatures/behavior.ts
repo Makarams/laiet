@@ -413,6 +413,25 @@ export function tickBehavior(
   // ── 3. Critical survival (pre-emptive; seek before truly desperate) ──
   if (c.hunger > HUNGER_SEEK_THRESHOLD) {
     const effectiveHungerMin = (c.genome.race && RACE_PROFILES[c.genome.race]?.hungerThresholdOverride) ?? FOOD_SEEK_MIN_AMOUNT
+
+    // Spatial memory: if the creature remembers productive food sites, prefer the
+    // highest-scored one that's reachable before falling back to a tile scan.
+    const memorySites = c.spatialMemorySites ?? []
+    if (memorySites.length > 0) {
+      const bestMemory = memorySites
+        .filter(s => s.score > 1.5)
+        .sort((a, b) => b.score - a.score)[0]
+      if (bestMemory) {
+        const memTile = tiles[bestMemory.y]?.[bestMemory.x]
+        if (memTile && (memTile.type === 'food_patch' || memTile.type === 'bush') && memTile.foodAmount > effectiveHungerMin) {
+          changes.state = 'seeking_food'
+          changes.targetX = bestMemory.x
+          changes.targetY = bestMemory.y
+          return changes
+        }
+      }
+    }
+
     const foodTile = findNearest(['food_patch', 'bush'], 20)
     if (foodTile && foodTile.foodAmount > effectiveHungerMin) {
       changes.state = 'seeking_food'
