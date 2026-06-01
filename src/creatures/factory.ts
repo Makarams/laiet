@@ -275,6 +275,7 @@ export function createOffspring(
   divergencePressure = 0,  // 0-1; computed by caller from geographic/stress/resource signals
   adaptationInheritMult = 1.0,  // SimModifiers.adaptationInheritMult
   lifespanMult = 1.0,             // SimModifiers.lifespanMult — scales offspring's maxAge
+  coldDeathPressure = 0,          // 0-1; fraction of recent deaths caused by cold — biases adaptation
 ): Creature {
   // Fitness-weighted inheritance: healthier, less-stressed parents pass on more traits.
   // The probability of inheriting parentA's trait rises with parentA's relative fitness.
@@ -293,7 +294,7 @@ export function createOffspring(
 
   const behaviorSig = computeBehaviorSignature(parentA, parentB)
   const baseGenome = inheritGenome(parentA.genome, parentB.genome, rng, effectiveMutation, envCtx, parentBias, behaviorSig)
-  const newAdaptation = envCtx ? acquireAdaptation(envCtx) : null
+  const newAdaptation = envCtx ? acquireAdaptation(envCtx, coldDeathPressure) : null
   const genome = {
     ...baseGenome,
     adaptations: inheritAdaptations(parentA.genome, parentB.genome, newAdaptation, rng, adaptationInheritMult),
@@ -597,11 +598,11 @@ export function recordExperience(
 // ─── Colony stage ─────────────────────────────────────────────────────────────
 
 export function getColonyStage(population: number) {
-  if (population >= 80) return 'ascendant'
-  if (population >= 51) return 'thriving'
-  if (population >= 31) return 'established'
-  if (population >= 16) return 'growing'
-  if (population >= 6) return 'nascent'
+  if (population >= 65) return 'ascendant'
+  if (population >= 40) return 'thriving'
+  if (population >= 22) return 'established'
+  if (population >= 10) return 'growing'
+  if (population >= 4)  return 'nascent'
   return 'genesis'
 }
 

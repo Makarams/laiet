@@ -23,6 +23,7 @@ import {
   PUDDLE_MOVE_MODIFIER, PUDDLE_MOVE_THRESHOLD,
   HARVEST_TRIGGER_SATISFACTION, HARVEST_RADIUS, BUILD_TERRITORY_RADIUS,
   FOOD_SEEK_MIN_AMOUNT, FOOD_SEEK_FALLBACK_RADIUS, PUDDLE_DRINK_RADIUS,
+  WARMTH_SEEK_THRESHOLD_AUTUMN, AUTUMN_FORAGE_DRIVE_MULT,
 } from '@/engine/constants'
 import { findNearestTileOfType, findNearestInIndex, getTile, isTilePassable, TileTypeIndex } from '@/world/worldGen'
 import { tickSentience, seedDrives } from './factory'
@@ -318,6 +319,7 @@ export function tickBehavior(
   recentFractureDay?: number,       // most-recent fracture chronicle day; behavior reads this directly
   currentDay?: number,              // today's game day, for fracture-window comparison
   creatureGrid?: CreatureGrid,      // optional spatial grid; falls back to aliveCreatures scan
+  awarenessStage = 1,               // colony awareness stage; gates learned survival behaviors
 ): Partial<Creature> {
   const c = creature
   const changes: Partial<Creature> = {}
@@ -480,7 +482,21 @@ export function tickBehavior(
   if (c.warmth < WARMTH_SEEK_THRESHOLD && season === 'winter') {
     // Caves are preferred over trees; warmer and more reliable
     const caveTile = findNearest(['cave'], 18)
-    const shelterTile = caveTile ?? findNearest(['tree', 'shelter'], 12)
+    const shelterTile = caveTile ?? findNearest(['shelter', 'tree'], 12)
+    if (shelterTile) {
+      changes.state = 'seeking_shelter'
+      changes.targetX = shelterTile.x
+      changes.targetY = shelterTile.y
+      return changes
+    }
+  }
+
+  // Autumn shelter-seeking: awareness stage 1+ unlocks anticipatory shelter behavior.
+  // Creatures don't wait for a warmth crisis — they start seeking shelter as warmth
+  // dips toward the autumn threshold, preparing before winter arrives.
+  if (season === 'autumn' && awarenessStage >= 1 && c.warmth < WARMTH_SEEK_THRESHOLD_AUTUMN) {
+    const caveTile = findNearest(['cave'], 20)
+    const shelterTile = caveTile ?? findNearest(['shelter', 'tree'], 14)
     if (shelterTile) {
       changes.state = 'seeking_shelter'
       changes.targetX = shelterTile.x
@@ -874,11 +890,15 @@ export function tickBehavior(
     }
 
     // ── Acquisitive candidate: pre-emptive resource gathering ────────────
-    if (d.acquisitive > 0.30 && c.hunger > 12) {
-      const foodTile = findNearest(['food_patch', 'bush'], 14)
+    // In autumn, all creatures with any acquisitive drive ramp up foraging urgency —
+    // seasonal instinct to build stores before winter, regardless of current hunger.
+    const autumnForageMult = season === 'autumn' ? AUTUMN_FORAGE_DRIVE_MULT : 1.0
+    const autumnForageThreshold = season === 'autumn' ? 0.10 : 0.30  // lower bar in autumn
+    if (d.acquisitive > autumnForageThreshold && (c.hunger > 12 || season === 'autumn')) {
+      const foodTile = findNearest(['food_patch', 'bush'], season === 'autumn' ? 20 : 14)
       if (foodTile && foodTile.foodAmount > 8) {
         candidates.push({
-          weight: d.acquisitive * 90 * (c.hunger / 50),
+          weight: d.acquisitive * 90 * (c.hunger / 50) * autumnForageMult,
           apply: () => {
             changes.state = 'seeking_food'
             changes.targetX = foodTile.x
@@ -1633,7 +1653,7 @@ export function drinkFromTile(creature: Creature, tile: Tile): Creature {
 //
 // Population pressure: pass in `populationFactor` (1.0 = healthy, scales down
 // toward 0 as the colony overshoots carrying capacity). Caller computes it.
-export function canReproduce(c: Creature, season: Season, populationFactor = 1.0, weather: WeatherState = 'clear'): boolean {
+export function canReproduce(c: Creature, season: Season, populationFactor = 1.0, weather: WeatherState = 'clear', lineageReproFitness?: Record<string, number>): boolean {
   if (c.age < CREATURE_MATURITY_TICKS) return false
   if (c.hunger > 55) return false
   if (c.health < 55) return false
@@ -1643,7 +1663,11 @@ export function canReproduce(c: Creature, season: Season, populationFactor = 1.0
   const seasonBonus = SEASON_MODIFIERS[season].breedBonus
   const weatherMult = WEATHER_BREED_MULT[weather] ?? 1.0
   const baseRate = REPRODUCE_RATE_BY_BODY[c.genome.body]
-  return Math.random() < baseRate * seasonBonus * populationFactor * weatherMult
+  // Per-lineage fitness multiplier: some lineages are naturally more prolific.
+  // New offspring born into a lineage inherit its fitness score; new lineages
+  // forked from parents average the parent lineage's fitness with a small random offset.
+  const lineageMult = lineageReproFitness?.[c.lineageId] ?? 1.0
+  return Math.random() < baseRate * seasonBonus * populationFactor * weatherMult * lineageMult
 }
 
 export function canAsexuallyReproduce(c: Creature, season: Season, populationFactor = 1.0): boolean {

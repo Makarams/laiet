@@ -22,7 +22,7 @@ import {
   FIRE_DURATION_TICKS, FIRE_SPREAD_CHANCE, FIRE_TICK_DAMAGE,
   FENCE_INITIAL_DURABILITY, FENCE_STRESS_RADIUS, FENCE_DECAY_BASE, FENCE_DECAY_STORM,
   ASEXUAL_BASE_CHANCE, REPRODUCE_BOND_MIN_STRENGTH,
-  AUTO_LIGHTNING_CHANCE, AUTO_LIGHTNING_DAMAGE, CAVE_WARMTH_BONUS,
+  AUTO_LIGHTNING_CHANCE, AUTO_LIGHTNING_DAMAGE, CAVE_WARMTH_BONUS, SHELTER_WARMTH_BONUS,
   WEATHER_DURATION, RAIN_WATER_BONUS, RAIN_THIRST_REDUCTION, RAIN_FOOD_BONUS,
   STORM_LIGHTNING_CHANCE, DROUGHT_WATER_DRAIN, DROUGHT_THIRST_PENALTY,
   DROUGHT_FOOD_FACTOR, THIRST_DECAY, HUNGER_DECAY,
@@ -39,14 +39,14 @@ import {
   // tribe formation & apex
   TRIBE_FORMATION_CHECK_INTERVAL, TRIBE_FORM_MIN_MEMBERS, TRIBE_FORM_RADIUS,
   TRIBE_FORM_MIN_BOND_STRENGTH, TRIBE_FORM_MIN_BOND_FRACTION,
-  TRIBE_DISSOLVE_MIN_MEMBERS, TRIBE_SPLIT_MIN_MEMBERS, TRIBE_SPLIT_CENTROID_GAP,
+  TRIBE_DISSOLVE_MIN_MEMBERS, TRIBE_SPLIT_MIN_MEMBERS, TRIBE_SPLIT_CENTROID_GAP, TRIBE_DISSOLVE_BOND_RESIDUAL,
   FEAR_WITNESS_RADIUS, FEAR_MEMORY_DAYS, FEAR_BONDED_LOSS_BOOST,
   // seasonal food sources
   SPRING_BLOOM_CHANCE, SPRING_BLOOM_RAIN_MULT, SPRING_BLOOM_FOOD, SPRING_BLOOM_BIOME_BIAS,
   SUMMER_RIPARIAN_CHANCE, SUMMER_RIPARIAN_FOOD,
   AUTUMN_WINDFALL_CHANCE, AUTUMN_WINDFALL_FOOD, AUTUMN_MUSHROOM_CHANCE, AUTUMN_MUSHROOM_FOOD,
   WINTER_LICHEN_CHANCE, WINTER_LICHEN_FOOD, WINTER_LICHEN_CAVE_RADIUS,
-  WARMTH_DECAY_BASE, WARMTH_DECAY_WINTER,
+  WARMTH_DECAY_BASE, WARMTH_DECAY_WINTER, WARMTH_DRAIN_CAP_PER_TICK,
   CARETAKER_PRESENCE_RADIUS, CARETAKER_PRESENCE_WINDOW_MS,
   BONE_MEMORY_RADIUS,
   QUESTION_RESPONSE_WINDOW_MS,
@@ -1659,6 +1659,11 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
         })
       }
     }
+    // Snapshot warmth before all drain operations this tick.
+    // Used below to enforce WARMTH_DRAIN_CAP_PER_TICK — prevents stacking
+    // of base decay + night bonus + rain/snow from creating an unrecoverable
+    // spiral that no shelter or adaptation can offset.
+    const warmthBeforeDrain = c.warmth
     c = tickNeeds(c, state.time.season, creatureTile?.biome, state.weather)
 
     // Weather thirst/stress correction; rain/storm reduces thirst; drought/heat increases it.
@@ -1828,7 +1833,7 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
       if ((c.stateTimer ?? 0) >= 30) { c.state = 'idle'; c.stateTimer = 0 }
     }
 
-    const behaviorChanges = tickBehavior(c, tiles, creatures, state.time.season, aliveCreatures, tileIdx, state.enrichmentItems, weather, recentFractureDay, state.time.day, creatureGrid)
+    const behaviorChanges = tickBehavior(c, tiles, creatures, state.time.season, aliveCreatures, tileIdx, state.enrichmentItems, weather, recentFractureDay, state.time.day, creatureGrid, state.awarenessStage ?? 1)
     c = { ...c, ...behaviorChanges }
 
     // Playing state; applies stress reduction and times out after PLAY_DURATION_TICKS
@@ -1984,6 +1989,12 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
         c.stress = Math.max(0, c.stress - NATURAL_CAVE_STRESS_REDUCTION)
       }
 
+      // Built shelter warmth; weaker than a cave but accessible to genesis-stage colonies.
+      // Provides meaningful insulation in winter without making caves redundant.
+      if (currentTile.type === 'shelter') {
+        c.warmth = Math.min(100, c.warmth + SHELTER_WARMTH_BONUS)
+      }
+
       // Solar warmth recovery; clear daytime on warm biomes slowly restores warmth.
       // Partial offset to the constant baseline drain — warmth still bleeds in shade,
       // at night, and during rain/storm, but sun-exposed temperate/arid ground sustains.
@@ -2099,6 +2110,16 @@ function tickCreatures(state: GameState, _tickRng: () => number, mods: SimModifi
         if (snowDepth > 0.5) {
           c.stress = Math.min(100, c.stress + 0.08 * snowDepth)
         }
+      }
+
+      // ── Warmth drain budget cap ───────────────────────────────────────────
+      // All warmth drain sources (tickNeeds, night bonus, rain, snow) have now
+      // fired. Clamp total loss this tick to WARMTH_DRAIN_CAP_PER_TICK so no
+      // combination of stacked conditions can exceed the cap. Shelter and
+      // recovery gains are applied *after* this point and are unaffected.
+      const totalWarmthLost = warmthBeforeDrain - c.warmth
+      if (totalWarmthLost > WARMTH_DRAIN_CAP_PER_TICK) {
+        c.warmth = warmthBeforeDrain - WARMTH_DRAIN_CAP_PER_TICK
       }
 
       // ── Puddle: creatures can drink from standing water (mud tiles) ───────
@@ -3030,6 +3051,18 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
   const messages: ColonyMessage[] = [...state.messages]
   let lastMsgDay = messages.length > 0 ? messages[messages.length - 1].day : -999
 
+  // Cold death pressure: fraction of all recorded deaths that were caused by cold.
+  // Used to bias adaptation selection toward insulation traits when the colony
+  // is under sustained cold mortality pressure.
+  const deathCounts = state.deathCauseCounts ?? {}
+  const totalDeathsRecorded = Object.values(deathCounts).reduce((a, b) => a + (b ?? 0), 0)
+  const coldDeathPressure = totalDeathsRecorded > 0
+    ? (deathCounts['cold'] ?? 0) / totalDeathsRecorded
+    : 0
+
+  // Mutable copy of lineage reproductive fitness so new forked lineages can be registered
+  const lineageReproFitness: Record<string, number> = { ...(state.lineageReproFitness ?? {}) }
+
   const pairedThisTick = new Set<string>()
 
   for (const c of alive) {
@@ -3044,9 +3077,9 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
     // Cooldown gate: a creature that bred recently sits out until its
     // (jittered) cooldown elapses, so births stagger across the colony.
     const ready     = reproductionReady(c, state.time.day)
-    const baseRoll  = ready && canReproduce(c, state.time.season, popFactor, state.weather)
+    const baseRoll  = ready && canReproduce(c, state.time.season, popFactor, state.weather, state.lineageReproFitness)
     const boostRoll = ready && !baseRoll && nestNearby
-      && canReproduce(c, state.time.season, popFactor * Math.max(1, NEST_BREED_MULT - 1), state.weather)
+      && canReproduce(c, state.time.season, popFactor * Math.max(1, NEST_BREED_MULT - 1), state.weather, state.lineageReproFitness)
     if (baseRoll || boostRoll) {
       const bondedIds = c.bonds.filter(b => b.strength >= REPRODUCE_BOND_MIN_STRENGTH).map(b => b.targetId)
       const partner = bondedIds
@@ -3077,9 +3110,20 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
         const offGen = Math.max(c.generation, partner.generation) + 1
         const crowd = localCrowdCentroid(reproGrid, c.x, c.y, 20)
         const birth = pickBirthTile(state.tiles, c.x, c.y, offGen, crowd.x, crowd.y, tickRng)
-        const offspring = createOffspring(c, partner, birth.x, birth.y, state.time.day, tickRng, state.modifiers?.mutationChance, combinedLex, envCtx, divergencePressure, state.modifiers?.adaptationInheritMult ?? 1, state.modifiers?.lifespanMult ?? 1)
+        const offspring = createOffspring(c, partner, birth.x, birth.y, state.time.day, tickRng, state.modifiers?.mutationChance, combinedLex, envCtx, divergencePressure, state.modifiers?.adaptationInheritMult ?? 1, state.modifiers?.lifespanMult ?? 1, coldDeathPressure)
         if (nestNearby) offspring.health = Math.min(100, offspring.health + NEST_OFFSPRING_HEALTH)
         newCreatures.push(offspring)
+
+        // Register lineage reproductive fitness for newly forked lineages.
+        // New lineage inherits avg of both parents' fitness plus a small random offset,
+        // so forked lineages start near their ancestor's fitness but diverge over time.
+        if (!(offspring.lineageId in lineageReproFitness)) {
+          const parentFitnessA = lineageReproFitness[c.lineageId] ?? 1.0
+          const parentFitnessB = lineageReproFitness[partner.lineageId] ?? 1.0
+          const avgParentFitness = (parentFitnessA + parentFitnessB) / 2
+          const offset = (tickRng() - 0.5) * 0.20  // ±0.10 divergence
+          lineageReproFitness[offspring.lineageId] = Math.max(0.5, Math.min(1.5, avgParentFitness + offset))
+        }
 
         // Chronicle real biological events: hybrid birth (cross-lineage offspring
         // whose lineageId encodes both parent roots) and a new lineage fork.
@@ -3217,7 +3261,7 @@ function tickReproduction(state: GameState, tickRng: () => number, popFactor: nu
     })
   }
 
-  return { ...state, creatures, totalCreaturesEver, totalGenerations, messages }
+  return { ...state, creatures, totalCreaturesEver, totalGenerations, messages, lineageReproFitness }
 }
 
 function checkBoneMemory(
@@ -3541,9 +3585,19 @@ function tickTribeFormation(state: GameState, mods: SimModifiers): GameState {
     if (living.length < TRIBE_DISSOLVE_MIN_MEMBERS) {
       const gensLasted = Math.max(0, state.time.day - t.foundedOnDay)
       tribes[tribeId] = { ...t, memberIds: living, dissolvedOnDay: state.time.day }
-      // Untag any still-living members
+      // Untag any still-living members and boost their mutual bonds — the tribe
+      // dissolved but shared experience leaves a lasting social imprint.
+      // Former tribemates huddle better and re-form tribes faster.
       for (const id of living) {
-        if (creatures[id]) creatures[id] = { ...creatures[id], tribeId: null }
+        if (!creatures[id]) continue
+        const updated = { ...creatures[id], tribeId: null }
+        const boostedBonds = updated.bonds.map(b => {
+          if (living.includes(b.targetId)) {
+            return { ...b, strength: Math.min(100, b.strength + TRIBE_DISSOLVE_BOND_RESIDUAL) }
+          }
+          return b
+        })
+        creatures[id] = { ...updated, bonds: boostedBonds }
       }
       chronicle = pushChronicle(chronicle, {
         kind: 'tribe_dissolved', day: state.time.day,

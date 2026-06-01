@@ -182,6 +182,17 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
     const creatureMap: Record<string, Creature> = {}
     for (const c of creatures) creatureMap[c.id] = c
 
+    // Seed per-lineage reproductive fitness with variance so lineages have
+    // different natural success rates. Range 0.65..1.35, seeded from world seed
+    // so it's deterministic per world but varied across worlds.
+    const rngFitness = (() => { let s = seed * 1.618; return () => { s = (s * 9301 + 49297) % 233280; return s / 233280 } })()
+    const lineageReproFitness: Record<string, number> = {}
+    for (const c of creatures) {
+      if (!(c.lineageId in lineageReproFitness)) {
+        lineageReproFitness[c.lineageId] = 0.65 + rngFitness() * 0.70
+      }
+    }
+
     const state: GameState = {
       worldId: uuid(),
       userId,
@@ -219,6 +230,7 @@ export const useLaietStore = create<LaietStore>((set, get) => ({
       lastSessionEnd: null,
       snowAccumulation: 0,
       tileTypeCount: countTileTypes(tiles),
+      lineageReproFitness,
     }
 
     set({ gameState: state })

@@ -98,7 +98,7 @@ export const STARTER_AGE_STAGGER_FRACTION = 0.35
 // Lower rates → more survival time, creatures don't die in minutes
 export const HUNGER_DECAY = 0.05                  // was 0.08
 export const THIRST_DECAY = 0.07                  // was 0.12
-export const WARMTH_DECAY_WINTER = 0.12
+export const WARMTH_DECAY_WINTER = 0.10
 export const WARMTH_DECAY_BASE = 0.015
 export const STRESS_DECAY_BASE = 0.03
 
@@ -109,6 +109,16 @@ export const WARMTH_CRITICAL = 20
 export const HUNGER_SEEK_THRESHOLD = 35           // seek food early (was 52)
 export const THIRST_SEEK_THRESHOLD = 35           // seek water early (was 55)
 export const WARMTH_SEEK_THRESHOLD = 30
+// Autumn prep: warmth threshold below which creatures actively seek shelter in autumn
+// (lower than the winter threshold since it's anticipatory, not crisis-driven)
+export const WARMTH_SEEK_THRESHOLD_AUTUMN = 55
+// Snow warmth drain budget cap: total warmth drain per tick from all sources combined
+// is capped to avoid exponential stacking (base decay + night + snow = death spiral)
+export const WARMTH_DRAIN_CAP_PER_TICK = 0.28
+// Autumn food urgency: acquisitive drive multiplier when autumn arrives and food stores are low
+export const AUTUMN_FORAGE_DRIVE_MULT = 2.2
+// Residual bond boost when a tribe dissolves — former tribemates keep warmer ties
+export const TRIBE_DISSOLVE_BOND_RESIDUAL = 8   // strength added to existing bonds between members
 export const STRESS_CRITICAL = 90
 export const HEALTH_DEATH_THRESHOLD = 0
 export const BOND_FORM_PROXIMITY_TICKS = 60
@@ -152,7 +162,7 @@ export const CANNIBAL_WITNESS_STRESS   = 10       // stress added to nearby obse
 export const CANNIBAL_TRAUMA_DURATION_DAYS  = 4   // game-days the elevated stress persists in witnesses
 export const CANNIBAL_TRAUMA_STRESS_PER_TICK = 0.25 // stress added per tick during trauma window
 
-export const HUDDLE_WARMTH_BONUS = 0.03 // warmth per adjacent bonded creature in winter (max 3)
+export const HUDDLE_WARMTH_BONUS = 0.05 // warmth per adjacent bonded creature in winter (max 3)
 export const WEATHER_BREED_MULT: Record<string, number> = {
   clear: 1.00, rain: 1.10, storm: 0.90, drought: 0.65,
   snow: 0.40, heatwave: 0.50, fog: 1.05,
@@ -199,11 +209,11 @@ export const REPRODUCE_COOLDOWN_JITTER_FRACTION = 0.10  // + up to 10% more of l
 // ─── Colony stage thresholds ─────────────────────────────────────────────────
 export const COLONY_STAGE_THRESHOLDS = {
   genesis:    0,
-  nascent:    6,
-  growing:    16,
-  established: 31,
-  thriving:   51,
-  ascendant:  80,
+  nascent:    4,   // was 6 — reachable by small starting colonies
+  growing:    10,  // was 16
+  established: 22, // was 31
+  thriving:   40,  // was 51
+  ascendant:  65,  // was 80
 } as const
 
 // ─── Cohort phases ────────────────────────────────────────────────────────────
@@ -276,7 +286,8 @@ export const AUTO_LIGHTNING_CHANCE = 0.0005       // per tick during winter stor
 export const AUTO_LIGHTNING_DAMAGE = 50           // health damage for auto-strikes
 
 // ─── Caves ───────────────────────────────────────────────────────────────────
-export const CAVE_WARMTH_BONUS = 0.06             // warmth restored per tick inside a cave
+export const CAVE_WARMTH_BONUS = 0.12             // warmth restored per tick inside a cave
+export const SHELTER_WARMTH_BONUS = 0.07          // warmth restored per tick inside a built shelter (weaker than cave)
 
 // ─── Weather ─────────────────────────────────────────────────────────────────
 // Durations: [min, max] game days in each state

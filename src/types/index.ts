@@ -796,6 +796,10 @@ export interface GameState {
   // Combat and proximity stress push negative. Range: -100..100.
   lineageRelations?: Record<string, number>
 
+  // Per-lineage reproductive fitness multipliers. Seeded at colony start with variance
+  // so some lineages naturally dominate and others stay marginal. Range: 0.5..1.5.
+  lineageReproFitness?: Record<string, number>
+
   // neglect & legendary tracking — optional for backward compat
   lastNeglectWarning?: number  // game day of last neglect warning message
   legendaryFired?: string[]    // creature IDs that have already had legendary events

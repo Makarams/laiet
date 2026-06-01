@@ -104,11 +104,19 @@ function computeMorphBias(env: EnvContext): MorphBias {
 // Returns the single adaptation trait an offspring can acquire from its birth environment,
 // or null if conditions don't favour a specific trait. Priority order matters — each
 // early return narrows the remaining type space for TypeScript.
-export function acquireAdaptation(env: EnvContext): AdaptationTrait | null {
+// coldDeathPressure (0..1): fraction of recent colony deaths caused by cold. When high,
+// cold-resistance adaptations are biased in even outside of winter, simulating
+// selection pressure from accumulated cold mortality.
+export function acquireAdaptation(env: EnvContext, coldDeathPressure = 0): AdaptationTrait | null {
   const { biome, weather, season } = env
   // Heavy snowfall in winter → broad insulation (stronger than cold_hardy alone)
   if (season === 'winter' && weather === 'snow')  return 'thick_pelt'
   if (season === 'winter' || weather === 'snow')  return 'cold_hardy'
+  // Cold death pressure bleeds into non-winter seasons: if enough of the colony
+  // died of cold recently, births are biased toward insulation traits even in
+  // spring/summer, reflecting natural selection rather than just birth-season luck.
+  if (coldDeathPressure > 0.4) return 'cold_hardy'
+  if (coldDeathPressure > 0.65) return 'thick_pelt'
   // After here: season ∈ {spring,summer,autumn}, weather ∈ {clear,rain,storm,drought,heatwave,fog}
   if (weather === 'fog')                          return 'bioluminescent'
   // After here: weather ≠ fog
